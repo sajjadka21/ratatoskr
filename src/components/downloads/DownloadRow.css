@@ -267,3 +267,41 @@
 .download-row__bottom {
   margin-top: 6px;
 }
+
+.download-row__status-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.download-row__menu-button {
+  width: 30px;
+  height: 30px;
+
+  display: grid;
+  place-items: center;
+
+  color: var(--text-muted);
+  background: transparent;
+
+  border-radius: 8px;
+
+  cursor: pointer;
+
+  opacity: 0;
+  transition:
+    opacity 120ms ease,
+    color 120ms ease,
+    background 120ms ease;
+}
+
+.download-row:hover .download-row__menu-button,
+.download-row--selected .download-row__menu-button,
+.download-row__menu-button:focus-visible {
+  opacity: 1;
+}
+
+.download-row__menu-button:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
+}

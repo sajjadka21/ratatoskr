@@ -3,6 +3,7 @@
   File,
   Image,
   Music,
+  MoreHorizontal,
   Video,
 } from "lucide-react";
 
@@ -14,6 +15,11 @@ type DownloadRowProps = {
   item: DownloadListItem;
   selected?: boolean;
   onSelect?: () => void;
+  onContextMenu?: (
+    item: DownloadListItem,
+    x: number,
+    y: number,
+  ) => void;
 };
 
 function formatBytes(bytes: number): string {
@@ -96,6 +102,7 @@ export function DownloadRow({
   item,
   selected = false,
   onSelect,
+  onContextMenu,
 }: DownloadRowProps) {
   const status = item.status.toLowerCase();
 
@@ -128,6 +135,15 @@ export function DownloadRow({
       role="button"
       tabIndex={0}
       onClick={onSelect}
+      onContextMenu={(event) => {
+        event.preventDefault();
+
+        onContextMenu?.(
+          item,
+          event.clientX,
+          event.clientY,
+        );
+      }}
       onKeyDown={(event) => {
         if (
           event.key === "Enter" ||
@@ -193,6 +209,29 @@ export function DownloadRow({
       </div>
 
       <div className="download-row__status-area">
+        <button
+          type="button"
+          className="download-row__menu-button"
+          aria-label="Download actions"
+          onClick={(event) => {
+            event.stopPropagation();
+
+            const rect =
+              event.currentTarget.getBoundingClientRect();
+
+            onContextMenu?.(
+              item,
+              rect.right,
+              rect.bottom + 6,
+            );
+          }}
+        >
+          <MoreHorizontal
+            size={17}
+            strokeWidth={2}
+          />
+        </button>
+
         <span
           className={`download-row__status download-row__status--${status}`}
         >
@@ -202,4 +241,8 @@ export function DownloadRow({
     </article>
   );
 }
+
+
+
+
 

@@ -1,10 +1,23 @@
 ﻿import {
+  Check,
   Clock3,
+  Copy,
+  ExternalLink,
   File,
-  Folder,
+  FolderOpen,
   Link2,
   X,
 } from "lucide-react";
+
+import {
+  openPath,
+  revealItemInDir,
+} from "@tauri-apps/plugin-opener";
+
+import {
+  useEffect,
+  useState,
+} from "react";
 
 import type { DownloadListItem } from "../../types/download";
 
@@ -14,6 +27,11 @@ type DownloadDetailsPanelProps = {
   item: DownloadListItem | null;
   onClose: () => void;
 };
+
+type CopiedField =
+  | "url"
+  | "path"
+  | null;
 
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return "0 B";
@@ -60,11 +78,28 @@ export function DownloadDetailsPanel({
   item,
   onClose,
 }: DownloadDetailsPanelProps) {
+  const [copiedField, setCopiedField] =
+    useState<CopiedField>(null);
+
+  const [actionError, setActionError] =
+    useState<string | null>(null);
+
+  useEffect(() => {
+    setCopiedField(null);
+    setActionError(null);
+  }, [item?.id]);
+
   if (!item) {
     return null;
   }
 
+  const destinationPath = item.destinationPath;
   const status = item.status.toLowerCase();
+
+  const hasFile = Boolean(
+    item.destinationPath &&
+    status === "completed",
+  );
 
   const percent =
     item.totalBytes && item.totalBytes > 0
@@ -75,6 +110,56 @@ export function DownloadDetailsPanel({
       : status === "completed"
         ? 100
         : 0;
+
+  async function copyText(
+    value: string,
+    field: Exclude<CopiedField, null>,
+  ) {
+    try {
+      await navigator.clipboard.writeText(value);
+
+      setActionError(null);
+      setCopiedField(field);
+
+      window.setTimeout(() => {
+        setCopiedField((current) =>
+          current === field ? null : current,
+        );
+      }, 1400);
+    } catch (reason) {
+      setActionError(
+        `Could not copy: ${String(reason)}`,
+      );
+    }
+  }
+
+  async function handleOpenFile() {
+    if (!destinationPath) return;
+
+    try {
+      setActionError(null);
+      await openPath(destinationPath);
+    } catch (reason) {
+      setActionError(
+        `Could not open file: ${String(reason)}`,
+      );
+    }
+  }
+
+  async function handleRevealFile() {
+    if (!destinationPath) return;
+
+    try {
+      setActionError(null);
+      await revealItemInDir(
+        destinationPath,
+      );
+    } catch (reason) {
+      setActionError(
+        `Could not show file in folder: ${String(reason)}`,
+      );
+    }
+  }
 
   return (
     <aside className="download-details">
@@ -129,6 +214,30 @@ export function DownloadDetailsPanel({
           </div>
         </div>
 
+        <div className="download-details__actions">
+          <button
+            type="button"
+            onClick={() =>
+              void handleOpenFile()
+            }
+            disabled={!hasFile}
+          >
+            <ExternalLink size={14} />
+            Open File
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              void handleRevealFile()
+            }
+            disabled={!hasFile}
+          >
+            <FolderOpen size={14} />
+            Show in Folder
+          </button>
+        </div>
+
         <dl className="download-details__properties">
           <div>
             <dt>
@@ -136,19 +245,63 @@ export function DownloadDetailsPanel({
               Source
             </dt>
 
-            <dd title={item.sourceUrl}>
-              {item.sourceUrl}
+            <dd className="download-details__property-row">
+              <span title={item.sourceUrl}>
+                {item.sourceUrl}
+              </span>
+
+              <button
+                type="button"
+                onClick={() =>
+                  void copyText(
+                    item.sourceUrl,
+                    "url",
+                  )
+                }
+                aria-label="Copy source URL"
+              >
+                {copiedField === "url" ? (
+                  <Check size={13} />
+                ) : (
+                  <Copy size={13} />
+                )}
+              </button>
             </dd>
           </div>
 
           <div>
             <dt>
-              <Folder size={14} />
+              <FolderOpen size={14} />
               Destination
             </dt>
 
-            <dd title={item.destinationPath ?? ""}>
-              {item.destinationPath ?? "—"}
+            <dd className="download-details__property-row">
+              <span
+                title={
+                  item.destinationPath ?? ""
+                }
+              >
+                {item.destinationPath ?? "—"}
+              </span>
+
+              {item.destinationPath ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    void copyText(
+                      item.destinationPath!,
+                      "path",
+                    )
+                  }
+                  aria-label="Copy destination path"
+                >
+                  {copiedField === "path" ? (
+                    <Check size={13} />
+                  ) : (
+                    <Copy size={13} />
+                  )}
+                </button>
+              ) : null}
             </dd>
           </div>
 
@@ -180,10 +333,18 @@ export function DownloadDetailsPanel({
           </div>
         </dl>
 
-        {status === "failed" && item.errorMessage ? (
+        {actionError ? (
+          <div className="download-details__action-error">
+            {actionError}
+          </div>
+        ) : null}
+
+        {status === "failed" &&
+        item.errorMessage ? (
           <div className="download-details__failure">
             <strong>
-              {item.errorCode ?? "Download failed"}
+              {item.errorCode ??
+                "Download failed"}
             </strong>
 
             <span>{item.errorMessage}</span>
@@ -193,3 +354,4 @@ export function DownloadDetailsPanel({
     </aside>
   );
 }
+

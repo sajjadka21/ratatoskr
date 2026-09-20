@@ -8,6 +8,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
 import { AddDownloadModal } from "./components/downloads/AddDownloadModal";
+import { DownloadContextMenu } from "./components/downloads/DownloadContextMenu";
 import { DownloadDetailsPanel } from "./components/downloads/DownloadDetailsPanel";
 import { DownloadRow } from "./components/downloads/DownloadRow";
 import { AppShell } from "./components/layout/AppShell";
@@ -95,6 +96,13 @@ function App() {
   const [selectedDownloadId, setSelectedDownloadId] =
     useState<string | null>(null);
 
+  const [contextMenu, setContextMenu] =
+    useState<{
+      item: DownloadListItem;
+      x: number;
+      y: number;
+    } | null>(null);
+
   const [modalOpen, setModalOpen] =
     useState(false);
 
@@ -139,6 +147,37 @@ function App() {
     });
   }, [refreshHealth, refreshDownloads]);
 
+  useEffect(() => {
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      if (modalOpen || contextMenu) {
+        return;
+      }
+
+      if (selectedDownloadId) {
+        setSelectedDownloadId(null);
+      }
+    }
+
+    window.addEventListener(
+      "keydown",
+      handleEscape,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "keydown",
+        handleEscape,
+      );
+    };
+  }, [
+    modalOpen,
+    contextMenu,
+    selectedDownloadId,
+  ]);
   const allReady =
     health?.core.status === "ready" &&
     health?.storage.status === "ready" &&
@@ -292,6 +331,17 @@ function App() {
     setModalOpen(false);
   }
 
+  function openContextMenu(
+    item: DownloadListItem,
+    x: number,
+    y: number,
+  ) {
+    setContextMenu({
+      item,
+      x,
+      y,
+    });
+  }
   function changeSection(
     section: DownloadSection,
   ) {
@@ -355,6 +405,9 @@ function App() {
                         item.id,
                       )
                     }
+                    onContextMenu={
+                      openContextMenu
+                    }
                   />
                 ))}
               </div>
@@ -391,6 +444,18 @@ function App() {
         </div>
       </AppShell>
 
+      <DownloadContextMenu
+        item={contextMenu?.item ?? null}
+        x={contextMenu?.x ?? 0}
+        y={contextMenu?.y ?? 0}
+        onClose={() =>
+          setContextMenu(null)
+        }
+        onShowDetails={(id) =>
+          setSelectedDownloadId(id)
+        }
+      />
+
       <AddDownloadModal
         open={modalOpen}
         url={url}
@@ -412,3 +477,10 @@ function App() {
 }
 
 export default App;
+
+
+
+
+
+
+

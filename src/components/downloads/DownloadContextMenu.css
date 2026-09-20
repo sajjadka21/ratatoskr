@@ -1,0 +1,80 @@
+﻿.download-context-menu {
+  position: fixed;
+  z-index: 1500;
+
+  width: 205px;
+  padding: 6px;
+
+  color: var(--text-primary);
+  background: rgba(18, 24, 35, 0.98);
+
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+
+  box-shadow:
+    0 18px 55px rgba(0, 0, 0, 0.44);
+
+  backdrop-filter: blur(12px);
+
+  animation: download-context-menu-in 90ms ease-out;
+}
+
+.download-context-menu button {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+
+  display: flex;
+  align-items: center;
+  gap: 9px;
+
+  color: var(--text-secondary);
+  background: transparent;
+
+  border-radius: 7px;
+
+  font-size: 10px;
+  font-weight: 550;
+
+  text-align: left;
+
+  cursor: pointer;
+}
+
+.download-context-menu button svg {
+  flex: 0 0 auto;
+}
+
+.download-context-menu button span {
+  min-width: 0;
+  flex: 1;
+}
+
+.download-context-menu button:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
+}
+
+.download-context-menu button:disabled {
+  cursor: not-allowed;
+  opacity: 0.34;
+}
+
+.download-context-menu__divider {
+  height: 1px;
+  margin: 5px 4px;
+
+  background: var(--border-subtle);
+}
+
+@keyframes download-context-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.975) translateY(-2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}

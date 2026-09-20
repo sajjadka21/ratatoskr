@@ -6,6 +6,8 @@ use std::{
 };
 use thiserror::Error;
 
+mod downloads;
+
 const LATEST_SCHEMA_VERSION: i32 = 1;
 
 const MIGRATION_V1: &str = r#"
@@ -77,6 +79,18 @@ pub enum StorageError {
 
     #[error("database schema version {found} is newer than supported version {supported}")]
     UnsupportedSchemaVersion { found: i32, supported: i32 },
+
+    #[error("download not found: {0}")]
+    DownloadNotFound(String),
+
+    #[error("invalid download status stored in database: {0}")]
+    InvalidDownloadStatus(String),
+
+    #[error("value for {field} is too large for SQLite INTEGER: {value}")]
+    IntegerTooLarge { field: &'static str, value: u64 },
+
+    #[error("negative SQLite INTEGER for unsigned field {field}: {value}")]
+    NegativeInteger { field: &'static str, value: i64 },
 }
 
 pub type Result<T> = std::result::Result<T, StorageError>;
@@ -95,7 +109,6 @@ impl Storage {
         }
 
         let connection = Connection::open(&path)?;
-
         configure_connection(&connection)?;
         run_migrations(&connection)?;
 

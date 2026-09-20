@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+﻿use serde::{Deserialize, Serialize};
 use std::{fmt, str::FromStr};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -74,6 +74,39 @@ impl FromStr for DownloadStatus {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadRecord {
+    pub id: String,
+    pub source_url: String,
+    pub resolved_url: Option<String>,
+    pub filename: Option<String>,
+    pub destination_path: Option<String>,
+    pub temp_path: Option<String>,
+    pub mime_type: Option<String>,
+    pub total_bytes: Option<u64>,
+    pub downloaded_bytes: u64,
+    pub etag: Option<String>,
+    pub last_modified: Option<String>,
+    pub range_supported: Option<bool>,
+    pub status: DownloadStatus,
+    pub queue_position: Option<i64>,
+    pub created_at: i64,
+    pub started_at: Option<i64>,
+    pub completed_at: Option<i64>,
+    pub error_code: Option<String>,
+    pub error_message: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DownloadCompletion {
+    pub resolved_url: String,
+    pub filename: String,
+    pub destination_path: String,
+    pub mime_type: Option<String>,
+    pub total_bytes: Option<u64>,
+    pub downloaded_bytes: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::DownloadStatus;
@@ -97,7 +130,6 @@ mod tests {
         for status in statuses {
             let encoded = status.to_string();
             let decoded = DownloadStatus::from_str(&encoded).unwrap();
-
             assert_eq!(decoded, status);
         }
     }

@@ -1,4 +1,4 @@
-use crate::{DownloadError, DownloadOutcome, Downloader};
+use crate::{DownloadError, DownloadOutcome, DownloadProgress, Downloader};
 use dm_common::{DownloadCompletion, DownloadRecord};
 use dm_storage::{Storage, StorageError};
 use std::{
@@ -44,6 +44,19 @@ impl DownloadService {
         source_url: &str,
         destination_directory: impl AsRef<Path>,
     ) -> Result<DownloadRecord> {
+        self.start_download_with_progress(source_url, destination_directory, |_, _| {})
+            .await
+    }
+
+    pub async fn start_download_with_progress<F>(
+        &self,
+        source_url: &str,
+        destination_directory: impl AsRef<Path>,
+        mut on_progress: F,
+    ) -> Result<DownloadRecord>
+    where
+        F: FnMut(&str, DownloadProgress) + Send,
+    {
         let created_at = unix_timestamp_seconds()?;
 
         let created = self.storage.create_download(source_url, created_at)?;
@@ -65,7 +78,11 @@ impl DownloadService {
                         progress.downloaded_bytes,
                         progress.total_bytes,
                     )
-                    .map_err(|error| DownloadError::ProgressCallback(error.to_string()))
+                    .map_err(|error| DownloadError::ProgressCallback(error.to_string()))?;
+
+                on_progress(&progress_id, progress);
+
+                Ok(())
             })
             .await;
 

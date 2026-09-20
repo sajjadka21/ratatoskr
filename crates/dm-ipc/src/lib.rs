@@ -42,6 +42,25 @@ pub struct AppInfoResponse {
     pub version: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadProgressEvent {
+    pub download_id: String,
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartDownloadResponse {
+    pub id: String,
+    pub filename: Option<String>,
+    pub destination_path: Option<String>,
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub status: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::{ComponentHealth, HealthState};
@@ -49,7 +68,6 @@ mod tests {
     #[test]
     fn ready_component_has_no_error_message() {
         let health = ComponentHealth::ready();
-
         assert_eq!(health.status, HealthState::Ready);
         assert!(health.message.is_none());
     }
@@ -57,7 +75,6 @@ mod tests {
     #[test]
     fn error_component_contains_message() {
         let health = ComponentHealth::error("database unavailable");
-
         assert_eq!(health.status, HealthState::Error);
         assert_eq!(health.message.as_deref(), Some("database unavailable"));
     }

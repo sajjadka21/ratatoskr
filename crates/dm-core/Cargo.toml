@@ -1,0 +1,13 @@
+[package]
+name = "dm-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+percent-encoding = "2.3.2"
+reqwest = "0.13.5"
+thiserror = "2.0.20"
+tokio = { version = "1.53.1", features = ["fs", "io-util", "macros", "rt-multi-thread", "net"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"

@@ -892,6 +892,8 @@ dependencies = [
 name = "dm-core"
 version = "0.1.0"
 dependencies = [
+ "dm-common",
+ "dm-storage",
  "percent-encoding",
  "reqwest",
  "tempfile",

@@ -1,3 +1,5 @@
+pub mod service;
+
 use percent_encoding::percent_decode_str;
 use reqwest::{
     Client, Url,
@@ -26,6 +28,9 @@ pub enum DownloadError {
 
     #[error("filesystem error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("progress callback failed: {0}")]
+    ProgressCallback(String),
 }
 
 pub type Result<T> = std::result::Result<T, DownloadError>;
@@ -78,7 +83,7 @@ impl Downloader {
         mut on_progress: F,
     ) -> Result<DownloadOutcome>
     where
-        F: FnMut(DownloadProgress) + Send,
+        F: FnMut(DownloadProgress) -> Result<()> + Send,
     {
         let parsed_url =
             Url::parse(source_url).map_err(|error| DownloadError::InvalidUrl(error.to_string()))?;
@@ -136,7 +141,7 @@ impl Downloader {
         on_progress(DownloadProgress {
             downloaded_bytes,
             total_bytes,
-        });
+        })?;
 
         while let Some(chunk) = response.chunk().await? {
             file.write_all(&chunk).await?;
@@ -146,7 +151,7 @@ impl Downloader {
             on_progress(DownloadProgress {
                 downloaded_bytes,
                 total_bytes,
-            });
+            })?;
         }
 
         file.flush().await?;
@@ -407,6 +412,7 @@ mod tests {
                 directory.path(),
                 |progress| {
                     last_progress = Some(progress);
+                    Ok(())
                 },
             )
             .await

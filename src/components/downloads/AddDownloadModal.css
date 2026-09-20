@@ -1,0 +1,339 @@
+﻿.add-download-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+
+  display: grid;
+  place-items: center;
+
+  padding: 24px;
+
+  background: rgba(3, 7, 13, 0.72);
+  backdrop-filter: blur(7px);
+
+  animation: modal-backdrop-in 130ms ease-out;
+}
+
+.add-download-modal {
+  width: min(560px, 100%);
+  overflow: hidden;
+
+  color: var(--text-primary);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(25, 34, 49, 0.98),
+      rgba(15, 21, 31, 0.99)
+    );
+
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+
+  box-shadow: var(--shadow-modal);
+
+  animation: modal-in 150ms ease-out;
+}
+
+.add-download-modal__header {
+  padding: 21px 22px 18px;
+
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.add-download-modal__heading {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.add-download-modal__icon {
+  width: 42px;
+  height: 42px;
+
+  flex: 0 0 42px;
+
+  display: grid;
+  place-items: center;
+
+  color: #7aa9ff;
+  background: var(--accent-soft);
+
+  border: 1px solid rgba(79, 140, 255, 0.22);
+  border-radius: 12px;
+}
+
+.add-download-modal__heading h2 {
+  margin: 0;
+
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.add-download-modal__heading p {
+  margin: 5px 0 0;
+
+  color: var(--text-muted);
+
+  font-size: 11px;
+}
+
+.add-download-modal__close {
+  width: 32px;
+  height: 32px;
+
+  display: grid;
+  place-items: center;
+
+  color: var(--text-secondary);
+  background: transparent;
+
+  border-radius: 8px;
+
+  cursor: pointer;
+}
+
+.add-download-modal__close:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
+}
+
+.add-download-modal__body {
+  padding: 21px 22px;
+}
+
+.add-download-modal__label {
+  display: block;
+  margin-bottom: 8px;
+
+  color: var(--text-secondary);
+
+  font-size: 11px;
+  font-weight: 550;
+}
+
+.add-download-modal__input-wrap {
+  height: 44px;
+  padding: 0 12px;
+
+  display: flex;
+  align-items: center;
+  gap: 9px;
+
+  color: var(--text-muted);
+  background: var(--bg-app);
+
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+}
+
+.add-download-modal__input-wrap:focus-within {
+  border-color: var(--accent);
+
+  box-shadow:
+    0 0 0 3px rgba(79, 140, 255, 0.1);
+}
+
+.add-download-modal__input-wrap input {
+  width: 100%;
+  min-width: 0;
+
+  color: var(--text-primary);
+  background: transparent;
+
+  border: 0;
+  outline: 0;
+
+  font-size: 12px;
+}
+
+.add-download-modal__input-wrap input::placeholder {
+  color: var(--text-muted);
+}
+
+.add-download-modal__destination {
+  margin-top: 13px;
+  padding: 11px 12px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.018);
+
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+
+  font-size: 10px;
+}
+
+.add-download-modal__destination strong {
+  overflow: hidden;
+
+  color: var(--text-secondary);
+
+  font-weight: 550;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.add-download-modal__error {
+  margin-top: 13px;
+  padding: 10px 12px;
+
+  color: #ff9a9a;
+  background: rgba(240, 100, 100, 0.08);
+
+  border: 1px solid rgba(240, 100, 100, 0.2);
+  border-radius: 9px;
+
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.add-download-modal__advanced {
+  width: 100%;
+  margin-top: 14px;
+  padding: 10px 0 0;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  color: var(--text-muted);
+  background: transparent;
+
+  font-size: 10px;
+
+  opacity: 0.55;
+}
+
+.add-download-modal__advanced span {
+  font-size: 9px;
+}
+
+.add-download-modal__footer {
+  padding: 15px 22px;
+
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+
+  background: rgba(7, 11, 17, 0.34);
+
+  border-top: 1px solid var(--border-subtle);
+}
+
+.add-download-modal__cancel,
+.add-download-modal__submit {
+  height: 38px;
+  padding: 0 16px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+
+  border-radius: 9px;
+
+  font-size: 11px;
+  font-weight: 600;
+
+  cursor: pointer;
+}
+
+.add-download-modal__cancel {
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+
+  border: 1px solid var(--border-subtle);
+}
+
+.add-download-modal__cancel:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
+}
+
+.add-download-modal__submit {
+  min-width: 108px;
+
+  color: #fff;
+  background: var(--accent);
+}
+
+.add-download-modal__submit:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.add-download-modal__submit:disabled,
+.add-download-modal__cancel:disabled,
+.add-download-modal__close:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(7px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes modal-backdrop-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.add-download-modal__progress {
+  margin-top: 18px;
+}
+
+.add-download-modal__progress-track {
+  width: 100%;
+  height: 5px;
+
+  overflow: hidden;
+
+  background: var(--bg-elevated);
+  border-radius: 999px;
+}
+
+.add-download-modal__progress-fill {
+  height: 100%;
+
+  background: var(--accent);
+  border-radius: inherit;
+
+  transition: width 120ms linear;
+}
+
+.add-download-modal__progress-meta {
+  margin-top: 8px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+
+  color: var(--text-muted);
+
+  font-size: 10px;
+}

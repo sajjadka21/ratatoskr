@@ -1,0 +1,136 @@
+﻿.topbar {
+  min-height: var(--topbar-height);
+  height: var(--topbar-height);
+  padding: 0 28px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+
+  background: rgba(9, 13, 20, 0.92);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.topbar__heading {
+  min-width: 0;
+}
+
+.topbar__heading h1 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.topbar__heading span {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.topbar__actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.topbar__search {
+  width: min(280px, 32vw);
+  height: 38px;
+  padding: 0 12px;
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  color: var(--text-muted);
+  background: var(--bg-surface);
+
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.topbar__search:hover {
+  background: var(--bg-surface-hover);
+}
+
+.topbar__search:focus-within {
+  background: var(--bg-surface);
+  border-color: rgba(79, 140, 255, 0.6);
+}
+
+.topbar__search input {
+  width: 100%;
+  min-width: 0;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 12px;
+}
+
+.topbar__search input::placeholder {
+  color: var(--text-muted);
+}
+
+.topbar__add {
+  height: 38px;
+  padding: 0 14px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+
+  flex: 0 0 auto;
+
+  color: #ffffff;
+  background: var(--accent);
+  border-radius: 10px;
+
+  font-size: 12px;
+  font-weight: 650;
+
+  cursor: pointer;
+
+  transition:
+    background 120ms ease,
+    transform 120ms ease;
+}
+
+.topbar__add:hover {
+  background: var(--accent-hover);
+}
+
+.topbar__add:active {
+  transform: scale(0.98);
+}
+
+@media (max-width: 780px) {
+  .topbar {
+    padding: 0 18px;
+  }
+
+  .topbar__search {
+    width: 190px;
+  }
+
+  .topbar__add span {
+    display: none;
+  }
+
+  .topbar__add {
+    width: 38px;
+    padding: 0;
+  }
+}

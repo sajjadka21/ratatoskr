@@ -1,7 +1,7 @@
 use dm_core::{service::DownloadService, CoreService};
 use dm_ipc::{
-    AppInfoResponse, ComponentHealth, DownloadProgressEvent, HealthCheckResponse,
-    StartDownloadResponse,
+    AppInfoResponse, ComponentHealth, DownloadListItemResponse, DownloadProgressEvent,
+    HealthCheckResponse, StartDownloadResponse,
 };
 use dm_storage::Storage;
 use std::sync::Arc;
@@ -55,6 +55,33 @@ fn health_check(state: State<'_, AppState>) -> HealthCheckResponse {
     }
 }
 
+#[tauri::command]
+fn list_downloads(state: State<'_, AppState>) -> Result<Vec<DownloadListItemResponse>, String> {
+    let downloads = state
+        .storage
+        .list_downloads()
+        .map_err(|error| error.to_string())?;
+
+    Ok(downloads
+        .into_iter()
+        .map(|record| DownloadListItemResponse {
+            id: record.id,
+            source_url: record.source_url,
+            resolved_url: record.resolved_url,
+            filename: record.filename,
+            destination_path: record.destination_path,
+            mime_type: record.mime_type,
+            total_bytes: record.total_bytes,
+            downloaded_bytes: record.downloaded_bytes,
+            status: record.status.to_string(),
+            created_at: record.created_at,
+            started_at: record.started_at,
+            completed_at: record.completed_at,
+            error_code: record.error_code,
+            error_message: record.error_message,
+        })
+        .collect())
+}
 #[tauri::command]
 async fn start_download(
     app: AppHandle,
@@ -148,6 +175,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_app_info,
             health_check,
+            list_downloads,
             start_download
         ])
         .run(tauri::generate_context!())

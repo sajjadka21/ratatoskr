@@ -61,6 +61,24 @@ pub struct StartDownloadResponse {
     pub status: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadListItemResponse {
+    pub id: String,
+    pub source_url: String,
+    pub resolved_url: Option<String>,
+    pub filename: Option<String>,
+    pub destination_path: Option<String>,
+    pub mime_type: Option<String>,
+    pub total_bytes: Option<u64>,
+    pub downloaded_bytes: u64,
+    pub status: String,
+    pub created_at: i64,
+    pub started_at: Option<i64>,
+    pub completed_at: Option<i64>,
+    pub error_code: Option<String>,
+    pub error_message: Option<String>,
+}
 #[cfg(test)]
 mod tests {
     use super::{ComponentHealth, HealthState};

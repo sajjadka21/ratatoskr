@@ -1,5 +1,25 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
 import { Channel, invoke } from "@tauri-apps/api/core";
+
+import { AddDownloadModal } from "./components/downloads/AddDownloadModal";
+import { DownloadDetailsPanel } from "./components/downloads/DownloadDetailsPanel";
+import { DownloadRow } from "./components/downloads/DownloadRow";
+import { AppShell } from "./components/layout/AppShell";
+
+import type {
+  DownloadSection,
+  SidebarCounts,
+} from "./components/layout/Sidebar";
+
+import type { DownloadListItem } from "./types/download";
+
+import "./App.css";
 
 type HealthState = "ready" | "error";
 
@@ -34,54 +54,180 @@ type StartDownloadResponse = {
   status: string;
 };
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
+const sectionTitles: Record<
+  DownloadSection,
+  string
+> = {
+  all: "All Downloads",
+  active: "Active",
+  queued: "Queued",
+  completed: "Completed",
+  failed: "Failed",
+};
 
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const index = Math.min(
-    Math.floor(Math.log(bytes) / Math.log(1024)),
-    units.length - 1,
-  );
-
-  const value = bytes / 1024 ** index;
-  return `${value.toFixed(index === 0 ? 0 : 2)} ${units[index]}`;
+function isActiveStatus(status: string): boolean {
+  return [
+    "created",
+    "probing",
+    "downloading",
+    "paused",
+    "retrying",
+    "finalizing",
+  ].includes(status);
 }
 
 function App() {
-  const [health, setHealth] = useState<HealthCheckResponse | null>(null);
-  const [appInfo, setAppInfo] = useState<AppInfoResponse | null>(null);
-  const [url, setUrl] = useState("");
-  const [progress, setProgress] = useState<DownloadProgressEvent | null>(null);
-  const [result, setResult] = useState<StartDownloadResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [downloading, setDownloading] = useState(false);
+  const [health, setHealth] =
+    useState<HealthCheckResponse | null>(null);
+
+  const [appInfo, setAppInfo] =
+    useState<AppInfoResponse | null>(null);
+
+  const [downloads, setDownloads] =
+    useState<DownloadListItem[]>([]);
+
+  const [activeSection, setActiveSection] =
+    useState<DownloadSection>("all");
+
+  const [searchQuery, setSearchQuery] =
+    useState("");
+
+  const [selectedDownloadId, setSelectedDownloadId] =
+    useState<string | null>(null);
+
+  const [modalOpen, setModalOpen] =
+    useState(false);
+
+  const [url, setUrl] =
+    useState("");
+
+  const [progress, setProgress] =
+    useState<DownloadProgressEvent | null>(null);
+
+  const [error, setError] =
+    useState<string | null>(null);
+
+  const [downloading, setDownloading] =
+    useState(false);
 
   const refreshHealth = useCallback(async () => {
-    const [healthResult, appInfoResult] = await Promise.all([
-      invoke<HealthCheckResponse>("health_check"),
-      invoke<AppInfoResponse>("get_app_info"),
-    ]);
+    const [healthResult, appInfoResult] =
+      await Promise.all([
+        invoke<HealthCheckResponse>("health_check"),
+        invoke<AppInfoResponse>("get_app_info"),
+      ]);
 
     setHealth(healthResult);
     setAppInfo(appInfoResult);
   }, []);
 
+  const refreshDownloads = useCallback(async () => {
+    const items =
+      await invoke<DownloadListItem[]>(
+        "list_downloads",
+      );
+
+    setDownloads(items);
+  }, []);
+
   useEffect(() => {
-    void refreshHealth().catch((reason) => {
+    void Promise.all([
+      refreshHealth(),
+      refreshDownloads(),
+    ]).catch((reason) => {
       setError(String(reason));
     });
-  }, [refreshHealth]);
+  }, [refreshHealth, refreshDownloads]);
 
-  const percent = useMemo(() => {
-    if (!progress?.totalBytes || progress.totalBytes <= 0) {
-      return null;
+  const allReady =
+    health?.core.status === "ready" &&
+    health?.storage.status === "ready" &&
+    health?.database.status === "ready";
+
+  const counts = useMemo<SidebarCounts>(() => {
+    const result: SidebarCounts = {
+      all: downloads.length,
+      active: 0,
+      queued: 0,
+      completed: 0,
+      failed: 0,
+    };
+
+    for (const item of downloads) {
+      const status = item.status.toLowerCase();
+
+      if (isActiveStatus(status)) {
+        result.active += 1;
+      }
+
+      if (status === "queued") {
+        result.queued += 1;
+      }
+
+      if (status === "completed") {
+        result.completed += 1;
+      }
+
+      if (status === "failed") {
+        result.failed += 1;
+      }
     }
 
-    return Math.min(
-      100,
-      (progress.downloadedBytes / progress.totalBytes) * 100,
-    );
-  }, [progress]);
+    return result;
+  }, [downloads]);
+
+  const filteredDownloads = useMemo(() => {
+    const query = searchQuery
+      .trim()
+      .toLowerCase();
+
+    return downloads.filter((item) => {
+      const status = item.status.toLowerCase();
+
+      const matchesSection =
+        activeSection === "all" ||
+        (activeSection === "active" &&
+          isActiveStatus(status)) ||
+        (activeSection === "queued" &&
+          status === "queued") ||
+        (activeSection === "completed" &&
+          status === "completed") ||
+        (activeSection === "failed" &&
+          status === "failed");
+
+      if (!matchesSection) {
+        return false;
+      }
+
+      if (!query) {
+        return true;
+      }
+
+      const searchable = [
+        item.filename,
+        item.sourceUrl,
+        item.resolvedUrl,
+        item.destinationPath,
+        item.mimeType,
+        item.status,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return searchable.includes(query);
+    });
+  }, [
+    downloads,
+    activeSection,
+    searchQuery,
+  ]);
+
+  const selectedDownload =
+    filteredDownloads.find(
+      (item) =>
+        item.id === selectedDownloadId,
+    ) ?? null;
 
   async function startDownload() {
     const trimmedUrl = url.trim();
@@ -91,19 +237,26 @@ function App() {
       return;
     }
 
+    if (!allReady) {
+      setError(
+        "The download engine is not ready yet.",
+      );
+      return;
+    }
+
     setDownloading(true);
     setProgress(null);
-    setResult(null);
     setError(null);
 
-    const onProgress = new Channel<DownloadProgressEvent>();
+    const onProgress =
+      new Channel<DownloadProgressEvent>();
 
     onProgress.onmessage = (message) => {
       setProgress(message);
     };
 
     try {
-      const response = await invoke<StartDownloadResponse>(
+      await invoke<StartDownloadResponse>(
         "start_download",
         {
           url: trimmedUrl,
@@ -111,7 +264,11 @@ function App() {
         },
       );
 
-      setResult(response);
+      await refreshDownloads();
+
+      setUrl("");
+      setProgress(null);
+      setModalOpen(false);
     } catch (reason) {
       setError(String(reason));
     } finally {
@@ -119,175 +276,138 @@ function App() {
     }
   }
 
-  const allReady =
-    health?.core.status === "ready" &&
-    health?.storage.status === "ready" &&
-    health?.database.status === "ready";
+  function openAddDownload() {
+    setError(null);
+    setProgress(null);
+    setModalOpen(true);
+  }
+
+  function closeAddDownload() {
+    if (downloading) {
+      return;
+    }
+
+    setError(null);
+    setProgress(null);
+    setModalOpen(false);
+  }
+
+  function changeSection(
+    section: DownloadSection,
+  ) {
+    setActiveSection(section);
+    setSelectedDownloadId(null);
+  }
+
+  const backendLabel = allReady
+    ? "Engine ready"
+    : health
+      ? "Engine unavailable"
+      : "Checking engine...";
+
+  const emptyTitle =
+    searchQuery.trim()
+      ? "No matching downloads"
+      : activeSection === "all"
+        ? "No downloads yet"
+        : `No ${sectionTitles[
+            activeSection
+          ].toLowerCase()} downloads`;
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        boxSizing: "border-box",
-        padding: 40,
-        background: "#0d1117",
-        color: "#f0f6fc",
-        fontFamily: "Segoe UI, sans-serif",
-      }}
-    >
-      <div style={{ maxWidth: 760, margin: "0 auto" }}>
-        <h1 style={{ marginBottom: 6 }}>
-          {appInfo?.name ?? "Download Manager"}
-        </h1>
+    <>
+      <AppShell
+        title={sectionTitles[activeSection]}
+        subtitle={`Version ${appInfo?.version ?? "..."} · ${backendLabel}`}
+        activeItem={activeSection}
+        counts={counts}
+        searchValue={searchQuery}
+        onSearchChange={setSearchQuery}
+        onSectionChange={changeSection}
+        onAddDownload={openAddDownload}
+      >
+        <div className="downloads-workspace">
+          <section className="download-library">
+            <div className="download-library__header">
+              <div>
+                <h2>Downloads</h2>
 
-        <div style={{ color: "#8b949e", marginBottom: 32 }}>
-          Version {appInfo?.version ?? "..."} · 
-          {allReady ? "Backend Ready" : "Checking backend..."}
-        </div>
+                <span>
+                  {filteredDownloads.length === 1
+                    ? "1 item"
+                    : `${filteredDownloads.length} items`}
+                </span>
+              </div>
+            </div>
 
-        <section
-          style={{
-            padding: 24,
-            border: "1px solid #30363d",
-            borderRadius: 14,
-            background: "#161b22",
-          }}
-        >
-          <h2 style={{ marginTop: 0 }}>New Download</h2>
+            {filteredDownloads.length > 0 ? (
+              <div className="download-library__list">
+                {filteredDownloads.map((item) => (
+                  <DownloadRow
+                    key={item.id}
+                    item={item}
+                    selected={
+                      selectedDownloadId ===
+                      item.id
+                    }
+                    onSelect={() =>
+                      setSelectedDownloadId(
+                        item.id,
+                      )
+                    }
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="download-library__empty">
+                <div>
+                  <strong>{emptyTitle}</strong>
 
-          <input
-            value={url}
-            onChange={(event) => setUrl(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !downloading) {
-                void startDownload();
-              }
-            }}
-            placeholder="https://example.com/file.zip"
-            disabled={downloading}
-            style={{
-              boxSizing: "border-box",
-              width: "100%",
-              padding: "13px 14px",
-              borderRadius: 8,
-              border: "1px solid #30363d",
-              background: "#0d1117",
-              color: "#f0f6fc",
-              fontSize: 14,
-              outline: "none",
-            }}
+                  <span>
+                    {searchQuery.trim()
+                      ? "Try a different filename, URL or domain."
+                      : "Nothing to show in this section."}
+                  </span>
+
+                  {downloads.length === 0 ? (
+                    <button
+                      type="button"
+                      onClick={openAddDownload}
+                    >
+                      Add Download
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            )}
+          </section>
+
+          <DownloadDetailsPanel
+            item={selectedDownload}
+            onClose={() =>
+              setSelectedDownloadId(null)
+            }
           />
-
-          <button
-            onClick={() => void startDownload()}
-            disabled={downloading || !allReady}
-            style={{
-              marginTop: 14,
-              padding: "11px 18px",
-              border: 0,
-              borderRadius: 8,
-              background: downloading ? "#30363d" : "#238636",
-              color: "#fff",
-              fontWeight: 600,
-              cursor: downloading ? "default" : "pointer",
-            }}
-          >
-            {downloading ? "Downloading..." : "Download"}
-          </button>
-
-          {(downloading || progress) && (
-            <div style={{ marginTop: 24 }}>
-              <div
-                style={{
-                  height: 10,
-                  overflow: "hidden",
-                  borderRadius: 999,
-                  background: "#30363d",
-                }}
-              >
-                <div
-                  style={{
-                    width: `${percent ?? 100}%`,
-                    height: "100%",
-                    background: "#3fb950",
-                    transition: "width 100ms linear",
-                    opacity: percent === null ? 0.5 : 1,
-                  }}
-                />
-              </div>
-
-              <div
-                style={{
-                  marginTop: 10,
-                  display: "flex",
-                  justifyContent: "space-between",
-                  color: "#8b949e",
-                  fontSize: 13,
-                }}
-              >
-                <span>
-                  {formatBytes(progress?.downloadedBytes ?? 0)}
-                </span>
-
-                <span>
-                  {progress?.totalBytes
-                    ? `${formatBytes(progress.totalBytes)} · ${percent?.toFixed(1)}%`
-                    : "Unknown size"}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {result && (
-            <div
-              style={{
-                marginTop: 24,
-                padding: 16,
-                borderRadius: 8,
-                background: "#0d2818",
-                border: "1px solid #238636",
-              }}
-            >
-              <strong>Completed</strong>
-              <div style={{ marginTop: 8 }}>
-                {result.filename ?? "Downloaded file"}
-              </div>
-              <div
-                style={{
-                  marginTop: 4,
-                  color: "#8b949e",
-                  wordBreak: "break-all",
-                }}
-              >
-                {result.destinationPath}
-              </div>
-            </div>
-          )}
-
-          {error && (
-            <div
-              style={{
-                marginTop: 20,
-                color: "#ff7b72",
-                whiteSpace: "pre-wrap",
-              }}
-            >
-              {error}
-            </div>
-          )}
-        </section>
-
-        <div
-          style={{
-            marginTop: 18,
-            color: "#8b949e",
-            fontSize: 13,
-          }}
-        >
-          Files are currently saved to your system Downloads folder.
         </div>
-      </div>
-    </main>
+      </AppShell>
+
+      <AddDownloadModal
+        open={modalOpen}
+        url={url}
+        downloading={downloading}
+        engineReady={allReady}
+        error={error}
+        downloadedBytes={
+          progress?.downloadedBytes ?? 0
+        }
+        totalBytes={
+          progress?.totalBytes ?? null
+        }
+        onUrlChange={setUrl}
+        onClose={closeAddDownload}
+        onDownload={() => void startDownload()}
+      />
+    </>
   );
 }
 

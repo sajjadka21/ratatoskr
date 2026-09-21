@@ -1,6 +1,6 @@
 use crate::{Result, Storage, StorageError};
 use dm_common::{DownloadCompletion, DownloadRecord, DownloadStatus};
-use rusqlite::{OptionalExtension, Row, params};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -200,6 +200,26 @@ impl Storage {
 
         ensure_updated(id, changed)
     }
+
+    pub fn mark_probing(&self, id: &str) -> Result<()> {
+        let connection = self.connection()?;
+
+        let changed = connection.execute(
+            r#"
+            UPDATE downloads
+            SET
+                status = 'probing',
+                error_code = NULL,
+                error_message = NULL
+            WHERE id = ?1
+              AND status = 'created';
+            "#,
+            [id],
+        )?;
+
+        ensure_transitioned(&connection, id, changed, DownloadStatus::Probing)
+    }
+
     pub fn mark_downloading(&self, id: &str, started_at: i64) -> Result<()> {
         let connection = self.connection()?;
 
@@ -211,12 +231,13 @@ impl Storage {
                 started_at = ?2,
                 error_code = NULL,
                 error_message = NULL
-            WHERE id = ?1;
+            WHERE id = ?1
+              AND status = 'probing';
             "#,
             params![id, started_at],
         )?;
 
-        ensure_updated(id, changed)
+        ensure_transitioned(&connection, id, changed, DownloadStatus::Downloading)
     }
 
     pub fn update_progress(
@@ -277,7 +298,8 @@ impl Storage {
                 completed_at = ?8,
                 error_code = NULL,
                 error_message = NULL
-            WHERE id = ?1;
+            WHERE id = ?1
+              AND status = 'finalizing';
             "#,
             params![
                 id,
@@ -291,7 +313,23 @@ impl Storage {
             ],
         )?;
 
-        ensure_updated(id, changed)
+        ensure_transitioned(&connection, id, changed, DownloadStatus::Completed)
+    }
+
+    pub fn mark_finalizing(&self, id: &str) -> Result<()> {
+        let connection = self.connection()?;
+
+        let changed = connection.execute(
+            r#"
+            UPDATE downloads
+            SET status = 'finalizing'
+            WHERE id = ?1
+              AND status = 'downloading';
+            "#,
+            [id],
+        )?;
+
+        ensure_transitioned(&connection, id, changed, DownloadStatus::Finalizing)
     }
 
     pub fn mark_failed(&self, id: &str, error_code: &str, error_message: &str) -> Result<()> {
@@ -304,12 +342,13 @@ impl Storage {
                 status = 'failed',
                 error_code = ?2,
                 error_message = ?3
-            WHERE id = ?1;
+            WHERE id = ?1
+              AND status IN ('probing', 'downloading', 'finalizing');
             "#,
             params![id, error_code, error_message],
         )?;
 
-        ensure_updated(id, changed)
+        ensure_transitioned(&connection, id, changed, DownloadStatus::Failed)
     }
 }
 
@@ -319,6 +358,36 @@ fn ensure_updated(id: &str, changed: usize) -> Result<()> {
     } else {
         Ok(())
     }
+}
+
+fn ensure_transitioned(
+    connection: &Connection,
+    id: &str,
+    changed: usize,
+    to: DownloadStatus,
+) -> Result<()> {
+    if changed > 0 {
+        return Ok(());
+    }
+
+    let status = connection
+        .query_row("SELECT status FROM downloads WHERE id = ?1;", [id], |row| {
+            row.get::<_, String>(0)
+        })
+        .optional()?;
+
+    let Some(status) = status else {
+        return Err(StorageError::DownloadNotFound(id.to_owned()));
+    };
+
+    let from = DownloadStatus::from_str(&status)
+        .map_err(|_| StorageError::InvalidDownloadStatus(status))?;
+
+    Err(StorageError::InvalidStatusTransition {
+        id: id.to_owned(),
+        from,
+        to,
+    })
 }
 
 fn u64_to_i64(value: u64, field: &'static str) -> Result<i64> {
@@ -347,6 +416,12 @@ mod tests {
         assert_eq!(created.status, DownloadStatus::Created);
         assert_eq!(created.downloaded_bytes, 0);
 
+        storage.mark_probing(&created.id).unwrap();
+
+        let probing = storage.get_download(&created.id).unwrap().unwrap();
+
+        assert_eq!(probing.status, DownloadStatus::Probing);
+
         storage.mark_downloading(&created.id, 1_100).unwrap();
 
         storage
@@ -369,6 +444,7 @@ mod tests {
             downloaded_bytes: 1_024,
         };
 
+        storage.mark_finalizing(&created.id).unwrap();
         storage
             .mark_completed(&created.id, &completion, 1_200)
             .unwrap();
@@ -400,6 +476,7 @@ mod tests {
             .create_download("https://example.com/broken.bin", 2_000)
             .unwrap();
 
+        storage.mark_probing(&created.id).unwrap();
         storage.mark_downloading(&created.id, 2_100).unwrap();
 
         storage
@@ -430,6 +507,7 @@ mod tests {
             .create_download("https://example.com/file.zip", 3_000)
             .unwrap();
 
+        storage.mark_probing(&created.id).unwrap();
         storage.mark_downloading(&created.id, 3_100).unwrap();
 
         let completion = DownloadCompletion {
@@ -441,6 +519,7 @@ mod tests {
             downloaded_bytes: 15,
         };
 
+        storage.mark_finalizing(&created.id).unwrap();
         storage
             .mark_completed(&created.id, &completion, 3_200)
             .unwrap();
@@ -475,5 +554,56 @@ mod tests {
         let error = storage.mark_downloading("missing-id", 1_000).unwrap_err();
 
         assert!(matches!(error, StorageError::DownloadNotFound(_)));
+    }
+
+    #[test]
+    fn rejects_duplicate_start_claim_without_creating_another_record() {
+        let directory = tempdir().unwrap();
+        let database_path = directory.path().join("downloads.db");
+        let storage = Storage::open(&database_path).unwrap();
+
+        let created = storage
+            .create_download("https://example.com/file.zip", 4_000)
+            .unwrap();
+
+        storage.mark_probing(&created.id).unwrap();
+
+        let error = storage.mark_probing(&created.id).unwrap_err();
+
+        assert!(matches!(
+            error,
+            StorageError::InvalidStatusTransition {
+                from: DownloadStatus::Probing,
+                to: DownloadStatus::Probing,
+                ..
+            }
+        ));
+
+        let downloads = storage.list_downloads().unwrap();
+        assert_eq!(downloads.len(), 1);
+        assert_eq!(downloads[0].id, created.id);
+        assert_eq!(downloads[0].status, DownloadStatus::Probing);
+    }
+
+    #[test]
+    fn rejects_skipping_the_probing_state() {
+        let directory = tempdir().unwrap();
+        let database_path = directory.path().join("downloads.db");
+        let storage = Storage::open(&database_path).unwrap();
+
+        let created = storage
+            .create_download("https://example.com/file.zip", 5_000)
+            .unwrap();
+
+        let error = storage.mark_downloading(&created.id, 5_100).unwrap_err();
+
+        assert!(matches!(
+            error,
+            StorageError::InvalidStatusTransition {
+                from: DownloadStatus::Created,
+                to: DownloadStatus::Downloading,
+                ..
+            }
+        ));
     }
 }

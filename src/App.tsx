@@ -2,6 +2,7 @@
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -48,20 +49,18 @@ type AppInfoResponse = {
   version: string;
 };
 
-type DownloadProgressEvent = {
+type DownloadTaskEvent = {
+  kind: "progress" | "updated";
   downloadId: string;
   downloadedBytes: number;
   totalBytes: number | null;
+  status: string;
+  download: DownloadListItem | null;
 };
 
-type StartDownloadResponse = {
-  id: string;
-  filename: string | null;
-  destinationPath: string | null;
-  downloadedBytes: number;
-  totalBytes: number | null;
-  status: string;
-};
+type AddDownloadAction =
+  | "start-now"
+  | "download-later";
 
 const sectionTitles: Record<
   DownloadSection,
@@ -144,16 +143,16 @@ function App() {
   const [url, setUrl] =
     useState("");
 
-  const [batchCurrentIndex, setBatchCurrentIndex] =
-    useState(0);
-  const [progress, setProgress] =
-    useState<DownloadProgressEvent | null>(null);
-
   const [error, setError] =
     useState<string | null>(null);
 
-  const [downloading, setDownloading] =
+  const [creatingTasks, setCreatingTasks] =
     useState(false);
+
+  const taskChannels = useRef(
+    new Map<string, Channel<DownloadTaskEvent>>(),
+  );
+  const startingTaskIds = useRef(new Set<string>());
 
   const refreshHealth = useCallback(async () => {
     const [healthResult, appInfoResult] =
@@ -322,7 +321,103 @@ function App() {
         item.id === selectedDownloadId,
     ) ?? null;
 
-  async function startDownload() {
+  function upsertDownloads(
+    records: DownloadListItem[],
+  ) {
+    setDownloads((current) => {
+      const next = new Map(
+        current.map((item) => [item.id, item]),
+      );
+
+      for (const record of records) {
+        next.set(record.id, record);
+      }
+
+      return [...next.values()].sort(
+        (left, right) =>
+          right.createdAt - left.createdAt ||
+          left.id.localeCompare(right.id),
+      );
+    });
+  }
+
+  function applyTaskEvent(event: DownloadTaskEvent) {
+    if (event.kind === "updated" && event.download) {
+      upsertDownloads([event.download]);
+      taskChannels.current.delete(event.downloadId);
+      return;
+    }
+
+    setDownloads((current) =>
+      current.map((item) =>
+        item.id === event.downloadId
+          ? {
+              ...item,
+              downloadedBytes: event.downloadedBytes,
+              totalBytes:
+                event.totalBytes ??
+                item.totalBytes,
+              status: event.status,
+            }
+          : item,
+      ),
+    );
+  }
+
+  async function startPersistedTask(id: string) {
+    if (startingTaskIds.current.has(id)) {
+      return;
+    }
+
+    startingTaskIds.current.add(id);
+
+    const onEvent = new Channel<DownloadTaskEvent>();
+
+    onEvent.onmessage = applyTaskEvent;
+    taskChannels.current.set(id, onEvent);
+
+    try {
+      const claimed = await invoke<DownloadListItem>(
+        "start_download",
+        {
+          id,
+          onEvent,
+        },
+      );
+
+      setDownloads((current) => {
+        const existing = current.find(
+          (item) => item.id === claimed.id,
+        );
+
+        if (!existing) {
+          return [claimed, ...current];
+        }
+
+        if (existing.status.toLowerCase() !== "created") {
+          return current;
+        }
+
+        return current.map((item) =>
+          item.id === claimed.id ? claimed : item,
+        );
+      });
+    } catch (reason) {
+      taskChannels.current.delete(id);
+      console.error(
+        `Could not start task ${id}:`,
+        reason,
+      );
+
+      await refreshDownloads();
+    } finally {
+      startingTaskIds.current.delete(id);
+    }
+  }
+
+  async function createDownloadTasks(
+    action: AddDownloadAction,
+  ) {
     const links =
       extractHttpUrls(url);
 
@@ -340,12 +435,11 @@ function App() {
       return;
     }
 
-    setDownloading(true);
-    setProgress(null);
+    setCreatingTasks(true);
     setError(null);
-    setBatchCurrentIndex(0);
 
     const failedLinks: string[] = [];
+    const createdTasks: DownloadListItem[] = [];
 
     for (
       let index = 0;
@@ -354,27 +448,19 @@ function App() {
     ) {
       const downloadUrl = links[index];
 
-      setBatchCurrentIndex(index + 1);
-      setProgress(null);
-
-      const onProgress =
-        new Channel<DownloadProgressEvent>();
-
-      onProgress.onmessage = (message) => {
-        setProgress(message);
-      };
-
       try {
-        await invoke<StartDownloadResponse>(
-          "start_download",
+        const task = await invoke<DownloadListItem>(
+          "create_download_task",
           {
             url: downloadUrl,
-            onProgress,
           },
         );
+
+        createdTasks.push(task);
+        upsertDownloads([task]);
       } catch (reason) {
         console.error(
-          `Download failed for ${downloadUrl}:`,
+          "Task creation failed:",
           reason,
         );
 
@@ -383,36 +469,35 @@ function App() {
     }
 
     try {
-      await refreshDownloads();
-
-      if (failedLinks.length === 0) {
+      if (createdTasks.length > 0) {
         setUrl("");
-        setProgress(null);
-        setBatchCurrentIndex(0);
         setModalOpen(false);
-      } else {
+      }
+
+      if (failedLinks.length > 0) {
         setUrl(
           failedLinks.join("\n"),
         );
 
-        setProgress(null);
-        setBatchCurrentIndex(0);
-
         setError(
-          `${failedLinks.length} of ${links.length} downloads failed. Only the failed links remain here so you can retry them.`,
+          `${failedLinks.length} of ${links.length} tasks could not be created.`,
         );
+      }
+
+      if (action === "start-now") {
+        for (const task of createdTasks) {
+          void startPersistedTask(task.id);
+        }
       }
     } catch (reason) {
       setError(String(reason));
     } finally {
-      setDownloading(false);
+      setCreatingTasks(false);
     }
   }
 
   async function openAddDownload() {
     setError(null);
-    setProgress(null);
-    setBatchCurrentIndex(0);
 
     if (
       addDownloadInputMode ===
@@ -446,13 +531,11 @@ function App() {
   }
 
   function closeAddDownload() {
-    if (downloading) {
+    if (creatingTasks) {
       return;
     }
 
     setError(null);
-    setProgress(null);
-    setBatchCurrentIndex(0);
     setModalOpen(false);
   }
 
@@ -674,6 +757,9 @@ function App() {
 
           <DownloadDetailsPanel
             item={selectedDownload}
+            onStart={(id) =>
+              void startPersistedTask(id)
+            }
             onClose={() =>
               setSelectedDownloadId(null)
             }
@@ -691,6 +777,9 @@ function App() {
         }
         onShowDetails={(id) =>
           setSelectedDownloadId(id)
+        }
+        onStart={(id) =>
+          void startPersistedTask(id)
         }
         onRemoveFromHistory={
           requestRemoveFromHistory
@@ -710,24 +799,17 @@ function App() {
       <AddDownloadModal
         open={modalOpen}
         url={url}
-        downloading={downloading}
+        submitting={creatingTasks}
         engineReady={allReady}
         error={error}
-        downloadedBytes={
-          progress?.downloadedBytes ?? 0
-        }
-        totalBytes={
-          progress?.totalBytes ?? null
-        }
         linkCount={
           parsedDownloadUrls.length
         }
-        currentIndex={
-          batchCurrentIndex
-        }
         onUrlChange={setUrl}
         onClose={closeAddDownload}
-        onDownload={() => void startDownload()}
+        onSubmit={(action) =>
+          void createDownloadTasks(action)
+        }
       />
     </>
   );

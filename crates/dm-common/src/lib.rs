@@ -31,6 +31,16 @@ impl DownloadStatus {
             Self::Cancelled => "cancelled",
         }
     }
+
+    pub const fn can_transition_to(self, next: Self) -> bool {
+        matches!(
+            (self, next),
+            (Self::Created, Self::Probing)
+                | (Self::Probing, Self::Downloading | Self::Failed)
+                | (Self::Downloading, Self::Finalizing | Self::Failed)
+                | (Self::Finalizing, Self::Completed | Self::Failed)
+        )
+    }
 }
 
 impl fmt::Display for DownloadStatus {
@@ -137,5 +147,28 @@ mod tests {
     #[test]
     fn rejects_unknown_status() {
         assert!(DownloadStatus::from_str("unknown").is_err());
+    }
+
+    #[test]
+    fn phase_one_lifecycle_transitions_are_legal() {
+        assert!(DownloadStatus::Created.can_transition_to(DownloadStatus::Probing));
+        assert!(DownloadStatus::Probing.can_transition_to(DownloadStatus::Downloading));
+        assert!(DownloadStatus::Downloading.can_transition_to(DownloadStatus::Finalizing));
+        assert!(DownloadStatus::Finalizing.can_transition_to(DownloadStatus::Completed));
+    }
+
+    #[test]
+    fn active_phase_one_states_can_fail() {
+        assert!(DownloadStatus::Probing.can_transition_to(DownloadStatus::Failed));
+        assert!(DownloadStatus::Downloading.can_transition_to(DownloadStatus::Failed));
+        assert!(DownloadStatus::Finalizing.can_transition_to(DownloadStatus::Failed));
+    }
+
+    #[test]
+    fn phase_one_lifecycle_rejects_invalid_jumps() {
+        assert!(!DownloadStatus::Created.can_transition_to(DownloadStatus::Downloading));
+        assert!(!DownloadStatus::Created.can_transition_to(DownloadStatus::Completed));
+        assert!(!DownloadStatus::Completed.can_transition_to(DownloadStatus::Downloading));
+        assert!(!DownloadStatus::Failed.can_transition_to(DownloadStatus::Completed));
     }
 }

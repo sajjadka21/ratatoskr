@@ -22,12 +22,12 @@ Preserve the checkpoint architecture while separating persistent task creation f
 
 ### Phase 1: Persistent Task Architecture
 
-- [ ] Define and test canonical legal transitions.
-- [ ] Implement and test atomic storage transitions.
-- [ ] Split create/start service operations and test stable identity/no duplicates.
-- [ ] Add create/start IPC and background task events.
-- [ ] Implement Start Now and Download Later UI flow with immediate modal close and row insertion.
-- [ ] Run the full quality gate and document the result.
+- [x] Define and test canonical legal transitions.
+- [x] Implement and test atomic storage transitions.
+- [x] Split create/start service operations and test stable identity/no duplicates.
+- [x] Add create/start IPC and background task events.
+- [x] Implement Start Now and Download Later UI flow with immediate modal close and row insertion.
+- [x] Run the full quality gate and document the result.
 
 ## Risks and Mitigations
 
@@ -41,6 +41,6 @@ Preserve the checkpoint architecture while separating persistent task creation f
 
 ## Checkpoint
 
-- [ ] All Phase 1 acceptance scenarios pass.
-- [ ] Formatting, tests, check, strict Clippy, and frontend build pass.
-- [ ] Phase 1 is committed as one focused, reviewable change.
+- [x] All Phase 1 acceptance scenarios pass.
+- [x] Formatting, tests, check, strict Clippy, and frontend build pass.
+- [x] Phase 1 is committed as one focused, reviewable change.

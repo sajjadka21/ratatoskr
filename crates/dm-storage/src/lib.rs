@@ -1,3 +1,4 @@
+use dm_common::DownloadStatus;
 use rusqlite::Connection;
 use std::{
     fs,
@@ -86,6 +87,13 @@ pub enum StorageError {
 
     #[error("invalid download status stored in database: {0}")]
     InvalidDownloadStatus(String),
+
+    #[error("invalid download state transition for {id}: {from} -> {to}")]
+    InvalidStatusTransition {
+        id: String,
+        from: DownloadStatus,
+        to: DownloadStatus,
+    },
 
     #[error("value for {field} is too large for SQLite INTEGER: {value}")]
     IntegerTooLarge { field: &'static str, value: u64 },

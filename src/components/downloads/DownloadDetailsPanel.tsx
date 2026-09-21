@@ -6,6 +6,7 @@
   File,
   FolderOpen,
   Link2,
+  Play,
   X,
 } from "lucide-react";
 
@@ -26,6 +27,7 @@ import "./DownloadDetailsPanel.css";
 type DownloadDetailsPanelProps = {
   item: DownloadListItem | null;
   onClose: () => void;
+  onStart: (id: string) => void;
 };
 
 type CopiedField =
@@ -77,6 +79,7 @@ function statusLabel(status: string): string {
 export function DownloadDetailsPanel({
   item,
   onClose,
+  onStart,
 }: DownloadDetailsPanelProps) {
   const [copiedField, setCopiedField] =
     useState<CopiedField>(null);
@@ -215,6 +218,16 @@ export function DownloadDetailsPanel({
         </div>
 
         <div className="download-details__actions">
+          {status === "created" ? (
+            <button
+              type="button"
+              onClick={() => onStart(item.id)}
+            >
+              <Play size={14} />
+              Start Download
+            </button>
+          ) : null}
+
           <button
             type="button"
             onClick={() =>

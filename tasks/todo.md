@@ -16,9 +16,9 @@
 
 **Acceptance criteria:**
 
-- [ ] Legal Phase 1 transitions are explicit in `dm-common`.
-- [ ] Illegal transitions return a typed error.
-- [ ] Unit tests cover allowed and rejected transitions.
+- [x] Legal Phase 1 transitions are explicit in `dm-common`.
+- [x] Illegal transitions return a typed error.
+- [x] Unit tests cover allowed and rejected transitions.
 
 **Verification:** focused `dm-common` tests, then workspace tests.
 
@@ -28,9 +28,9 @@
 
 **Acceptance criteria:**
 
-- [ ] A persisted created task can be atomically claimed for start.
-- [ ] A second claim is rejected without changing identity or adding a row.
-- [ ] Storage lifecycle tests cover creation, transitions, completion, and failure.
+- [x] A persisted created task can be atomically claimed for start.
+- [x] A second claim is rejected without changing identity or adding a row.
+- [x] Storage lifecycle tests cover creation, transitions, completion, and failure.
 
 **Verification:** focused `dm-storage` tests, then workspace tests.
 
@@ -40,9 +40,9 @@
 
 **Acceptance criteria:**
 
-- [ ] Creating a task validates locally and performs no network request.
-- [ ] Starting accepts an existing task ID and preserves it through completion/failure.
-- [ ] Integration tests prove one database row per task lifecycle.
+- [x] Creating a task validates locally and performs no network request.
+- [x] Starting accepts an existing task ID and preserves it through completion/failure.
+- [x] Integration tests prove one database row per task lifecycle.
 
 **Verification:** focused `dm-core` tests against a local HTTP server.
 
@@ -52,9 +52,9 @@
 
 **Acceptance criteria:**
 
-- [ ] Create-task IPC returns an immediately renderable persisted record.
-- [ ] Start-by-ID claims before background spawn and returns immediately.
-- [ ] Progress and terminal task events contain no sensitive request context.
+- [x] Create-task IPC returns an immediately renderable persisted record.
+- [x] Start-by-ID claims before background spawn and returns immediately.
+- [x] Progress and terminal task events contain no sensitive request context.
 
 **Verification:** Rust tests plus workspace check and strict Clippy.
 
@@ -64,9 +64,9 @@
 
 **Acceptance criteria:**
 
-- [ ] Both actions create persisted task rows and close the modal immediately.
-- [ ] Download Later performs no transfer.
-- [ ] Start Now starts the same IDs in the background and updates rows from backend events.
+- [x] Both actions create persisted task rows and close the modal immediately.
+- [x] Download Later performs no transfer.
+- [x] Start Now starts the same IDs in the background and updates rows from backend events.
 
 **Verification:** TypeScript build and Rust lifecycle tests.
 
@@ -76,9 +76,9 @@
 
 **Acceptance criteria:**
 
-- [ ] All five required commands pass.
-- [ ] `IMPLEMENTATION_PROGRESS.md` contains final Phase 1 evidence.
-- [ ] The Phase 1 diff is committed without unrelated files.
+- [x] All five required commands pass.
+- [x] `IMPLEMENTATION_PROGRESS.md` contains final Phase 1 evidence.
+- [x] The Phase 1 diff is committed without unrelated files.
 
 **Verification:** Git status and commit inspection.
 

@@ -44,7 +44,7 @@ Status: Complete
 
 ## Phase 1 - Persistent Task Architecture
 
-Status: In progress
+Status: Complete
 
 ### Plan
 
@@ -54,6 +54,36 @@ Status: In progress
 4. Add create/start IPC contracts and thin Tauri commands; claim the task before spawning background work and stream task events without logging source URLs.
 5. Update React so Start Now and Download Later create rows immediately, close the modal immediately, and let background events update the list.
 6. Run the complete quality gate, update this document with results, and create the focused Phase 1 commit.
+
+### Implemented
+
+- Added canonical Phase 1 transition rules for `created -> probing -> downloading -> finalizing -> completed`, with typed rejection of invalid transitions.
+- Added atomic SQLite transition guards so concurrent/double start attempts cannot claim the same task twice.
+- Split task creation from execution in `dm-core`; creation performs local URL validation only and does not contact the source.
+- Starting now accepts an existing task ID, preserves it through completion/failure, and never inserts a second record.
+- Added a bounded Rust background executor (three simultaneous transfers) and coalesced progress persistence instead of writing SQLite on every chunk.
+- Added background IPC events with UI delivery capped at 10 progress updates per second per task.
+- Replaced full-URL transfer logging and raw persisted HTTP errors with task-ID logging and redacted failure messages.
+- Added Start Now / Download Later split actions. Both create rows immediately and close the modal after persistence; only Start Now launches background work.
+- Added real Start Download actions for created tasks in the context menu and details panel.
+- Kept schema version 1 because all Phase 1 fields and states already exist; no data-destructive or empty migration was introduced.
+
+### Tests added/updated
+
+- Canonical legal and illegal state transitions.
+- Atomic duplicate-start rejection and required probing order.
+- Network-free task creation and non-HTTP rejection without persistence.
+- Stable task identity and single-record completion lifecycle.
+- Stable task identity on HTTP failure with redacted persisted error text.
+- Background IPC progress and authoritative-record event contracts.
+
+### Quality gate
+
+- `cargo fmt --all` - passed
+- `cargo test --workspace` - passed (29 tests)
+- `cargo check --workspace` - passed
+- `cargo clippy --workspace --all-targets -- -D warnings` - passed
+- `npm run build` - passed with the machine-specific npm prefix override documented in Phase 0
 
 ### Scope boundary
 

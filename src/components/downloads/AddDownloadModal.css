@@ -198,27 +198,6 @@
   line-height: 1.45;
 }
 
-.add-download-modal__advanced {
-  width: 100%;
-  margin-top: 14px;
-  padding: 10px 0 0;
-
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-
-  color: var(--text-muted);
-  background: transparent;
-
-  font-size: 10px;
-
-  opacity: 0.55;
-}
-
-.add-download-modal__advanced span {
-  font-size: 9px;
-}
-
 .add-download-modal__footer {
   padding: 15px 22px;
 
@@ -274,10 +253,102 @@
 }
 
 .add-download-modal__submit:disabled,
+.add-download-modal__dropdown-toggle:disabled,
 .add-download-modal__cancel:disabled,
 .add-download-modal__close:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+.add-download-modal__split {
+  position: relative;
+
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.add-download-modal__split .add-download-modal__submit {
+  border-radius: 9px 0 0 9px;
+}
+
+.add-download-modal__dropdown-toggle {
+  width: 34px;
+
+  display: grid;
+  place-items: center;
+
+  color: #fff;
+  background: var(--accent);
+
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0 9px 9px 0;
+
+  cursor: pointer;
+}
+
+.add-download-modal__dropdown-toggle:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.add-download-modal__action-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 2;
+
+  width: 292px;
+  padding: 6px;
+
+  background: var(--bg-elevated);
+
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+
+  box-shadow: var(--shadow-modal);
+}
+
+.add-download-modal__action-menu button {
+  width: 100%;
+  padding: 10px;
+
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+
+  color: var(--text-secondary);
+  background: transparent;
+
+  border-radius: 7px;
+
+  text-align: left;
+  cursor: pointer;
+}
+
+.add-download-modal__action-menu button:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
+}
+
+.add-download-modal__action-menu button > svg {
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+
+.add-download-modal__action-menu span {
+  display: grid;
+  gap: 3px;
+}
+
+.add-download-modal__action-menu strong {
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.add-download-modal__action-menu small {
+  color: var(--text-muted);
+
+  font-size: 9px;
+  line-height: 1.4;
 }
 
 @keyframes modal-in {
@@ -300,42 +371,6 @@
   to {
     opacity: 1;
   }
-}
-
-.add-download-modal__progress {
-  margin-top: 18px;
-}
-
-.add-download-modal__progress-track {
-  width: 100%;
-  height: 5px;
-
-  overflow: hidden;
-
-  background: var(--bg-elevated);
-  border-radius: 999px;
-}
-
-.add-download-modal__progress-fill {
-  height: 100%;
-
-  background: var(--accent);
-  border-radius: inherit;
-
-  transition: width 120ms linear;
-}
-
-.add-download-modal__progress-meta {
-  margin-top: 8px;
-
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-
-  color: var(--text-muted);
-
-  font-size: 10px;
 }
 
 /* Input focus fix — wrapper owns the focus ring */
@@ -433,13 +468,4 @@
 
 .add-download-modal__detection--warning {
   color: var(--warning);
-}
-
-.add-download-modal__batch-progress {
-  margin-bottom: 8px;
-
-  color: var(--text-secondary);
-
-  font-size: 10px;
-  font-weight: 600;
 }

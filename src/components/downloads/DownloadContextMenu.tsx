@@ -4,6 +4,7 @@
   FileText,
   FolderOpen,
   Link2,
+  Play,
   Trash2,
 } from "lucide-react";
 
@@ -29,6 +30,7 @@ type DownloadContextMenuProps = {
   y: number;
   onClose: () => void;
   onShowDetails: (id: string) => void;
+  onStart: (id: string) => void;
   onRemoveFromHistory: (
     item: DownloadListItem,
   ) => void;
@@ -40,6 +42,7 @@ export function DownloadContextMenu({
   y,
   onClose,
   onShowDetails,
+  onStart,
   onRemoveFromHistory,
 }: DownloadContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -189,6 +192,24 @@ async function handleOpenFile() {
       }}
       role="menu"
     >
+      {status === "created" ? (
+        <>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onStart(item.id);
+              onClose();
+            }}
+          >
+            <Play size={15} />
+            <span>Start Download</span>
+          </button>
+
+          <div className="download-context-menu__divider" />
+        </>
+      ) : null}
+
       <button
         type="button"
         role="menuitem"

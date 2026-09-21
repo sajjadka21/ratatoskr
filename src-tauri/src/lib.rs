@@ -1,13 +1,19 @@
+use dm_common::DownloadRecord;
 use dm_core::{service::DownloadService, CoreService};
 use dm_ipc::{
-    AppInfoResponse, ComponentHealth, DownloadListItemResponse, DownloadProgressEvent,
-    HealthCheckResponse, StartDownloadResponse,
+    AppInfoResponse, ComponentHealth, DownloadListItemResponse, DownloadTaskEvent,
+    HealthCheckResponse,
 };
 use dm_storage::Storage;
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tauri::{ipc::Channel, AppHandle, Manager, State};
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
+
+const PROGRESS_EVENT_INTERVAL: Duration = Duration::from_millis(100);
 
 pub struct AppState {
     core: CoreService,
@@ -64,23 +70,27 @@ fn list_downloads(state: State<'_, AppState>) -> Result<Vec<DownloadListItemResp
 
     Ok(downloads
         .into_iter()
-        .map(|record| DownloadListItemResponse {
-            id: record.id,
-            source_url: record.source_url,
-            resolved_url: record.resolved_url,
-            filename: record.filename,
-            destination_path: record.destination_path,
-            mime_type: record.mime_type,
-            total_bytes: record.total_bytes,
-            downloaded_bytes: record.downloaded_bytes,
-            status: record.status.to_string(),
-            created_at: record.created_at,
-            started_at: record.started_at,
-            completed_at: record.completed_at,
-            error_code: record.error_code,
-            error_message: record.error_message,
-        })
+        .map(download_list_item_response)
         .collect())
+}
+
+fn download_list_item_response(record: DownloadRecord) -> DownloadListItemResponse {
+    DownloadListItemResponse {
+        id: record.id,
+        source_url: record.source_url,
+        resolved_url: record.resolved_url,
+        filename: record.filename,
+        destination_path: record.destination_path,
+        mime_type: record.mime_type,
+        total_bytes: record.total_bytes,
+        downloaded_bytes: record.downloaded_bytes,
+        status: record.status.to_string(),
+        created_at: record.created_at,
+        started_at: record.started_at,
+        completed_at: record.completed_at,
+        error_code: record.error_code,
+        error_message: record.error_message,
+    }
 }
 #[tauri::command]
 fn remove_download(
@@ -151,61 +161,95 @@ fn set_add_download_input_mode(state: State<'_, AppState>, mode: String) -> Resu
         .map_err(|error| error.to_string())
 }
 #[tauri::command]
-async fn start_download(
-    app: AppHandle,
+fn create_download_task(
     state: State<'_, AppState>,
     url: String,
-    on_progress: Channel<DownloadProgressEvent>,
-) -> Result<StartDownloadResponse, String> {
+) -> Result<DownloadListItemResponse, String> {
+    state
+        .downloads
+        .create_task(&url)
+        .map(download_list_item_response)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn start_download(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    on_event: Channel<DownloadTaskEvent>,
+) -> Result<DownloadListItemResponse, String> {
     let destination_directory = app
         .path()
         .download_dir()
         .map_err(|error| error.to_string())?;
 
     let service = state.downloads.clone();
+    let storage = Arc::clone(&state.storage);
+    let claimed = service.claim_task(&id).map_err(|error| error.to_string())?;
+    let response = download_list_item_response(claimed);
+    let task_id = id.clone();
+    let progress_events = on_event.clone();
 
-    info!(
-        url = %url,
-        destination = %destination_directory.display(),
-        "starting user download"
-    );
+    info!(download_id = %task_id, "starting background download");
 
-    let record = service
-        .start_download_with_progress(
-            &url,
-            &destination_directory,
-            move |download_id, progress| {
-                let event = DownloadProgressEvent {
-                    download_id: download_id.to_owned(),
-                    downloaded_bytes: progress.downloaded_bytes,
-                    total_bytes: progress.total_bytes,
-                };
+    tauri::async_runtime::spawn(async move {
+        let mut last_progress_event_at = Instant::now();
+        let mut sent_progress_event = false;
 
-                if let Err(error) = on_progress.send(event) {
-                    warn!(
-                        error = %error,
-                        "failed to send download progress"
+        let result = service
+            .execute_claimed_task_with_progress(
+                &task_id,
+                &destination_directory,
+                move |download_id, progress| {
+                    let reached_known_end = progress.total_bytes == Some(progress.downloaded_bytes);
+                    let should_send = !sent_progress_event
+                        || reached_known_end
+                        || last_progress_event_at.elapsed() >= PROGRESS_EVENT_INTERVAL;
+
+                    if !should_send {
+                        return;
+                    }
+
+                    let event = DownloadTaskEvent::progress(
+                        download_id,
+                        progress.downloaded_bytes,
+                        progress.total_bytes,
                     );
+
+                    if let Err(error) = progress_events.send(event) {
+                        warn!(
+                            error = %error,
+                            "failed to send background download event"
+                        );
+                    }
+
+                    sent_progress_event = true;
+                    last_progress_event_at = Instant::now();
+                },
+            )
+            .await;
+
+        match result {
+            Ok(record) => {
+                info!(download_id = %task_id, "background download completed");
+                let _ = on_event.send(DownloadTaskEvent::updated(download_list_item_response(
+                    record,
+                )));
+            }
+            Err(_) => {
+                warn!(download_id = %task_id, "background download failed");
+
+                if let Ok(Some(record)) = storage.get_download(&task_id) {
+                    let _ = on_event.send(DownloadTaskEvent::updated(download_list_item_response(
+                        record,
+                    )));
                 }
-            },
-        )
-        .await
-        .map_err(|error| error.to_string())?;
+            }
+        }
+    });
 
-    info!(
-        download_id = %record.id,
-        bytes = record.downloaded_bytes,
-        "download completed"
-    );
-
-    Ok(StartDownloadResponse {
-        id: record.id,
-        filename: record.filename,
-        destination_path: record.destination_path,
-        downloaded_bytes: record.downloaded_bytes,
-        total_bytes: record.total_bytes,
-        status: record.status.to_string(),
-    })
+    Ok(response)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -248,6 +292,7 @@ pub fn run() {
             get_add_download_input_mode,
             set_add_download_input_mode,
             remove_download,
+            create_download_task,
             start_download
         ])
         .run(tauri::generate_context!())

@@ -4244,6 +4244,7 @@ dependencies = [
 name = "tauri-app"
 version = "0.1.0"
 dependencies = [
+ "dm-common",
  "dm-core",
  "dm-ipc",
  "dm-storage",

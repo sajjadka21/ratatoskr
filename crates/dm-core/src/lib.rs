@@ -33,6 +33,27 @@ pub enum DownloadError {
     ProgressCallback(String),
 }
 
+impl DownloadError {
+    pub fn redacted_message(&self) -> String {
+        match self {
+            Self::InvalidUrl(message) => format!("invalid URL: {message}"),
+            Self::UnsupportedScheme(scheme) => {
+                format!("unsupported URL scheme: {scheme}")
+            }
+            Self::Http(error) if error.is_timeout() => "HTTP request timed out".to_owned(),
+            Self::Http(error) if error.is_connect() => {
+                "could not connect to the download server".to_owned()
+            }
+            Self::Http(error) => error
+                .status()
+                .map(|status| format!("HTTP request failed with status {status}"))
+                .unwrap_or_else(|| "HTTP request failed".to_owned()),
+            Self::Io(error) => format!("filesystem error: {error}"),
+            Self::ProgressCallback(_) => "could not persist download progress".to_owned(),
+        }
+    }
+}
+
 pub type Result<T> = std::result::Result<T, DownloadError>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,15 +106,7 @@ impl Downloader {
     where
         F: FnMut(DownloadProgress) -> Result<()> + Send,
     {
-        let parsed_url =
-            Url::parse(source_url).map_err(|error| DownloadError::InvalidUrl(error.to_string()))?;
-
-        match parsed_url.scheme() {
-            "http" | "https" => {}
-            scheme => {
-                return Err(DownloadError::UnsupportedScheme(scheme.to_owned()));
-            }
-        }
+        let parsed_url = validate_source_url(source_url)?;
 
         let destination_directory = destination_directory.as_ref();
         fs::create_dir_all(destination_directory).await?;
@@ -165,6 +178,16 @@ impl Downloader {
             final_path,
             downloaded_bytes,
         })
+    }
+}
+
+pub(crate) fn validate_source_url(source_url: &str) -> Result<Url> {
+    let parsed_url =
+        Url::parse(source_url).map_err(|error| DownloadError::InvalidUrl(error.to_string()))?;
+
+    match parsed_url.scheme() {
+        "http" | "https" => Ok(parsed_url),
+        scheme => Err(DownloadError::UnsupportedScheme(scheme.to_owned())),
     }
 }
 

@@ -1,4 +1,6 @@
-﻿import {
+import {
+  ChevronDown,
+  Clock3,
   Download,
   Layers3,
   Link2,
@@ -8,135 +10,108 @@
 import {
   useEffect,
   useRef,
+  useState,
 } from "react";
 
 import "./AddDownloadModal.css";
 
+type AddDownloadAction =
+  | "start-now"
+  | "download-later";
+
 type AddDownloadModalProps = {
   open: boolean;
   url: string;
-  downloading: boolean;
+  submitting: boolean;
   engineReady: boolean;
   error: string | null;
-
-  downloadedBytes: number;
-  totalBytes: number | null;
-
   linkCount: number;
-  currentIndex: number;
-
   onUrlChange: (value: string) => void;
   onClose: () => void;
-  onDownload: () => void;
+  onSubmit: (action: AddDownloadAction) => void;
 };
-
-function formatBytes(bytes: number): string {
-  if (bytes <= 0) return "0 B";
-
-  const units = [
-    "B",
-    "KB",
-    "MB",
-    "GB",
-    "TB",
-  ];
-
-  const index = Math.min(
-    Math.floor(
-      Math.log(bytes) / Math.log(1024),
-    ),
-    units.length - 1,
-  );
-
-  const value =
-    bytes / 1024 ** index;
-
-  return `${value.toFixed(
-    index === 0 ? 0 : 2,
-  )} ${units[index]}`;
-}
 
 export function AddDownloadModal({
   open,
   url,
-  downloading,
+  submitting,
   engineReady,
   error,
-  downloadedBytes,
-  totalBytes,
   linkCount,
-  currentIndex,
   onUrlChange,
   onClose,
-  onDownload,
+  onSubmit,
 }: AddDownloadModalProps) {
   const inputRef =
     useRef<HTMLTextAreaElement>(null);
+  const actionRef =
+    useRef<HTMLDivElement>(null);
+  const [actionMenuOpen, setActionMenuOpen] =
+    useState(false);
 
-  const isBatch =
-    linkCount > 1;
-
-  const percent =
-    totalBytes && totalBytes > 0
-      ? Math.min(
-          100,
-          (
-            downloadedBytes /
-            totalBytes
-          ) * 100,
-        )
-      : null;
+  const isBatch = linkCount > 1;
+  const actionsDisabled =
+    submitting || !engineReady || linkCount === 0;
 
   useEffect(() => {
     if (!open) return;
 
-    const timer =
-      window.setTimeout(() => {
-        inputRef.current?.focus();
+    const timer = window.setTimeout(() => {
+      inputRef.current?.focus();
 
-        const length =
-          inputRef.current?.value.length ?? 0;
+      const length =
+        inputRef.current?.value.length ?? 0;
 
-        inputRef.current?.setSelectionRange(
-          length,
-          length,
-        );
-      }, 60);
+      inputRef.current?.setSelectionRange(
+        length,
+        length,
+      );
+    }, 60);
 
-    return () =>
-      window.clearTimeout(timer);
+    return () => window.clearTimeout(timer);
   }, [open]);
 
   useEffect(() => {
     if (!open) return;
 
-    function handleKeyDown(
-      event: KeyboardEvent,
-    ) {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape" || submitting) {
+        return;
+      }
+
+      if (actionMenuOpen) {
+        setActionMenuOpen(false);
+        return;
+      }
+
+      onClose();
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [actionMenuOpen, onClose, open, submitting]);
+
+  useEffect(() => {
+    if (!actionMenuOpen) return;
+
+    function handlePointerDown(event: PointerEvent) {
       if (
-        event.key === "Escape" &&
-        !downloading
+        event.target instanceof Node &&
+        !actionRef.current?.contains(event.target)
       ) {
-        onClose();
+        setActionMenuOpen(false);
       }
     }
 
-    window.addEventListener(
-      "keydown",
-      handleKeyDown,
-    );
+    window.addEventListener("pointerdown", handlePointerDown);
 
     return () => {
-      window.removeEventListener(
-        "keydown",
-        handleKeyDown,
-      );
+      window.removeEventListener("pointerdown", handlePointerDown);
     };
-  }, [
-    open,
-    downloading,
-    onClose,
-  ]);
+  }, [actionMenuOpen]);
 
   if (!open) {
     return null;
@@ -148,9 +123,8 @@ export function AddDownloadModal({
       role="presentation"
       onMouseDown={(event) => {
         if (
-          event.target ===
-            event.currentTarget &&
-          !downloading
+          event.target === event.currentTarget &&
+          !submitting
         ) {
           onClose();
         }
@@ -175,9 +149,7 @@ export function AddDownloadModal({
             <div>
               <div className="add-download-modal__title-row">
                 <h2 id="add-download-title">
-                  {isBatch
-                    ? "Add Batch"
-                    : "Add Download"}
+                  {isBatch ? "Add Batch" : "Add Download"}
                 </h2>
 
                 {isBatch ? (
@@ -199,7 +171,7 @@ export function AddDownloadModal({
             type="button"
             className="add-download-modal__close"
             onClick={onClose}
-            disabled={downloading}
+            disabled={submitting}
             aria-label="Close"
           >
             <X size={18} />
@@ -208,9 +180,7 @@ export function AddDownloadModal({
 
         <div className="add-download-modal__body">
           <label className="add-download-modal__label">
-            {isBatch
-              ? "Download links"
-              : "URL"}
+            {isBatch ? "Download links" : "URL"}
           </label>
 
           <div
@@ -225,33 +195,21 @@ export function AddDownloadModal({
             <textarea
               ref={inputRef}
               value={url}
-              rows={
-                isBatch
-                  ? Math.min(
-                      Math.max(linkCount, 3),
-                      7,
-                    )
-                  : 1
-              }
-              onChange={(event) =>
-                onUrlChange(
-                  event.target.value,
-                )
-              }
+              rows={isBatch ? Math.min(Math.max(linkCount, 3), 7) : 1}
+              onChange={(event) => onUrlChange(event.target.value)}
               onKeyDown={(event) => {
                 if (
                   event.key === "Enter" &&
                   !event.shiftKey &&
                   !isBatch &&
                   linkCount === 1 &&
-                  !downloading &&
-                  engineReady
+                  !actionsDisabled
                 ) {
                   event.preventDefault();
-                  onDownload();
+                  onSubmit("start-now");
                 }
               }}
-              disabled={downloading}
+              disabled={submitting}
               placeholder={
                 isBatch
                   ? "One download link per line"
@@ -265,17 +223,12 @@ export function AddDownloadModal({
               {isBatch ? (
                 <>
                   <Layers3 size={13} />
-                  <span>
-                    Batch detected ·{" "}
-                    {linkCount} unique links
-                  </span>
+                  <span>Batch detected · {linkCount} unique links</span>
                 </>
               ) : (
                 <>
                   <Link2 size={13} />
-                  <span>
-                    1 valid download link
-                  </span>
+                  <span>1 valid download link</span>
                 </>
               )}
             </div>
@@ -287,74 +240,14 @@ export function AddDownloadModal({
 
           <div className="add-download-modal__destination">
             <span>Destination</span>
-
-            <strong>
-              System Downloads folder
-            </strong>
+            <strong>System Downloads folder</strong>
           </div>
-
-          {downloading ? (
-            <div className="add-download-modal__progress">
-              {isBatch ? (
-                <div className="add-download-modal__batch-progress">
-                  Downloading{" "}
-                  {Math.max(
-                    currentIndex,
-                    1,
-                  )}{" "}
-                  of {linkCount}
-                </div>
-              ) : null}
-
-              <div className="add-download-modal__progress-track">
-                <div
-                  className="add-download-modal__progress-fill"
-                  style={{
-                    width: `${
-                      percent ?? 100
-                    }%`,
-                    opacity:
-                      percent === null
-                        ? 0.45
-                        : 1,
-                  }}
-                />
-              </div>
-
-              <div className="add-download-modal__progress-meta">
-                <span>
-                  {formatBytes(
-                    downloadedBytes,
-                  )}
-                </span>
-
-                <span>
-                  {totalBytes
-                    ? `${formatBytes(
-                        totalBytes,
-                      )} · ${percent?.toFixed(
-                        1,
-                      )}%`
-                    : "Downloading..."}
-                </span>
-              </div>
-            </div>
-          ) : null}
 
           {error ? (
             <div className="add-download-modal__error">
               {error}
             </div>
           ) : null}
-
-          <button
-            type="button"
-            className="add-download-modal__advanced"
-            disabled
-          >
-            Advanced options
-            <span>Coming later</span>
-          </button>
         </div>
 
         <footer className="add-download-modal__footer">
@@ -362,38 +255,83 @@ export function AddDownloadModal({
             type="button"
             className="add-download-modal__cancel"
             onClick={onClose}
-            disabled={downloading}
+            disabled={submitting}
           >
             Cancel
           </button>
 
-          <button
-            type="button"
-            className="add-download-modal__submit"
-            onClick={onDownload}
-            disabled={
-              downloading ||
-              !engineReady ||
-              linkCount === 0
-            }
+          <div
+            ref={actionRef}
+            className="add-download-modal__split"
           >
-            {isBatch ? (
-              <Layers3 size={16} />
-            ) : (
-              <Download size={16} />
-            )}
+            <button
+              type="button"
+              className="add-download-modal__submit"
+              onClick={() => onSubmit("start-now")}
+              disabled={actionsDisabled}
+            >
+              {isBatch ? (
+                <Layers3 size={16} />
+              ) : (
+                <Download size={16} />
+              )}
 
-            {downloading
-              ? isBatch
-                ? `Downloading ${Math.max(
-                    currentIndex,
-                    1,
-                  )} of ${linkCount}`
-                : "Downloading..."
-              : isBatch
-                ? `Download ${linkCount} Files`
-                : "Download"}
-          </button>
+              {submitting
+                ? "Creating..."
+                : isBatch
+                  ? `Start ${linkCount} Downloads`
+                  : "Start Download"}
+            </button>
+
+            <button
+              type="button"
+              className="add-download-modal__dropdown-toggle"
+              aria-label="Choose download action"
+              aria-haspopup="menu"
+              aria-expanded={actionMenuOpen}
+              onClick={() => setActionMenuOpen((current) => !current)}
+              disabled={actionsDisabled}
+            >
+              <ChevronDown size={15} />
+            </button>
+
+            {actionMenuOpen ? (
+              <div
+                className="add-download-modal__action-menu"
+                role="menu"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setActionMenuOpen(false);
+                    onSubmit("start-now");
+                  }}
+                >
+                  <Download size={15} />
+                  <span>
+                    <strong>Start Now</strong>
+                    <small>Create tasks and run them in the background</small>
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setActionMenuOpen(false);
+                    onSubmit("download-later");
+                  }}
+                >
+                  <Clock3 size={15} />
+                  <span>
+                    <strong>Download Later</strong>
+                    <small>Create tasks without network activity</small>
+                  </span>
+                </button>
+              </div>
+            ) : null}
+          </div>
         </footer>
       </section>
     </div>

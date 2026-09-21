@@ -130,6 +130,14 @@ impl QueueService {
         )?)
     }
 
+    pub fn start_queue(&self, queue_id: &str) -> Result<QueueRecord> {
+        Ok(self.storage.set_queue_state(
+            queue_id,
+            QueueState::Running,
+            unix_timestamp_seconds()?,
+        )?)
+    }
+
     pub async fn run_queue<F>(
         &self,
         queue_id: &str,

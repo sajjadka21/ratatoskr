@@ -102,17 +102,91 @@ pub struct DownloadListItemResponse {
     pub status: String,
     pub queue_id: Option<String>,
     pub priority: String,
+    pub queue_position: Option<i64>,
     pub created_at: i64,
     pub started_at: Option<i64>,
     pub completed_at: Option<i64>,
     pub error_code: Option<String>,
     pub error_message: Option<String>,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueResponse {
+    pub id: String,
+    pub name: String,
+    pub enabled: bool,
+    pub state: String,
+    pub sort_order: i64,
+    pub max_concurrent: u32,
+    pub max_concurrent_per_host: Option<u32>,
+    pub default_priority: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum QueueRunnerEventKind {
+    QueueUpdated,
+    TaskProgress,
+    TaskUpdated,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueRunnerEventResponse {
+    pub kind: QueueRunnerEventKind,
+    pub queue: Option<QueueResponse>,
+    pub download: Option<DownloadListItemResponse>,
+    pub download_id: Option<String>,
+    pub downloaded_bytes: Option<u64>,
+    pub total_bytes: Option<u64>,
+}
+
+impl QueueRunnerEventResponse {
+    pub fn queue_updated(queue: QueueResponse) -> Self {
+        Self {
+            kind: QueueRunnerEventKind::QueueUpdated,
+            queue: Some(queue),
+            download: None,
+            download_id: None,
+            downloaded_bytes: None,
+            total_bytes: None,
+        }
+    }
+
+    pub fn task_progress(
+        download_id: impl Into<String>,
+        downloaded_bytes: u64,
+        total_bytes: Option<u64>,
+    ) -> Self {
+        Self {
+            kind: QueueRunnerEventKind::TaskProgress,
+            queue: None,
+            download: None,
+            download_id: Some(download_id.into()),
+            downloaded_bytes: Some(downloaded_bytes),
+            total_bytes,
+        }
+    }
+
+    pub fn task_updated(download: DownloadListItemResponse) -> Self {
+        Self {
+            kind: QueueRunnerEventKind::TaskUpdated,
+            queue: None,
+            download: Some(download),
+            download_id: None,
+            downloaded_bytes: None,
+            total_bytes: None,
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::{
         ComponentHealth, DownloadListItemResponse, DownloadTaskEvent, DownloadTaskEventKind,
-        HealthState,
+        HealthState, QueueResponse, QueueRunnerEventKind, QueueRunnerEventResponse,
     };
 
     #[test]
@@ -155,6 +229,7 @@ mod tests {
             status: "created".to_owned(),
             queue_id: None,
             priority: "normal".to_owned(),
+            queue_position: None,
             created_at: 1,
             started_at: None,
             completed_at: None,
@@ -167,5 +242,27 @@ mod tests {
         assert_eq!(event.kind, DownloadTaskEventKind::Updated);
         assert_eq!(event.download_id, download.id);
         assert_eq!(event.download, Some(download));
+    }
+
+    #[test]
+    fn queue_updated_event_contains_only_the_queue_record() {
+        let queue = QueueResponse {
+            id: "default".to_owned(),
+            name: "Default Queue".to_owned(),
+            enabled: true,
+            state: "running".to_owned(),
+            sort_order: 0,
+            max_concurrent: 3,
+            max_concurrent_per_host: Some(2),
+            default_priority: "normal".to_owned(),
+            created_at: 1,
+            updated_at: 2,
+        };
+        let event = QueueRunnerEventResponse::queue_updated(queue.clone());
+
+        assert_eq!(event.kind, QueueRunnerEventKind::QueueUpdated);
+        assert_eq!(event.queue, Some(queue));
+        assert!(event.download.is_none());
+        assert!(event.download_id.is_none());
     }
 }

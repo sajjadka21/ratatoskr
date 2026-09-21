@@ -1,12 +1,18 @@
-use dm_common::DownloadRecord;
-use dm_core::{service::DownloadService, CoreService};
+use dm_common::{DownloadPriority, DownloadRecord, QueueRecord, QueueState};
+use dm_core::{
+    queue::{QueueRunnerEvent, QueueService},
+    service::DownloadService,
+    CoreService,
+};
 use dm_ipc::{
     AppInfoResponse, ComponentHealth, DownloadListItemResponse, DownloadTaskEvent,
-    HealthCheckResponse,
+    HealthCheckResponse, QueueResponse, QueueRunnerEventResponse,
 };
 use dm_storage::Storage;
 use std::{
-    sync::Arc,
+    collections::HashMap,
+    str::FromStr,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use tauri::{ipc::Channel, AppHandle, Manager, State};
@@ -19,6 +25,7 @@ pub struct AppState {
     core: CoreService,
     storage: Arc<Storage>,
     downloads: DownloadService,
+    queues: QueueService,
 }
 
 fn init_logging() {
@@ -87,12 +94,209 @@ fn download_list_item_response(record: DownloadRecord) -> DownloadListItemRespon
         status: record.status.to_string(),
         queue_id: record.queue_id,
         priority: record.priority.to_string(),
+        queue_position: record.queue_position,
         created_at: record.created_at,
         started_at: record.started_at,
         completed_at: record.completed_at,
         error_code: record.error_code,
         error_message: record.error_message,
     }
+}
+
+fn queue_response(record: QueueRecord) -> QueueResponse {
+    QueueResponse {
+        id: record.id,
+        name: record.name,
+        enabled: record.enabled,
+        state: record.state.to_string(),
+        sort_order: record.sort_order,
+        max_concurrent: record.max_concurrent,
+        max_concurrent_per_host: record.max_concurrent_per_host,
+        default_priority: record.default_priority.to_string(),
+        created_at: record.created_at,
+        updated_at: record.updated_at,
+    }
+}
+
+fn parse_priority(value: &str) -> Result<DownloadPriority, String> {
+    DownloadPriority::from_str(value).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn list_queues(state: State<'_, AppState>) -> Result<Vec<QueueResponse>, String> {
+    state
+        .queues
+        .list_queues()
+        .map(|queues| queues.into_iter().map(queue_response).collect())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn create_queue(
+    state: State<'_, AppState>,
+    name: String,
+    max_concurrent: u32,
+    max_concurrent_per_host: Option<u32>,
+    default_priority: String,
+) -> Result<QueueResponse, String> {
+    state
+        .queues
+        .create_queue(
+            &name,
+            max_concurrent,
+            max_concurrent_per_host,
+            parse_priority(&default_priority)?,
+        )
+        .map(queue_response)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn enqueue_download_task(
+    state: State<'_, AppState>,
+    id: String,
+    queue_id: String,
+    priority: Option<String>,
+) -> Result<DownloadListItemResponse, String> {
+    let priority = priority.as_deref().map(parse_priority).transpose()?;
+    state
+        .queues
+        .enqueue_task(&id, &queue_id, priority)
+        .map(download_list_item_response)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn move_queued_download(
+    state: State<'_, AppState>,
+    id: String,
+    queue_id: String,
+) -> Result<DownloadListItemResponse, String> {
+    state
+        .queues
+        .move_task(&id, &queue_id)
+        .map(download_list_item_response)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn remove_download_from_queue(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<DownloadListItemResponse, String> {
+    state
+        .queues
+        .remove_task(&id)
+        .map(download_list_item_response)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn set_download_priority(
+    state: State<'_, AppState>,
+    id: String,
+    priority: String,
+) -> Result<DownloadListItemResponse, String> {
+    state
+        .queues
+        .set_task_priority(&id, parse_priority(&priority)?)
+        .map(download_list_item_response)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn reorder_queue_downloads(
+    state: State<'_, AppState>,
+    queue_id: String,
+    ordered_ids: Vec<String>,
+) -> Result<(), String> {
+    state
+        .queues
+        .reorder_tasks(&queue_id, &ordered_ids)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn stop_queue(state: State<'_, AppState>, queue_id: String) -> Result<QueueResponse, String> {
+    state
+        .queues
+        .stop_queue(&queue_id)
+        .map(queue_response)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn start_queue(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    queue_id: String,
+    on_event: Channel<QueueRunnerEventResponse>,
+) -> Result<QueueResponse, String> {
+    let destination_directory = app
+        .path()
+        .download_dir()
+        .map_err(|error| error.to_string())?;
+    let queue = state
+        .queues
+        .start_queue(&queue_id)
+        .map_err(|error| error.to_string())?;
+    let service = state.queues.clone();
+    let progress_times = Arc::new(Mutex::new(HashMap::<String, Instant>::new()));
+    let task_queue_id = queue_id.clone();
+
+    info!(queue_id = %task_queue_id, "starting queue runner");
+
+    tauri::async_runtime::spawn(async move {
+        let result = service
+            .run_queue(&task_queue_id, destination_directory, move |event| {
+                let response = match event {
+                    QueueRunnerEvent::QueueUpdated(queue) => {
+                        QueueRunnerEventResponse::queue_updated(queue_response(queue))
+                    }
+                    QueueRunnerEvent::TaskUpdated(download) => {
+                        QueueRunnerEventResponse::task_updated(download_list_item_response(
+                            *download,
+                        ))
+                    }
+                    QueueRunnerEvent::TaskProgress {
+                        download_id,
+                        progress,
+                    } => {
+                        let reached_known_end =
+                            progress.total_bytes == Some(progress.downloaded_bytes);
+                        let Ok(mut progress_times) = progress_times.lock() else {
+                            return;
+                        };
+                        let should_send = progress_times.get(&download_id).is_none_or(|last| {
+                            reached_known_end || last.elapsed() >= PROGRESS_EVENT_INTERVAL
+                        });
+                        if !should_send {
+                            return;
+                        }
+                        progress_times.insert(download_id.clone(), Instant::now());
+                        QueueRunnerEventResponse::task_progress(
+                            download_id,
+                            progress.downloaded_bytes,
+                            progress.total_bytes,
+                        )
+                    }
+                };
+
+                if let Err(error) = on_event.send(response) {
+                    warn!(error = %error, "failed to send queue runner event");
+                }
+            })
+            .await;
+
+        match result {
+            Ok(_) => info!(queue_id = %task_queue_id, "queue runner stopped"),
+            Err(error) => {
+                warn!(queue_id = %task_queue_id, error = %error, "queue runner failed")
+            }
+        }
+    });
+
+    Ok(queue_response(queue))
 }
 #[tauri::command]
 fn remove_download(
@@ -270,6 +474,14 @@ pub fn run() {
             let storage = Arc::new(Storage::open(&database_path)?);
 
             let downloads = DownloadService::new(Arc::clone(&storage))?;
+            let queues = QueueService::new(Arc::clone(&storage), downloads.clone());
+            let running_queue_ids = queues
+                .list_queues()?
+                .into_iter()
+                .filter(|queue| queue.state == QueueState::Running)
+                .map(|queue| queue.id)
+                .collect::<Vec<_>>();
+            let destination_directory = app.path().download_dir()?;
 
             info!(
                 database = %storage.path().display(),
@@ -281,7 +493,22 @@ pub fn run() {
                 core: CoreService::new(),
                 storage,
                 downloads,
+                queues: queues.clone(),
             });
+
+            for queue_id in running_queue_ids {
+                let service = queues.clone();
+                let destination_directory = destination_directory.clone();
+                tauri::async_runtime::spawn(async move {
+                    info!(queue_id = %queue_id, "resuming persisted queue runner");
+                    if let Err(error) = service
+                        .run_queue(&queue_id, destination_directory, |_| {})
+                        .await
+                    {
+                        warn!(queue_id = %queue_id, error = %error, "persisted queue runner failed");
+                    }
+                });
+            }
 
             info!("application state initialized");
 
@@ -295,7 +522,16 @@ pub fn run() {
             set_add_download_input_mode,
             remove_download,
             create_download_task,
-            start_download
+            start_download,
+            list_queues,
+            create_queue,
+            enqueue_download_task,
+            move_queued_download,
+            remove_download_from_queue,
+            set_download_priority,
+            reorder_queue_downloads,
+            start_queue,
+            stop_queue
         ])
         .run(tauri::generate_context!())
         .expect("error while running Download Manager");

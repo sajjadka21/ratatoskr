@@ -1,4 +1,4 @@
-# Implementation Plan: Phase 0 Audit and Phase 1 Persistent Tasks
+# Implementation Plan: Download Manager Phases 0-2
 
 ## Overview
 
@@ -44,3 +44,29 @@ Preserve the checkpoint architecture while separating persistent task creation f
 - [x] All Phase 1 acceptance scenarios pass.
 - [x] Formatting, tests, check, strict Clippy, and frontend build pass.
 - [x] Phase 1 is committed as one focused, reviewable change.
+
+### Phase 2: Queue Foundation
+
+- [ ] Add queue/priority domain models and schema v2 migration.
+- [ ] Add persistent queue assignment, ordering, priority, and state operations.
+- [ ] Add the queue runner with queue and host concurrency enforcement.
+- [ ] Add queue IPC and background event delivery.
+- [ ] Add queue management and Add Download queue UI.
+- [ ] Run the Phase 2 gate, review, document, and commit.
+
+## Phase 2 Risks and Mitigations
+
+| Risk | Impact | Mitigation |
+| --- | --- | --- |
+| Two runners start the same task | Duplicate transfer/corruption | Atomically claim `queued -> probing` and keep an in-process queue-runner registry. |
+| Queue stop cancels active work without Phase 3 controls | Partial files or invalid state | Stop only new scheduling in Phase 2; let already-active tasks finish. |
+| Host limits are bypassed | Server overload | Select candidates by parsed host and active-host counters before claim. |
+| Migration damages existing history | Data loss | Use additive schema v2 changes and test v1-to-v2 reopen migration. |
+| React becomes authoritative | State divergence | Return and emit Rust-persisted queue/download records for every action. |
+
+## Phase 2 Checkpoint
+
+- [ ] Default and named queues survive reopen.
+- [ ] Queued tasks start only through a running queue and retain stable IDs.
+- [ ] Queue order, priority, queue concurrency, and host concurrency are tested.
+- [ ] Full repository quality gate passes.

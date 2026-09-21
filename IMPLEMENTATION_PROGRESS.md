@@ -88,3 +88,20 @@ Status: Complete
 ### Scope boundary
 
 Phase 1 will not implement queues, pause/resume, segmented transfer, adaptive connections, scheduler, browser integration, or media extraction. Those remain assigned to later phases in the master specification.
+
+## Phase 2 - Queue Foundation
+
+Status: In progress
+
+### Plan
+
+1. Add canonical queue/priority models and a schema version 2 migration with a stable Default Queue, queue metadata, and download queue assignment fields.
+2. Add tested storage operations for named queues, enqueue/remove/move/reorder, priority, and persistent running/stopped state.
+3. Add a Rust queue service and runner that is the only path for queued tasks to start, honors per-queue and per-host concurrency, and stops scheduling when the queue is stopped.
+4. Add IPC contracts and thin Tauri commands for queue CRUD, assignment, ordering, and runner control.
+5. Add Queues navigation/UI plus Add Download queue actions, persistent priority/queue hints, and task move/reorder controls.
+6. Run the complete quality gate, update this document, review the full change, and create focused commits for the Phase 2 slices.
+
+### Scope boundary
+
+Phase 2 will not add schedules, speed profiles, task pause/resume, retry policy, segmented transfer, or adaptive connection logic. Queue stop prevents new starts; active transfers continue until Phase 3 introduces task control handles.

@@ -83,3 +83,63 @@
 **Verification:** Git status and commit inspection.
 
 **Dependencies:** Tasks 1-5.
+
+## Task 7: Queue domain and migration
+
+**Acceptance criteria:**
+
+- [ ] Canonical queue state and priority models are serializable and validated.
+- [ ] Schema v2 creates the Default Queue and adds queue/priority assignment without resetting v1 data.
+- [ ] Fresh and migrated databases both reopen at schema version 2.
+
+**Verification:** focused `dm-common` and `dm-storage` migration tests.
+
+**Dependencies:** Task 6.
+
+## Task 8: Persistent queue operations
+
+**Acceptance criteria:**
+
+- [ ] Named queues can be created/listed and running/stopped state persists.
+- [ ] Tasks can be enqueued, moved, removed, prioritized, and reordered transactionally.
+- [ ] Invalid queue/task operations return typed errors.
+
+**Verification:** focused `dm-storage` queue integration tests.
+
+**Dependencies:** Task 7.
+
+## Task 9: Queue runner
+
+**Acceptance criteria:**
+
+- [ ] Queued tasks start only through a running queue.
+- [ ] Per-queue and per-host concurrency limits are enforced.
+- [ ] Stable IDs and persisted terminal states are preserved.
+
+**Verification:** local HTTP integration tests in `dm-core`.
+
+**Dependencies:** Task 8.
+
+## Task 10: Queue IPC and UI
+
+**Acceptance criteria:**
+
+- [ ] Queue list/create/start/stop/assignment/reorder commands are thin Rust-backed IPC.
+- [ ] Queues are manageable from the sidebar and queued task rows show queue/priority hints.
+- [ ] Add Download supports adding a batch to the Default Queue or a selected named queue.
+
+**Verification:** workspace Rust tests and `npm run build`.
+
+**Dependencies:** Task 9.
+
+## Task 11: Phase 2 gate and commits
+
+**Acceptance criteria:**
+
+- [ ] All five required commands pass.
+- [ ] Code review has no unresolved required findings.
+- [ ] Progress documentation and focused Phase 2 commits are complete.
+
+**Verification:** Git status/log inspection.
+
+**Dependencies:** Tasks 7-10.

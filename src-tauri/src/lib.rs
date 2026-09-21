@@ -85,6 +85,8 @@ fn download_list_item_response(record: DownloadRecord) -> DownloadListItemRespon
         total_bytes: record.total_bytes,
         downloaded_bytes: record.downloaded_bytes,
         status: record.status.to_string(),
+        queue_id: record.queue_id,
+        priority: record.priority.to_string(),
         created_at: record.created_at,
         started_at: record.started_at,
         completed_at: record.completed_at,

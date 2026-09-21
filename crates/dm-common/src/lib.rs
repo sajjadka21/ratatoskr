@@ -35,8 +35,9 @@ impl DownloadStatus {
     pub const fn can_transition_to(self, next: Self) -> bool {
         matches!(
             (self, next),
-            (Self::Created, Self::Probing)
+            (Self::Created, Self::Probing | Self::Queued)
                 | (Self::Probing, Self::Downloading | Self::Failed)
+                | (Self::Queued, Self::Created | Self::Probing)
                 | (Self::Downloading, Self::Finalizing | Self::Failed)
                 | (Self::Finalizing, Self::Completed | Self::Failed)
         )
@@ -84,6 +85,124 @@ impl FromStr for DownloadStatus {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadPriority {
+    Low,
+    Normal,
+    High,
+    VeryHigh,
+}
+
+impl DownloadPriority {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Normal => "normal",
+            Self::High => "high",
+            Self::VeryHigh => "very_high",
+        }
+    }
+}
+
+impl fmt::Display for DownloadPriority {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for DownloadPriority {
+    type Err = ParseDownloadPriorityError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "low" => Ok(Self::Low),
+            "normal" => Ok(Self::Normal),
+            "high" => Ok(Self::High),
+            "very_high" => Ok(Self::VeryHigh),
+            other => Err(ParseDownloadPriorityError {
+                value: other.to_owned(),
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseDownloadPriorityError {
+    value: String,
+}
+
+impl fmt::Display for ParseDownloadPriorityError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "unknown download priority: {}", self.value)
+    }
+}
+
+impl std::error::Error for ParseDownloadPriorityError {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QueueState {
+    Running,
+    Stopped,
+}
+
+impl QueueState {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Stopped => "stopped",
+        }
+    }
+}
+
+impl fmt::Display for QueueState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for QueueState {
+    type Err = ParseQueueStateError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "running" => Ok(Self::Running),
+            "stopped" => Ok(Self::Stopped),
+            other => Err(ParseQueueStateError {
+                value: other.to_owned(),
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseQueueStateError {
+    value: String,
+}
+
+impl fmt::Display for ParseQueueStateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "unknown queue state: {}", self.value)
+    }
+}
+
+impl std::error::Error for ParseQueueStateError {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QueueRecord {
+    pub id: String,
+    pub name: String,
+    pub enabled: bool,
+    pub state: QueueState,
+    pub sort_order: i64,
+    pub max_concurrent: u32,
+    pub max_concurrent_per_host: Option<u32>,
+    pub default_priority: DownloadPriority,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DownloadRecord {
     pub id: String,
@@ -99,6 +218,8 @@ pub struct DownloadRecord {
     pub last_modified: Option<String>,
     pub range_supported: Option<bool>,
     pub status: DownloadStatus,
+    pub queue_id: Option<String>,
+    pub priority: DownloadPriority,
     pub queue_position: Option<i64>,
     pub created_at: i64,
     pub started_at: Option<i64>,
@@ -119,7 +240,7 @@ pub struct DownloadCompletion {
 
 #[cfg(test)]
 mod tests {
-    use super::DownloadStatus;
+    use super::{DownloadPriority, DownloadStatus, QueueState};
     use std::str::FromStr;
 
     #[test]
@@ -170,5 +291,29 @@ mod tests {
         assert!(!DownloadStatus::Created.can_transition_to(DownloadStatus::Completed));
         assert!(!DownloadStatus::Completed.can_transition_to(DownloadStatus::Downloading));
         assert!(!DownloadStatus::Failed.can_transition_to(DownloadStatus::Completed));
+    }
+
+    #[test]
+    fn queue_state_string_roundtrip() {
+        for state in [QueueState::Running, QueueState::Stopped] {
+            assert_eq!(QueueState::from_str(state.as_str()).unwrap(), state);
+        }
+    }
+
+    #[test]
+    fn download_priority_string_roundtrip() {
+        let priorities = [
+            DownloadPriority::Low,
+            DownloadPriority::Normal,
+            DownloadPriority::High,
+            DownloadPriority::VeryHigh,
+        ];
+
+        for priority in priorities {
+            assert_eq!(
+                DownloadPriority::from_str(priority.as_str()).unwrap(),
+                priority
+            );
+        }
     }
 }

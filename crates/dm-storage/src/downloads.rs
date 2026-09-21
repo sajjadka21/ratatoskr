@@ -1,5 +1,5 @@
 use crate::{Result, Storage, StorageError};
-use dm_common::{DownloadCompletion, DownloadRecord, DownloadStatus};
+use dm_common::{DownloadCompletion, DownloadPriority, DownloadRecord, DownloadStatus};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use std::str::FromStr;
 use uuid::Uuid;
@@ -19,6 +19,8 @@ SELECT
     last_modified,
     range_supported,
     status,
+    queue_id,
+    priority,
     queue_position,
     created_at,
     started_at,
@@ -43,6 +45,8 @@ struct StoredDownloadRow {
     last_modified: Option<String>,
     range_supported: Option<i64>,
     status: String,
+    queue_id: Option<String>,
+    priority: String,
     queue_position: Option<i64>,
     created_at: i64,
     started_at: Option<i64>,
@@ -67,12 +71,14 @@ impl StoredDownloadRow {
             last_modified: row.get(10)?,
             range_supported: row.get(11)?,
             status: row.get(12)?,
-            queue_position: row.get(13)?,
-            created_at: row.get(14)?,
-            started_at: row.get(15)?,
-            completed_at: row.get(16)?,
-            error_code: row.get(17)?,
-            error_message: row.get(18)?,
+            queue_id: row.get(13)?,
+            priority: row.get(14)?,
+            queue_position: row.get(15)?,
+            created_at: row.get(16)?,
+            started_at: row.get(17)?,
+            completed_at: row.get(18)?,
+            error_code: row.get(19)?,
+            error_message: row.get(20)?,
         })
     }
 
@@ -86,6 +92,8 @@ impl StoredDownloadRow {
             .transpose()?;
 
         let downloaded_bytes = i64_to_u64(self.downloaded_bytes, "downloaded_bytes")?;
+        let priority = DownloadPriority::from_str(&self.priority)
+            .map_err(|_| StorageError::InvalidDownloadPriority(self.priority))?;
 
         Ok(DownloadRecord {
             id: self.id,
@@ -101,6 +109,8 @@ impl StoredDownloadRow {
             last_modified: self.last_modified,
             range_supported: self.range_supported.map(|value| value != 0),
             status,
+            queue_id: self.queue_id,
+            priority,
             queue_position: self.queue_position,
             created_at: self.created_at,
             started_at: self.started_at,
@@ -127,6 +137,8 @@ impl Storage {
             last_modified: None,
             range_supported: None,
             status: DownloadStatus::Created,
+            queue_id: None,
+            priority: DownloadPriority::Normal,
             queue_position: None,
             created_at,
             started_at: None,

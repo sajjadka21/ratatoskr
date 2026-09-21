@@ -8,9 +8,10 @@ use std::{
 use thiserror::Error;
 
 mod downloads;
+mod queues;
 mod settings;
 
-const LATEST_SCHEMA_VERSION: i32 = 1;
+const LATEST_SCHEMA_VERSION: i32 = 2;
 
 const MIGRATION_V1: &str = r#"
 BEGIN IMMEDIATE;
@@ -68,6 +69,66 @@ PRAGMA user_version = 1;
 COMMIT;
 "#;
 
+const MIGRATION_V2: &str = r#"
+BEGIN IMMEDIATE;
+
+CREATE TABLE queues (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL UNIQUE,
+    enabled INTEGER NOT NULL DEFAULT 1
+        CHECK (enabled IN (0, 1)),
+    state TEXT NOT NULL DEFAULT 'stopped'
+        CHECK (state IN ('running', 'stopped')),
+    sort_order INTEGER NOT NULL,
+    max_concurrent INTEGER NOT NULL DEFAULT 3
+        CHECK (max_concurrent > 0),
+    max_concurrent_per_host INTEGER
+        CHECK (max_concurrent_per_host IS NULL OR max_concurrent_per_host > 0),
+    default_priority TEXT NOT NULL DEFAULT 'normal'
+        CHECK (default_priority IN ('low', 'normal', 'high', 'very_high')),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+INSERT INTO queues (
+    id,
+    name,
+    enabled,
+    state,
+    sort_order,
+    max_concurrent,
+    max_concurrent_per_host,
+    default_priority,
+    created_at,
+    updated_at
+)
+VALUES (
+    'default',
+    'Default Queue',
+    1,
+    'stopped',
+    0,
+    3,
+    2,
+    'normal',
+    unixepoch(),
+    unixepoch()
+);
+
+ALTER TABLE downloads ADD COLUMN queue_id TEXT
+    REFERENCES queues(id) ON DELETE SET NULL;
+
+ALTER TABLE downloads ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'
+    CHECK (priority IN ('low', 'normal', 'high', 'very_high'));
+
+CREATE INDEX idx_downloads_queue
+    ON downloads(queue_id, queue_position);
+
+PRAGMA user_version = 2;
+
+COMMIT;
+"#;
+
 #[derive(Debug, Error)]
 pub enum StorageError {
     #[error("failed to create database directory: {0}")]
@@ -94,6 +155,15 @@ pub enum StorageError {
         from: DownloadStatus,
         to: DownloadStatus,
     },
+
+    #[error("invalid queue state stored in database: {0}")]
+    InvalidQueueState(String),
+
+    #[error("invalid download priority stored in database: {0}")]
+    InvalidDownloadPriority(String),
+
+    #[error("invalid queue concurrency stored in database: {0}")]
+    InvalidQueueConcurrency(i64),
 
     #[error("value for {field} is too large for SQLite INTEGER: {value}")]
     IntegerTooLarge { field: &'static str, value: u64 },
@@ -200,12 +270,19 @@ fn run_migrations(connection: &Connection) -> Result<()> {
         connection.execute_batch(MIGRATION_V1)?;
     }
 
+    let version: i32 = connection.query_row("PRAGMA user_version;", [], |row| row.get(0))?;
+
+    if version == 1 {
+        connection.execute_batch(MIGRATION_V2)?;
+    }
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Storage;
+    use super::{MIGRATION_V1, Storage};
+    use rusqlite::Connection;
     use tempfile::tempdir;
 
     #[test]
@@ -215,9 +292,10 @@ mod tests {
 
         let storage = Storage::open(&database_path).unwrap();
 
-        assert_eq!(storage.schema_version().unwrap(), 1);
+        assert_eq!(storage.schema_version().unwrap(), 2);
         assert!(storage.table_exists("downloads").unwrap());
         assert!(storage.table_exists("settings").unwrap());
+        assert!(storage.table_exists("queues").unwrap());
         assert!(storage.health_check().is_ok());
     }
 
@@ -228,13 +306,47 @@ mod tests {
 
         {
             let storage = Storage::open(&database_path).unwrap();
-            assert_eq!(storage.schema_version().unwrap(), 1);
+            assert_eq!(storage.schema_version().unwrap(), 2);
         }
 
         {
             let storage = Storage::open(&database_path).unwrap();
-            assert_eq!(storage.schema_version().unwrap(), 1);
+            assert_eq!(storage.schema_version().unwrap(), 2);
             assert!(storage.health_check().is_ok());
         }
+    }
+
+    #[test]
+    fn migrates_v1_database_without_losing_download_history() {
+        let directory = tempdir().unwrap();
+        let database_path = directory.path().join("downloads.db");
+
+        {
+            let connection = Connection::open(&database_path).unwrap();
+            connection.execute_batch(MIGRATION_V1).unwrap();
+            connection
+                .execute(
+                    "INSERT INTO downloads (id, source_url, status, created_at) VALUES (?1, ?2, 'created', ?3)",
+                    ("existing-id", "https://example.com/existing.bin", 1_000_i64),
+                )
+                .unwrap();
+        }
+
+        let storage = Storage::open(&database_path).unwrap();
+
+        assert_eq!(storage.schema_version().unwrap(), 2);
+        assert_eq!(
+            storage
+                .get_download("existing-id")
+                .unwrap()
+                .unwrap()
+                .source_url,
+            "https://example.com/existing.bin"
+        );
+
+        let queues = storage.list_queues().unwrap();
+        assert_eq!(queues.len(), 1);
+        assert_eq!(queues[0].id, "default");
+        assert_eq!(queues[0].name, "Default Queue");
     }
 }

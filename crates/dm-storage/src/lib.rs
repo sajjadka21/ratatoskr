@@ -165,6 +165,15 @@ pub enum StorageError {
     #[error("invalid queue concurrency stored in database: {0}")]
     InvalidQueueConcurrency(i64),
 
+    #[error("queue not found: {0}")]
+    QueueNotFound(String),
+
+    #[error("invalid queue configuration: {0}")]
+    InvalidQueueConfiguration(String),
+
+    #[error("queue order does not contain exactly the queued tasks for queue {0}")]
+    QueueOrderMismatch(String),
+
     #[error("value for {field} is too large for SQLite INTEGER: {value}")]
     IntegerTooLarge { field: &'static str, value: u64 },
 

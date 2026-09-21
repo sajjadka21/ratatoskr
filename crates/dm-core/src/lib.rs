@@ -1,3 +1,4 @@
+pub mod queue;
 pub mod service;
 
 use percent_encoding::percent_decode_str;

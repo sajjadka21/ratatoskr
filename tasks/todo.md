@@ -88,9 +88,9 @@
 
 **Acceptance criteria:**
 
-- [ ] Canonical queue state and priority models are serializable and validated.
-- [ ] Schema v2 creates the Default Queue and adds queue/priority assignment without resetting v1 data.
-- [ ] Fresh and migrated databases both reopen at schema version 2.
+- [x] Canonical queue state and priority models are serializable and validated.
+- [x] Schema v2 creates the Default Queue and adds queue/priority assignment without resetting v1 data.
+- [x] Fresh and migrated databases both reopen at schema version 2.
 
 **Verification:** focused `dm-common` and `dm-storage` migration tests.
 
@@ -100,9 +100,9 @@
 
 **Acceptance criteria:**
 
-- [ ] Named queues can be created/listed and running/stopped state persists.
-- [ ] Tasks can be enqueued, moved, removed, prioritized, and reordered transactionally.
-- [ ] Invalid queue/task operations return typed errors.
+- [x] Named queues can be created/listed and running/stopped state persists.
+- [x] Tasks can be enqueued, moved, removed, prioritized, and reordered transactionally.
+- [x] Invalid queue/task operations return typed errors.
 
 **Verification:** focused `dm-storage` queue integration tests.
 
@@ -112,9 +112,9 @@
 
 **Acceptance criteria:**
 
-- [ ] Queued tasks start only through a running queue.
-- [ ] Per-queue and per-host concurrency limits are enforced.
-- [ ] Stable IDs and persisted terminal states are preserved.
+- [x] Queued tasks start only through a running queue.
+- [x] Per-queue and per-host concurrency limits are enforced.
+- [x] Stable IDs and persisted terminal states are preserved.
 
 **Verification:** local HTTP integration tests in `dm-core`.
 

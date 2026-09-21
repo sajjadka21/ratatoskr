@@ -105,3 +105,18 @@ Status: In progress
 ### Scope boundary
 
 Phase 2 will not add schedules, speed profiles, task pause/resume, retry policy, segmented transfer, or adaptive connection logic. Queue stop prevents new starts; active transfers continue until Phase 3 introduces task control handles.
+
+### Implemented so far
+
+- Added schema version 2 with a stable Default Queue, persistent named queues, concurrency settings, queue assignment, queue position, and priority without losing schema version 1 history.
+- Added transactional storage operations for enqueue, move, remove, priority changes, exact-set reorder, and atomic queued-task claims.
+- Added a Rust queue service and runner. Queued records remain queued until claimed by their queue runner, preserve their task IDs, and persist terminal states through the existing download service.
+- Enforced per-queue concurrency, optional hostname concurrency, and the existing process-wide three-transfer limit shared with direct starts.
+- Queue stop now persists immediately, prevents any further claims, and lets already-active transfers finish as documented by the Phase 2 scope boundary.
+
+### Focused verification so far
+
+- Schema v1-to-v2 migration and reopen tests pass.
+- Queue storage operation and invalid transition tests pass.
+- Local HTTP integration tests cover per-queue, per-host, and global concurrency, stop behavior, stable IDs, and completed persistence.
+- Strict `dm-core` Clippy passes after the runner implementation.

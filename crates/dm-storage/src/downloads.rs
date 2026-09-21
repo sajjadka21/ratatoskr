@@ -199,6 +199,32 @@ impl Storage {
         Ok(downloads)
     }
 
+    pub fn list_queued_downloads(&self, queue_id: &str) -> Result<Vec<DownloadRecord>> {
+        let connection = self.connection()?;
+        let sql = format!(
+            "{DOWNLOAD_SELECT}
+             WHERE queue_id = ?1 AND status = 'queued'
+             ORDER BY
+                CASE priority
+                    WHEN 'very_high' THEN 0
+                    WHEN 'high' THEN 1
+                    WHEN 'normal' THEN 2
+                    WHEN 'low' THEN 3
+                END,
+                queue_position ASC,
+                id ASC"
+        );
+        let mut statement = connection.prepare(&sql)?;
+        let rows = statement.query_map([queue_id], StoredDownloadRow::from_row)?;
+        let mut downloads = Vec::new();
+
+        for row in rows {
+            downloads.push(row?.into_record()?);
+        }
+
+        Ok(downloads)
+    }
+
     pub fn remove_download_record(&self, id: &str) -> Result<()> {
         let connection = self.connection()?;
 
@@ -230,6 +256,25 @@ impl Storage {
         )?;
 
         ensure_transitioned(&connection, id, changed, DownloadStatus::Probing)
+    }
+
+    pub fn claim_queued_download(&self, id: &str, queue_id: &str) -> Result<DownloadRecord> {
+        let connection = self.connection()?;
+        let changed = connection.execute(
+            r#"
+            UPDATE downloads
+            SET status = 'probing'
+            WHERE id = ?1
+              AND queue_id = ?2
+              AND status = 'queued';
+            "#,
+            params![id, queue_id],
+        )?;
+        ensure_transitioned(&connection, id, changed, DownloadStatus::Probing)?;
+        drop(connection);
+
+        self.get_download(id)?
+            .ok_or_else(|| StorageError::DownloadNotFound(id.to_owned()))
     }
 
     pub fn mark_downloading(&self, id: &str, started_at: i64) -> Result<()> {
@@ -617,5 +662,49 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn queued_download_can_only_be_claimed_from_its_queue_once() {
+        let directory = tempdir().unwrap();
+        let database_path = directory.path().join("downloads.db");
+        let storage = Storage::open(&database_path).unwrap();
+        let created = storage
+            .create_download("https://example.com/queued.bin", 6_000)
+            .unwrap();
+        storage
+            .enqueue_download(&created.id, "default", None)
+            .unwrap();
+
+        let wrong_queue = storage
+            .claim_queued_download(&created.id, "missing")
+            .unwrap_err();
+        assert!(matches!(
+            wrong_queue,
+            StorageError::InvalidStatusTransition {
+                from: DownloadStatus::Queued,
+                to: DownloadStatus::Probing,
+                ..
+            }
+        ));
+
+        let claimed = storage
+            .claim_queued_download(&created.id, "default")
+            .unwrap();
+        assert_eq!(claimed.status, DownloadStatus::Probing);
+        assert_eq!(claimed.id, created.id);
+
+        let duplicate = storage
+            .claim_queued_download(&created.id, "default")
+            .unwrap_err();
+        assert!(matches!(
+            duplicate,
+            StorageError::InvalidStatusTransition {
+                from: DownloadStatus::Probing,
+                to: DownloadStatus::Probing,
+                ..
+            }
+        ));
+        assert_eq!(storage.list_downloads().unwrap().len(), 1);
     }
 }

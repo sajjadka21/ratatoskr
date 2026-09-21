@@ -111,9 +111,14 @@
   white-space: nowrap;
 }
 
+.sidebar__secondary,
 .sidebar__footer {
   padding-top: 10px;
   border-top: 1px solid var(--border-subtle);
+}
+
+.sidebar__secondary {
+  padding-bottom: 10px;
 }
 
 .sidebar__item-label {

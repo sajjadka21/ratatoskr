@@ -18,6 +18,7 @@ type AppShellProps = {
 
   activeItem?: DownloadSection;
   settingsActive?: boolean;
+  queuesActive?: boolean;
 
   counts?: SidebarCounts;
 
@@ -32,6 +33,7 @@ type AppShellProps = {
   ) => void;
 
   onOpenSettings?: () => void;
+  onOpenQueues?: () => void;
   onAddDownload?: () => void;
 };
 
@@ -41,11 +43,13 @@ export function AppShell({
   subtitle,
   activeItem = "all",
   settingsActive = false,
+  queuesActive = false,
   counts,
   searchValue,
   onSearchChange,
   onSectionChange,
   onOpenSettings,
+  onOpenQueues,
   onAddDownload,
 }: AppShellProps) {
   return (
@@ -53,11 +57,13 @@ export function AppShell({
       <Sidebar
         activeItem={activeItem}
         settingsActive={settingsActive}
+        queuesActive={queuesActive}
         counts={counts}
         onSelect={onSectionChange}
         onOpenSettings={
           onOpenSettings
         }
+        onOpenQueues={onOpenQueues}
       />
 
       <div className="app-shell__workspace">

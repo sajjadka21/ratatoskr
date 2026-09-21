@@ -124,9 +124,9 @@
 
 **Acceptance criteria:**
 
-- [ ] Queue list/create/start/stop/assignment/reorder commands are thin Rust-backed IPC.
-- [ ] Queues are manageable from the sidebar and queued task rows show queue/priority hints.
-- [ ] Add Download supports adding a batch to the Default Queue or a selected named queue.
+- [x] Queue list/create/start/stop/assignment/reorder commands are thin Rust-backed IPC.
+- [x] Queues are manageable from the sidebar and queued task rows show queue/priority hints.
+- [x] Add Download supports adding a batch to the Default Queue or a selected named queue.
 
 **Verification:** workspace Rust tests and `npm run build`.
 
@@ -136,9 +136,9 @@
 
 **Acceptance criteria:**
 
-- [ ] All five required commands pass.
-- [ ] Code review has no unresolved required findings.
-- [ ] Progress documentation and focused Phase 2 commits are complete.
+- [x] All five required commands pass.
+- [x] Code review has no unresolved required findings.
+- [x] Progress documentation and focused Phase 2 commits are complete.
 
 **Verification:** Git status/log inspection.
 

@@ -135,6 +135,11 @@
   white-space: nowrap;
 }
 
+.download-row__queue-hint {
+  color: #8fb3f6;
+  text-transform: capitalize;
+}
+
 .download-row__status-area {
   display: flex;
   justify-content: flex-end;

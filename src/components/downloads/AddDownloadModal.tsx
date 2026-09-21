@@ -4,6 +4,7 @@ import {
   Download,
   Layers3,
   Link2,
+  Plus,
   X,
 } from "lucide-react";
 
@@ -14,10 +15,13 @@ import {
 } from "react";
 
 import "./AddDownloadModal.css";
+import type { DownloadQueue } from "../../types/download";
 
-type AddDownloadAction =
-  | "start-now"
-  | "download-later";
+export type AddDownloadAction =
+  | { kind: "start-now" }
+  | { kind: "download-later" }
+  | { kind: "queue"; queueId: string }
+  | { kind: "create-queue"; queueName: string };
 
 type AddDownloadModalProps = {
   open: boolean;
@@ -26,6 +30,7 @@ type AddDownloadModalProps = {
   engineReady: boolean;
   error: string | null;
   linkCount: number;
+  queues: DownloadQueue[];
   onUrlChange: (value: string) => void;
   onClose: () => void;
   onSubmit: (action: AddDownloadAction) => void;
@@ -38,6 +43,7 @@ export function AddDownloadModal({
   engineReady,
   error,
   linkCount,
+  queues,
   onUrlChange,
   onClose,
   onSubmit,
@@ -48,6 +54,7 @@ export function AddDownloadModal({
     useRef<HTMLDivElement>(null);
   const [actionMenuOpen, setActionMenuOpen] =
     useState(false);
+  const [newQueueName, setNewQueueName] = useState("");
 
   const isBatch = linkCount > 1;
   const actionsDisabled =
@@ -206,7 +213,7 @@ export function AddDownloadModal({
                   !actionsDisabled
                 ) {
                   event.preventDefault();
-                  onSubmit("start-now");
+                  onSubmit({ kind: "start-now" });
                 }
               }}
               disabled={submitting}
@@ -267,7 +274,7 @@ export function AddDownloadModal({
             <button
               type="button"
               className="add-download-modal__submit"
-              onClick={() => onSubmit("start-now")}
+              onClick={() => onSubmit({ kind: "start-now" })}
               disabled={actionsDisabled}
             >
               {isBatch ? (
@@ -305,7 +312,7 @@ export function AddDownloadModal({
                   role="menuitem"
                   onClick={() => {
                     setActionMenuOpen(false);
-                    onSubmit("start-now");
+                    onSubmit({ kind: "start-now" });
                   }}
                 >
                   <Download size={15} />
@@ -320,7 +327,7 @@ export function AddDownloadModal({
                   role="menuitem"
                   onClick={() => {
                     setActionMenuOpen(false);
-                    onSubmit("download-later");
+                    onSubmit({ kind: "download-later" });
                   }}
                 >
                   <Clock3 size={15} />
@@ -329,6 +336,52 @@ export function AddDownloadModal({
                     <small>Create tasks without network activity</small>
                   </span>
                 </button>
+
+                <div className="add-download-modal__menu-divider" />
+
+                {queues.map((queue) => (
+                  <button
+                    key={queue.id}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setActionMenuOpen(false);
+                      onSubmit({ kind: "queue", queueId: queue.id });
+                    }}
+                  >
+                    <Layers3 size={15} />
+                    <span>
+                      <strong>Add to {queue.name}</strong>
+                      <small>
+                        Queue with {queue.defaultPriority.replace("_", " ")} priority
+                      </small>
+                    </span>
+                  </button>
+                ))}
+
+                <div className="add-download-modal__create-queue">
+                  <input
+                    value={newQueueName}
+                    onChange={(event) => setNewQueueName(event.target.value)}
+                    onKeyDown={(event) => event.stopPropagation()}
+                    placeholder="New queue name"
+                    aria-label="New queue name"
+                  />
+                  <button
+                    type="button"
+                    disabled={!newQueueName.trim()}
+                    onClick={() => {
+                      const queueName = newQueueName.trim();
+                      if (!queueName) return;
+                      setActionMenuOpen(false);
+                      setNewQueueName("");
+                      onSubmit({ kind: "create-queue", queueName });
+                    }}
+                  >
+                    <Plus size={14} />
+                    Create Queue &amp; Add
+                  </button>
+                </div>
               </div>
             ) : null}
           </div>

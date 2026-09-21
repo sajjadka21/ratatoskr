@@ -9,19 +9,26 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 
-import { AddDownloadModal } from "./components/downloads/AddDownloadModal";
+import {
+  AddDownloadModal,
+  type AddDownloadAction,
+} from "./components/downloads/AddDownloadModal";
 import { DownloadContextMenu } from "./components/downloads/DownloadContextMenu";
 import { RemoveHistoryDialog } from "./components/downloads/RemoveHistoryDialog";
 import { DownloadDetailsPanel } from "./components/downloads/DownloadDetailsPanel";
 import { DownloadRow } from "./components/downloads/DownloadRow";
 import { AppShell } from "./components/layout/AppShell";
+import { QueuePage } from "./components/queues/QueuePage";
+import { useQueues } from "./hooks/useQueues";
 
 import type {
   DownloadSection,
   SidebarCounts,
 } from "./components/layout/Sidebar";
 
-import type { DownloadListItem } from "./types/download";
+import type {
+  DownloadListItem,
+} from "./types/download";
 
 import {
   SettingsPage,
@@ -58,10 +65,6 @@ type DownloadTaskEvent = {
   download: DownloadListItem | null;
 };
 
-type AddDownloadAction =
-  | "start-now"
-  | "download-later";
-
 const sectionTitles: Record<
   DownloadSection,
   string
@@ -93,11 +96,11 @@ function App() {
 
   const [downloads, setDownloads] =
     useState<DownloadListItem[]>([]);
-
   const [activeSection, setActiveSection] =
     useState<DownloadSection>("all");
   const [settingsOpen, setSettingsOpen] =
     useState(false);
+  const [queuesOpen, setQueuesOpen] = useState(false);
 
   const [
     addDownloadInputMode,
@@ -185,15 +188,61 @@ function App() {
     setDownloads(items);
   }, []);
 
+  const upsertDownloads = useCallback((records: DownloadListItem[]) => {
+    setDownloads((current) => {
+      const next = new Map(current.map((item) => [item.id, item]));
+      for (const record of records) next.set(record.id, record);
+      return [...next.values()].sort(
+        (left, right) =>
+          right.createdAt - left.createdAt || left.id.localeCompare(right.id),
+      );
+    });
+  }, []);
+
+  const updateDownloadProgress = useCallback(
+    (downloadId: string, downloadedBytes: number, totalBytes: number | null) => {
+      setDownloads((current) =>
+        current.map((item) =>
+          item.id === downloadId
+            ? {
+                ...item,
+                downloadedBytes,
+                totalBytes: totalBytes ?? item.totalBytes,
+                status: "downloading",
+              }
+            : item,
+        ),
+      );
+    },
+    [],
+  );
+
+  const {
+    queues,
+    refreshQueues,
+    createQueue,
+    startQueue,
+    stopQueue,
+    reorderQueue,
+    moveQueuedDownload,
+    removeFromQueue,
+    changePriority,
+  } = useQueues({
+    upsertDownloads,
+    updateDownloadProgress,
+    refreshDownloads,
+  });
+
   useEffect(() => {
     void Promise.all([
       refreshHealth(),
       refreshDownloads(),
       refreshInputMode(),
+      refreshQueues(),
     ]).catch((reason) => {
       setError(String(reason));
     });
-  }, [refreshHealth, refreshDownloads, refreshInputMode]);
+  }, [refreshHealth, refreshDownloads, refreshInputMode, refreshQueues]);
 
   useEffect(() => {
     function handleEscape(event: KeyboardEvent) {
@@ -315,31 +364,16 @@ function App() {
     searchQuery,
   ]);
 
+  const queueNames = useMemo(
+    () => new Map(queues.map((queue) => [queue.id, queue.name])),
+    [queues],
+  );
+
   const selectedDownload =
     filteredDownloads.find(
       (item) =>
         item.id === selectedDownloadId,
     ) ?? null;
-
-  function upsertDownloads(
-    records: DownloadListItem[],
-  ) {
-    setDownloads((current) => {
-      const next = new Map(
-        current.map((item) => [item.id, item]),
-      );
-
-      for (const record of records) {
-        next.set(record.id, record);
-      }
-
-      return [...next.values()].sort(
-        (left, right) =>
-          right.createdAt - left.createdAt ||
-          left.id.localeCompare(right.id),
-      );
-    });
-  }
 
   function applyTaskEvent(event: DownloadTaskEvent) {
     if (event.kind === "updated" && event.download) {
@@ -441,34 +475,52 @@ function App() {
     const failedLinks: string[] = [];
     const createdTasks: DownloadListItem[] = [];
 
-    for (
-      let index = 0;
-      index < links.length;
-      index += 1
-    ) {
-      const downloadUrl = links[index];
+    try {
+      let targetQueueId: string | null =
+        action.kind === "queue" ? action.queueId : null;
 
-      try {
-        const task = await invoke<DownloadListItem>(
-          "create_download_task",
-          {
+      if (action.kind === "create-queue") {
+        const queue = await createQueue({
+          name: action.queueName,
+          maxConcurrent: 3,
+          maxConcurrentPerHost: 2,
+          defaultPriority: "normal",
+        });
+        targetQueueId = queue.id;
+      }
+
+      for (const downloadUrl of links) {
+        let task: DownloadListItem;
+        try {
+          task = await invoke<DownloadListItem>("create_download_task", {
             url: downloadUrl,
-          },
-        );
+          });
+          upsertDownloads([task]);
+        } catch (reason) {
+          console.error("Task creation failed:", reason);
+          failedLinks.push(downloadUrl);
+          continue;
+        }
+
+        if (targetQueueId) {
+          try {
+            task = await invoke<DownloadListItem>("enqueue_download_task", {
+              id: task.id,
+              queueId: targetQueueId,
+              priority: null,
+            });
+          } catch (reason) {
+            console.error("Queue assignment failed:", reason);
+            setError(
+              "A task was created but could not be assigned to the selected queue.",
+            );
+          }
+        }
 
         createdTasks.push(task);
         upsertDownloads([task]);
-      } catch (reason) {
-        console.error(
-          "Task creation failed:",
-          reason,
-        );
-
-        failedLinks.push(downloadUrl);
       }
-    }
 
-    try {
       if (createdTasks.length > 0) {
         setUrl("");
         setModalOpen(false);
@@ -484,7 +536,7 @@ function App() {
         );
       }
 
-      if (action === "start-now") {
+      if (action.kind === "start-now") {
         for (const task of createdTasks) {
           void startPersistedTask(task.id);
         }
@@ -638,6 +690,7 @@ function App() {
   function openSettings() {
     setSettingsError(null);
     setSettingsOpen(true);
+    setQueuesOpen(false);
     setSelectedDownloadId(null);
     setContextMenu(null);
   }
@@ -645,8 +698,16 @@ function App() {
     section: DownloadSection,
   ) {
     setSettingsOpen(false);
+    setQueuesOpen(false);
     setActiveSection(section);
     setSelectedDownloadId(null);
+  }
+
+  function openQueues() {
+    setQueuesOpen(true);
+    setSettingsOpen(false);
+    setSelectedDownloadId(null);
+    setContextMenu(null);
   }
 
   const backendLabel = allReady
@@ -667,12 +728,20 @@ function App() {
   return (
     <>
       <AppShell
-        title={settingsOpen ? "Settings" : sectionTitles[activeSection]}
+        title={
+          settingsOpen
+            ? "Settings"
+            : queuesOpen
+              ? "Queues"
+              : sectionTitles[activeSection]
+        }
         subtitle={`Version ${appInfo?.version ?? "..."} · ${backendLabel}`}
         activeItem={activeSection}
         settingsActive={settingsOpen}
+        queuesActive={queuesOpen}
         counts={counts}
         onOpenSettings={openSettings}
+        onOpenQueues={openQueues}
         searchValue={searchQuery}
         onSearchChange={setSearchQuery}
         onSectionChange={changeSection}
@@ -695,6 +764,18 @@ function App() {
               )
             }
           />
+        ) : queuesOpen ? (
+          <QueuePage
+            queues={queues}
+            downloads={downloads}
+            onCreateQueue={createQueue}
+            onStartQueue={startQueue}
+            onStopQueue={stopQueue}
+            onReorder={reorderQueue}
+            onMove={moveQueuedDownload}
+            onRemove={removeFromQueue}
+            onPriority={changePriority}
+          />
         ) : (
           <div className="downloads-workspace">
           <section className="download-library">
@@ -716,6 +797,11 @@ function App() {
                   <DownloadRow
                     key={item.id}
                     item={item}
+                    queueName={
+                      item.queueId
+                        ? queueNames.get(item.queueId)
+                        : undefined
+                    }
                     selected={
                       selectedDownloadId ===
                       item.id
@@ -805,6 +891,7 @@ function App() {
         linkCount={
           parsedDownloadUrls.length
         }
+        queues={queues}
         onUrlChange={setUrl}
         onClose={closeAddDownload}
         onSubmit={(action) =>

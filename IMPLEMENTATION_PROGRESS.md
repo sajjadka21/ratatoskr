@@ -91,7 +91,7 @@ Phase 1 will not implement queues, pause/resume, segmented transfer, adaptive co
 
 ## Phase 2 - Queue Foundation
 
-Status: In progress
+Status: Complete
 
 ### Plan
 
@@ -120,3 +120,26 @@ Phase 2 will not add schedules, speed profiles, task pause/resume, retry policy,
 - Queue storage operation and invalid transition tests pass.
 - Local HTTP integration tests cover per-queue, per-host, and global concurrency, stop behavior, stable IDs, and completed persistence.
 - Strict `dm-core` Clippy passes after the runner implementation.
+
+### IPC and UI
+
+- Added typed queue/list/event IPC contracts and thin Tauri commands for queue creation, assignment, moving, removal, priority changes, exact ordering, start, and stop.
+- Running queues resume their remaining queued work when the app starts; recovery of tasks that were mid-transfer remains assigned to Phase 3.
+- Added a Queues sidebar destination with named-queue creation, runner controls, concurrency summaries, drag/drop ordering, move up/down/top/bottom controls, priority editing, queue changes, and remove-from-queue actions.
+- Added Default Queue and named-queue batch actions to Add Download, including Create Queue & Add.
+- Added persistent queue and priority hints to download rows.
+- Kept React as a projection/control surface: all queue identity, ordering, state, claims, and concurrency enforcement remain authoritative in Rust and SQLite.
+
+### Phase 2 quality gate
+
+- `cargo fmt --all` - passed
+- `cargo test --workspace` - passed (42 tests)
+- `cargo check --workspace` - passed
+- `cargo clippy --workspace --all-targets -- -D warnings` - passed
+- `npm run build` - passed with the machine-specific npm prefix override documented in Phase 0
+- Tauri development runtime - compiled and launched successfully against the real schema version 2 backend
+- Code review - approved after extracting queue IPC/event orchestration from `App.tsx` into `useQueues`; no unresolved required findings
+
+### Phase boundary
+
+Phase 2 is complete. Phase 3 has not started. Task pause/resume, in-flight crash recovery, validators, and retry state remain assigned to Phase 3 by the master specification.

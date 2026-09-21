@@ -4,6 +4,7 @@
   Clock3,
   Download,
   List,
+  Layers3,
   Settings,
   Zap,
 } from "lucide-react";
@@ -23,11 +24,13 @@ export type SidebarCounts =
 type SidebarProps = {
   activeItem?: DownloadSection;
   settingsActive?: boolean;
+  queuesActive?: boolean;
   counts?: SidebarCounts;
   onSelect?: (
     section: DownloadSection,
   ) => void;
   onOpenSettings?: () => void;
+  onOpenQueues?: () => void;
 };
 
 const items: Array<{
@@ -65,9 +68,11 @@ const items: Array<{
 export function Sidebar({
   activeItem = "all",
   settingsActive = false,
+  queuesActive = false,
   counts,
   onSelect,
   onOpenSettings,
+  onOpenQueues,
 }: SidebarProps) {
   return (
     <aside className="sidebar">
@@ -109,6 +114,7 @@ export function Sidebar({
                 type="button"
                 className={`sidebar__item ${
                   !settingsActive &&
+                  !queuesActive &&
                   activeItem === id
                     ? "sidebar__item--active"
                     : ""
@@ -136,6 +142,19 @@ export function Sidebar({
           },
         )}
       </nav>
+
+      <div className="sidebar__secondary">
+        <button
+          className={`sidebar__item ${
+            queuesActive ? "sidebar__item--active" : ""
+          }`}
+          type="button"
+          onClick={onOpenQueues}
+        >
+          <Layers3 size={17} strokeWidth={1.9} />
+          <span>Queues</span>
+        </button>
+      </div>
 
       <div className="sidebar__footer">
         <button

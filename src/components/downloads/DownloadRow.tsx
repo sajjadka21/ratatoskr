@@ -13,6 +13,7 @@ import "./DownloadRow.css";
 
 type DownloadRowProps = {
   item: DownloadListItem;
+  queueName?: string;
   selected?: boolean;
   onSelect?: () => void;
   onContextMenu?: (
@@ -100,6 +101,7 @@ function statusLabel(status: string): string {
 
 export function DownloadRow({
   item,
+  queueName,
   selected = false,
   onSelect,
   onContextMenu,
@@ -198,6 +200,12 @@ export function DownloadRow({
               ? ` of ${formatBytes(item.totalBytes)}`
               : ""}
           </span>
+
+          {item.queueId ? (
+            <span className="download-row__queue-hint">
+              {queueName ?? item.queueId} · {item.priority.replace("_", " ")}
+            </span>
+          ) : null}
 
           {status === "failed" &&
           item.errorMessage ? (

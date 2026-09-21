@@ -7,6 +7,7 @@ use std::{
 use thiserror::Error;
 
 mod downloads;
+mod settings;
 
 const LATEST_SCHEMA_VERSION: i32 = 1;
 

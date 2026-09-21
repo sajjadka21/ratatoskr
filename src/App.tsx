@@ -6,9 +6,11 @@
 } from "react";
 
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { AddDownloadModal } from "./components/downloads/AddDownloadModal";
 import { DownloadContextMenu } from "./components/downloads/DownloadContextMenu";
+import { RemoveHistoryDialog } from "./components/downloads/RemoveHistoryDialog";
 import { DownloadDetailsPanel } from "./components/downloads/DownloadDetailsPanel";
 import { DownloadRow } from "./components/downloads/DownloadRow";
 import { AppShell } from "./components/layout/AppShell";
@@ -19,6 +21,12 @@ import type {
 } from "./components/layout/Sidebar";
 
 import type { DownloadListItem } from "./types/download";
+
+import {
+  SettingsPage,
+  type AddDownloadInputMode,
+} from "./components/settings/SettingsPage";
+import { extractHttpUrls } from "./utils/downloadLinks";
 
 import "./App.css";
 
@@ -89,6 +97,25 @@ function App() {
 
   const [activeSection, setActiveSection] =
     useState<DownloadSection>("all");
+  const [settingsOpen, setSettingsOpen] =
+    useState(false);
+
+  const [
+    addDownloadInputMode,
+    setAddDownloadInputMode,
+  ] = useState<AddDownloadInputMode>(
+    "clipboard",
+  );
+
+  const [
+    settingsSaving,
+    setSettingsSaving,
+  ] = useState(false);
+
+  const [
+    settingsError,
+    setSettingsError,
+  ] = useState<string | null>(null);
 
   const [searchQuery, setSearchQuery] =
     useState("");
@@ -103,12 +130,22 @@ function App() {
       y: number;
     } | null>(null);
 
+  const [removeCandidate, setRemoveCandidate] =
+    useState<DownloadListItem | null>(null);
+
+  const [removingHistory, setRemovingHistory] =
+    useState(false);
+
+  const [removeHistoryError, setRemoveHistoryError] =
+    useState<string | null>(null);
   const [modalOpen, setModalOpen] =
     useState(false);
 
   const [url, setUrl] =
     useState("");
 
+  const [batchCurrentIndex, setBatchCurrentIndex] =
+    useState(0);
   const [progress, setProgress] =
     useState<DownloadProgressEvent | null>(null);
 
@@ -129,6 +166,17 @@ function App() {
     setAppInfo(appInfoResult);
   }, []);
 
+  const refreshInputMode =
+    useCallback(async () => {
+      const mode =
+        await invoke<AddDownloadInputMode>(
+          "get_add_download_input_mode",
+        );
+
+      setAddDownloadInputMode(
+        mode,
+      );
+    }, []);
   const refreshDownloads = useCallback(async () => {
     const items =
       await invoke<DownloadListItem[]>(
@@ -142,10 +190,11 @@ function App() {
     void Promise.all([
       refreshHealth(),
       refreshDownloads(),
+      refreshInputMode(),
     ]).catch((reason) => {
       setError(String(reason));
     });
-  }, [refreshHealth, refreshDownloads]);
+  }, [refreshHealth, refreshDownloads, refreshInputMode]);
 
   useEffect(() => {
     function handleEscape(event: KeyboardEvent) {
@@ -153,7 +202,7 @@ function App() {
         return;
       }
 
-      if (modalOpen || contextMenu) {
+      if (modalOpen || contextMenu || removeCandidate) {
         return;
       }
 
@@ -176,8 +225,13 @@ function App() {
   }, [
     modalOpen,
     contextMenu,
+    removeCandidate,
     selectedDownloadId,
   ]);
+  const parsedDownloadUrls = useMemo(
+    () => extractHttpUrls(url),
+    [url],
+  );
   const allReady =
     health?.core.status === "ready" &&
     health?.storage.status === "ready" &&
@@ -269,10 +323,13 @@ function App() {
     ) ?? null;
 
   async function startDownload() {
-    const trimmedUrl = url.trim();
+    const links =
+      extractHttpUrls(url);
 
-    if (!trimmedUrl) {
-      setError("Enter a download URL.");
+    if (links.length === 0) {
+      setError(
+        "Enter at least one valid HTTP or HTTPS download link.",
+      );
       return;
     }
 
@@ -286,28 +343,65 @@ function App() {
     setDownloading(true);
     setProgress(null);
     setError(null);
+    setBatchCurrentIndex(0);
 
-    const onProgress =
-      new Channel<DownloadProgressEvent>();
+    const failedLinks: string[] = [];
 
-    onProgress.onmessage = (message) => {
-      setProgress(message);
-    };
+    for (
+      let index = 0;
+      index < links.length;
+      index += 1
+    ) {
+      const downloadUrl = links[index];
+
+      setBatchCurrentIndex(index + 1);
+      setProgress(null);
+
+      const onProgress =
+        new Channel<DownloadProgressEvent>();
+
+      onProgress.onmessage = (message) => {
+        setProgress(message);
+      };
+
+      try {
+        await invoke<StartDownloadResponse>(
+          "start_download",
+          {
+            url: downloadUrl,
+            onProgress,
+          },
+        );
+      } catch (reason) {
+        console.error(
+          `Download failed for ${downloadUrl}:`,
+          reason,
+        );
+
+        failedLinks.push(downloadUrl);
+      }
+    }
 
     try {
-      await invoke<StartDownloadResponse>(
-        "start_download",
-        {
-          url: trimmedUrl,
-          onProgress,
-        },
-      );
-
       await refreshDownloads();
 
-      setUrl("");
-      setProgress(null);
-      setModalOpen(false);
+      if (failedLinks.length === 0) {
+        setUrl("");
+        setProgress(null);
+        setBatchCurrentIndex(0);
+        setModalOpen(false);
+      } else {
+        setUrl(
+          failedLinks.join("\n"),
+        );
+
+        setProgress(null);
+        setBatchCurrentIndex(0);
+
+        setError(
+          `${failedLinks.length} of ${links.length} downloads failed. Only the failed links remain here so you can retry them.`,
+        );
+      }
     } catch (reason) {
       setError(String(reason));
     } finally {
@@ -315,9 +409,39 @@ function App() {
     }
   }
 
-  function openAddDownload() {
+  async function openAddDownload() {
     setError(null);
     setProgress(null);
+    setBatchCurrentIndex(0);
+
+    if (
+      addDownloadInputMode ===
+      "clipboard"
+    ) {
+      try {
+        const clipboardText =
+          await readText();
+
+        const clipboardLinks =
+          extractHttpUrls(
+            clipboardText ?? "",
+          );
+
+        setUrl(
+          clipboardLinks.join("\n"),
+        );
+      } catch (reason) {
+        console.warn(
+          "Could not read clipboard:",
+          reason,
+        );
+
+        setUrl("");
+      }
+    } else {
+      setUrl("");
+    }
+
     setModalOpen(true);
   }
 
@@ -328,6 +452,7 @@ function App() {
 
     setError(null);
     setProgress(null);
+    setBatchCurrentIndex(0);
     setModalOpen(false);
   }
 
@@ -342,9 +467,101 @@ function App() {
       y,
     });
   }
+  function requestRemoveFromHistory(
+    item: DownloadListItem,
+  ) {
+    setContextMenu(null);
+    setRemoveHistoryError(null);
+    setRemoveCandidate(item);
+  }
+
+  function closeRemoveHistory() {
+    if (removingHistory) {
+      return;
+    }
+
+    setRemoveHistoryError(null);
+    setRemoveCandidate(null);
+  }
+
+  async function confirmRemoveFromHistory(deleteFile: boolean) {
+    if (!removeCandidate) {
+      return;
+    }
+
+    setRemovingHistory(true);
+    setRemoveHistoryError(null);
+
+    try {
+      await invoke<void>(
+        "remove_download",
+        {
+          id: removeCandidate.id,
+          deleteFile,
+        },
+      );
+
+      if (
+        selectedDownloadId ===
+        removeCandidate.id
+      ) {
+        setSelectedDownloadId(null);
+      }
+
+      await refreshDownloads();
+
+      setRemoveCandidate(null);
+    } catch (reason) {
+      setRemoveHistoryError(
+        String(reason),
+      );
+    } finally {
+      setRemovingHistory(false);
+    }
+  }
+  async function changeAddDownloadInputMode(
+    mode: AddDownloadInputMode,
+  ) {
+    if (
+      mode === addDownloadInputMode ||
+      settingsSaving
+    ) {
+      return;
+    }
+
+    setSettingsSaving(true);
+    setSettingsError(null);
+
+    try {
+      await invoke<void>(
+        "set_add_download_input_mode",
+        {
+          mode,
+        },
+      );
+
+      setAddDownloadInputMode(
+        mode,
+      );
+    } catch (reason) {
+      setSettingsError(
+        String(reason),
+      );
+    } finally {
+      setSettingsSaving(false);
+    }
+  }
+
+  function openSettings() {
+    setSettingsError(null);
+    setSettingsOpen(true);
+    setSelectedDownloadId(null);
+    setContextMenu(null);
+  }
   function changeSection(
     section: DownloadSection,
   ) {
+    setSettingsOpen(false);
     setActiveSection(section);
     setSelectedDownloadId(null);
   }
@@ -367,16 +584,36 @@ function App() {
   return (
     <>
       <AppShell
-        title={sectionTitles[activeSection]}
+        title={settingsOpen ? "Settings" : sectionTitles[activeSection]}
         subtitle={`Version ${appInfo?.version ?? "..."} · ${backendLabel}`}
         activeItem={activeSection}
+        settingsActive={settingsOpen}
         counts={counts}
+        onOpenSettings={openSettings}
         searchValue={searchQuery}
         onSearchChange={setSearchQuery}
         onSectionChange={changeSection}
         onAddDownload={openAddDownload}
       >
-        <div className="downloads-workspace">
+        {settingsOpen ? (
+          <SettingsPage
+            inputMode={
+              addDownloadInputMode
+            }
+            saving={
+              settingsSaving
+            }
+            error={
+              settingsError
+            }
+            onInputModeChange={(mode) =>
+              void changeAddDownloadInputMode(
+                mode,
+              )
+            }
+          />
+        ) : (
+          <div className="downloads-workspace">
           <section className="download-library">
             <div className="download-library__header">
               <div>
@@ -441,7 +678,8 @@ function App() {
               setSelectedDownloadId(null)
             }
           />
-        </div>
+          </div>
+        )}
       </AppShell>
 
       <DownloadContextMenu
@@ -453,6 +691,19 @@ function App() {
         }
         onShowDetails={(id) =>
           setSelectedDownloadId(id)
+        }
+        onRemoveFromHistory={
+          requestRemoveFromHistory
+        }
+      />
+
+      <RemoveHistoryDialog
+        item={removeCandidate}
+        removing={removingHistory}
+        error={removeHistoryError}
+        onCancel={closeRemoveHistory}
+        onConfirm={(deleteFile) =>
+          void confirmRemoveFromHistory(deleteFile)
         }
       />
 
@@ -468,6 +719,12 @@ function App() {
         totalBytes={
           progress?.totalBytes ?? null
         }
+        linkCount={
+          parsedDownloadUrls.length
+        }
+        currentIndex={
+          batchCurrentIndex
+        }
         onUrlChange={setUrl}
         onClose={closeAddDownload}
         onDownload={() => void startDownload()}
@@ -477,6 +734,40 @@ function App() {
 }
 
 export default App;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

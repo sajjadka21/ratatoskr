@@ -352,3 +352,94 @@
   box-shadow:
     0 0 0 3px rgba(79, 140, 255, 0.12);
 }
+
+.add-download-modal__title-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.add-download-modal__batch-badge {
+  height: 20px;
+  padding: 0 7px;
+
+  display: inline-flex;
+  align-items: center;
+
+  color: #aac8ff;
+  background: rgba(79, 140, 255, 0.11);
+
+  border: 1px solid rgba(79, 140, 255, 0.2);
+  border-radius: 999px;
+
+  font-size: 8px;
+  font-weight: 650;
+}
+
+.add-download-modal__input-wrap {
+  min-height: 44px;
+  height: auto;
+
+  align-items: flex-start;
+}
+
+.add-download-modal__input-wrap > svg {
+  margin-top: 13px;
+  flex: 0 0 auto;
+}
+
+.add-download-modal__input-wrap textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 12px 0 10px;
+
+  color: var(--text-primary);
+  background: transparent;
+
+  border: 0;
+  outline: none !important;
+
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.55;
+
+  resize: none;
+}
+
+.add-download-modal__input-wrap textarea:focus,
+.add-download-modal__input-wrap textarea:focus-visible {
+  outline: none !important;
+  box-shadow: none;
+}
+
+.add-download-modal__input-wrap--batch textarea {
+  min-height: 94px;
+
+  overflow-y: auto;
+}
+
+.add-download-modal__detection {
+  margin-top: 9px;
+
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  color: var(--success);
+
+  font-size: 9px;
+}
+
+.add-download-modal__detection--warning {
+  color: var(--warning);
+}
+
+.add-download-modal__batch-progress {
+  margin-bottom: 8px;
+
+  color: var(--text-secondary);
+
+  font-size: 10px;
+  font-weight: 600;
+}

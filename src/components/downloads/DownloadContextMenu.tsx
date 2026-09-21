@@ -4,6 +4,7 @@
   FileText,
   FolderOpen,
   Link2,
+  Trash2,
 } from "lucide-react";
 
 import {
@@ -28,6 +29,9 @@ type DownloadContextMenuProps = {
   y: number;
   onClose: () => void;
   onShowDetails: (id: string) => void;
+  onRemoveFromHistory: (
+    item: DownloadListItem,
+  ) => void;
 };
 
 export function DownloadContextMenu({
@@ -36,6 +40,7 @@ export function DownloadContextMenu({
   y,
   onClose,
   onShowDetails,
+  onRemoveFromHistory,
 }: DownloadContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -51,37 +56,32 @@ export function DownloadContextMenu({
   useLayoutEffect(() => {
     const menu = menuRef.current;
 
-    if (!menu || !item) {
-      return;
-    }
+    if (!menu || !item) return;
 
     const rect = menu.getBoundingClientRect();
-
     const padding = 10;
 
-    const left = Math.max(
-      padding,
-      Math.min(
-        x,
-        window.innerWidth - rect.width - padding,
+    setPosition({
+      left: Math.max(
+        padding,
+        Math.min(
+          x,
+          window.innerWidth - rect.width - padding,
+        ),
       ),
-    );
 
-    const top = Math.max(
-      padding,
-      Math.min(
-        y,
-        window.innerHeight - rect.height - padding,
+      top: Math.max(
+        padding,
+        Math.min(
+          y,
+          window.innerHeight - rect.height - padding,
+        ),
       ),
-    );
-
-    setPosition({ left, top });
+    });
   }, [x, y, item]);
 
   useEffect(() => {
-    if (!item) {
-      return;
-    }
+    if (!item) return;
 
     function handleMouseDown(event: MouseEvent) {
       const menu = menuRef.current;
@@ -123,19 +123,15 @@ export function DownloadContextMenu({
     };
   }, [item, onClose]);
 
-  if (!item) {
-    return null;
-  }
+  if (!item) return null;
 
   const status = item.status.toLowerCase();
-
   const destinationPath = item.destinationPath;
 
   const hasFile =
     Boolean(destinationPath) &&
     status === "completed";
-
-  async function handleOpenFile() {
+async function handleOpenFile() {
     if (!destinationPath) return;
 
     try {
@@ -266,6 +262,30 @@ export function DownloadContextMenu({
         <FileText size={15} />
         <span>Details</span>
       </button>
+      <div className="download-context-menu__divider" />
+
+      <button
+        type="button"
+        role="menuitem"
+        className="download-context-menu__danger"
+        disabled={
+          ![
+            "completed",
+            "failed",
+            "cancelled",
+          ].includes(status)
+        }
+        onClick={() => {
+          onRemoveFromHistory(item);
+        }}
+      >
+        <Trash2 size={15} />
+        <span>Remove from History...</span>
+      </button>
     </div>
   );
 }
+
+
+
+

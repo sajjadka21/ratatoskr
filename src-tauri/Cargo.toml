@@ -27,3 +27,4 @@ dm-ipc = { version = "0.1.0", path = "../crates/dm-ipc" }
 dm-core = { version = "0.1.0", path = "../crates/dm-core" }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
+tauri-plugin-clipboard-manager = "2.3.3"

@@ -12,15 +12,26 @@ import "./AppShell.css";
 
 type AppShellProps = {
   children: ReactNode;
+
   title?: string;
   subtitle?: string;
+
   activeItem?: DownloadSection;
+  settingsActive?: boolean;
+
   counts?: SidebarCounts;
+
   searchValue: string;
-  onSearchChange: (value: string) => void;
+
+  onSearchChange: (
+    value: string,
+  ) => void;
+
   onSectionChange?: (
     section: DownloadSection,
   ) => void;
+
+  onOpenSettings?: () => void;
   onAddDownload?: () => void;
 };
 
@@ -29,18 +40,24 @@ export function AppShell({
   title = "All Downloads",
   subtitle,
   activeItem = "all",
+  settingsActive = false,
   counts,
   searchValue,
   onSearchChange,
   onSectionChange,
+  onOpenSettings,
   onAddDownload,
 }: AppShellProps) {
   return (
     <div className="app-shell">
       <Sidebar
         activeItem={activeItem}
+        settingsActive={settingsActive}
         counts={counts}
         onSelect={onSectionChange}
+        onOpenSettings={
+          onOpenSettings
+        }
       />
 
       <div className="app-shell__workspace">
@@ -48,8 +65,12 @@ export function AppShell({
           title={title}
           subtitle={subtitle}
           searchValue={searchValue}
-          onSearchChange={onSearchChange}
-          onAddDownload={onAddDownload}
+          onSearchChange={
+            onSearchChange
+          }
+          onAddDownload={
+            onAddDownload
+          }
         />
 
         <main className="app-shell__content">

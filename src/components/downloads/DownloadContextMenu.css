@@ -78,3 +78,21 @@
     transform: scale(1) translateY(0);
   }
 }
+
+.download-context-menu__danger {
+  color: #f08080 !important;
+}
+
+.download-context-menu__danger:hover:not(:disabled) {
+  color: #ffabab !important;
+  background: rgba(240, 100, 100, 0.09) !important;
+}
+
+.download-context-menu__danger {
+  color: #f08080 !important;
+}
+
+.download-context-menu__danger:hover:not(:disabled) {
+  color: #ffb0b0 !important;
+  background: rgba(240, 100, 100, 0.09) !important;
+}

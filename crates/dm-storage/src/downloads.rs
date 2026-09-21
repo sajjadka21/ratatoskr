@@ -187,6 +187,19 @@ impl Storage {
         Ok(downloads)
     }
 
+    pub fn remove_download_record(&self, id: &str) -> Result<()> {
+        let connection = self.connection()?;
+
+        let changed = connection.execute(
+            r#"
+            DELETE FROM downloads
+            WHERE id = ?1;
+            "#,
+            [id],
+        )?;
+
+        ensure_updated(id, changed)
+    }
     pub fn mark_downloading(&self, id: &str, started_at: i64) -> Result<()> {
         let connection = self.connection()?;
 
@@ -403,6 +416,56 @@ mod tests {
         );
     }
 
+    #[test]
+    fn removes_download_record_without_deleting_file() {
+        let directory = tempdir().unwrap();
+        let database_path = directory.path().join("downloads.db");
+        let destination_path = directory.path().join("file.zip");
+
+        std::fs::write(&destination_path, b"downloaded file").unwrap();
+
+        let storage = Storage::open(&database_path).unwrap();
+
+        let created = storage
+            .create_download("https://example.com/file.zip", 3_000)
+            .unwrap();
+
+        storage.mark_downloading(&created.id, 3_100).unwrap();
+
+        let completion = DownloadCompletion {
+            resolved_url: "https://example.com/file.zip".to_owned(),
+            filename: "file.zip".to_owned(),
+            destination_path: destination_path.to_string_lossy().into_owned(),
+            mime_type: Some("application/zip".to_owned()),
+            total_bytes: Some(15),
+            downloaded_bytes: 15,
+        };
+
+        storage
+            .mark_completed(&created.id, &completion, 3_200)
+            .unwrap();
+
+        assert!(destination_path.exists());
+        assert!(storage.get_download(&created.id).unwrap().is_some());
+
+        storage.remove_download_record(&created.id).unwrap();
+
+        assert!(storage.get_download(&created.id).unwrap().is_none());
+
+        assert!(destination_path.exists());
+        assert!(storage.list_downloads().unwrap().is_empty());
+    }
+
+    #[test]
+    fn removing_unknown_download_returns_not_found() {
+        let directory = tempdir().unwrap();
+        let database_path = directory.path().join("downloads.db");
+        let storage = Storage::open(&database_path).unwrap();
+
+        let error = storage.remove_download_record("missing-id").unwrap_err();
+
+        assert!(matches!(error, StorageError::DownloadNotFound(_)));
+    }
     #[test]
     fn updating_unknown_download_returns_not_found() {
         let directory = tempdir().unwrap();

@@ -1,5 +1,14 @@
-﻿import { Download, Link2, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+﻿import {
+  Download,
+  Layers3,
+  Link2,
+  X,
+} from "lucide-react";
+
+import {
+  useEffect,
+  useRef,
+} from "react";
 
 import "./AddDownloadModal.css";
 
@@ -9,8 +18,13 @@ type AddDownloadModalProps = {
   downloading: boolean;
   engineReady: boolean;
   error: string | null;
+
   downloadedBytes: number;
   totalBytes: number | null;
+
+  linkCount: number;
+  currentIndex: number;
+
   onUrlChange: (value: string) => void;
   onClose: () => void;
   onDownload: () => void;
@@ -19,16 +33,27 @@ type AddDownloadModalProps = {
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return "0 B";
 
-  const units = ["B", "KB", "MB", "GB", "TB"];
+  const units = [
+    "B",
+    "KB",
+    "MB",
+    "GB",
+    "TB",
+  ];
 
   const index = Math.min(
-    Math.floor(Math.log(bytes) / Math.log(1024)),
+    Math.floor(
+      Math.log(bytes) / Math.log(1024),
+    ),
     units.length - 1,
   );
 
-  const value = bytes / 1024 ** index;
+  const value =
+    bytes / 1024 ** index;
 
-  return `${value.toFixed(index === 0 ? 0 : 2)} ${units[index]}`;
+  return `${value.toFixed(
+    index === 0 ? 0 : 2,
+  )} ${units[index]}`;
 }
 
 export function AddDownloadModal({
@@ -39,42 +64,79 @@ export function AddDownloadModal({
   error,
   downloadedBytes,
   totalBytes,
+  linkCount,
+  currentIndex,
   onUrlChange,
   onClose,
   onDownload,
 }: AddDownloadModalProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef =
+    useRef<HTMLTextAreaElement>(null);
+
+  const isBatch =
+    linkCount > 1;
 
   const percent =
     totalBytes && totalBytes > 0
-      ? Math.min(100, (downloadedBytes / totalBytes) * 100)
+      ? Math.min(
+          100,
+          (
+            downloadedBytes /
+            totalBytes
+          ) * 100,
+        )
       : null;
 
   useEffect(() => {
     if (!open) return;
 
-    const timer = window.setTimeout(() => {
-      inputRef.current?.focus();
-    }, 60);
+    const timer =
+      window.setTimeout(() => {
+        inputRef.current?.focus();
 
-    return () => window.clearTimeout(timer);
+        const length =
+          inputRef.current?.value.length ?? 0;
+
+        inputRef.current?.setSelectionRange(
+          length,
+          length,
+        );
+      }, 60);
+
+    return () =>
+      window.clearTimeout(timer);
   }, [open]);
 
   useEffect(() => {
     if (!open) return;
 
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !downloading) {
+    function handleKeyDown(
+      event: KeyboardEvent,
+    ) {
+      if (
+        event.key === "Escape" &&
+        !downloading
+      ) {
         onClose();
       }
     }
 
-    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener(
+      "keydown",
+      handleKeyDown,
+    );
 
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener(
+        "keydown",
+        handleKeyDown,
+      );
     };
-  }, [open, downloading, onClose]);
+  }, [
+    open,
+    downloading,
+    onClose,
+  ]);
 
   if (!open) {
     return null;
@@ -86,7 +148,8 @@ export function AddDownloadModal({
       role="presentation"
       onMouseDown={(event) => {
         if (
-          event.target === event.currentTarget &&
+          event.target ===
+            event.currentTarget &&
           !downloading
         ) {
           onClose();
@@ -102,15 +165,32 @@ export function AddDownloadModal({
         <header className="add-download-modal__header">
           <div className="add-download-modal__heading">
             <div className="add-download-modal__icon">
-              <Link2 size={20} />
+              {isBatch ? (
+                <Layers3 size={20} />
+              ) : (
+                <Link2 size={20} />
+              )}
             </div>
 
             <div>
-              <h2 id="add-download-title">
-                Add Download
-              </h2>
+              <div className="add-download-modal__title-row">
+                <h2 id="add-download-title">
+                  {isBatch
+                    ? "Add Batch"
+                    : "Add Download"}
+                </h2>
+
+                {isBatch ? (
+                  <span className="add-download-modal__batch-badge">
+                    {linkCount} links
+                  </span>
+                ) : null}
+              </div>
+
               <p>
-                Paste a direct link and we'll handle the rest.
+                {isBatch
+                  ? `${linkCount} unique download links detected.`
+                  : "Paste a direct link and we'll handle the rest."}
               </p>
             </div>
           </div>
@@ -128,56 +208,133 @@ export function AddDownloadModal({
 
         <div className="add-download-modal__body">
           <label className="add-download-modal__label">
-            URL
+            {isBatch
+              ? "Download links"
+              : "URL"}
           </label>
 
-          <div className="add-download-modal__input-wrap">
+          <div
+            className={`add-download-modal__input-wrap ${
+              isBatch
+                ? "add-download-modal__input-wrap--batch"
+                : ""
+            }`}
+          >
             <Link2 size={16} />
 
-            <input
+            <textarea
               ref={inputRef}
               value={url}
+              rows={
+                isBatch
+                  ? Math.min(
+                      Math.max(linkCount, 3),
+                      7,
+                    )
+                  : 1
+              }
               onChange={(event) =>
-                onUrlChange(event.target.value)
+                onUrlChange(
+                  event.target.value,
+                )
               }
               onKeyDown={(event) => {
                 if (
                   event.key === "Enter" &&
+                  !event.shiftKey &&
+                  !isBatch &&
+                  linkCount === 1 &&
                   !downloading &&
-                  engineReady &&
-                  url.trim()
+                  engineReady
                 ) {
+                  event.preventDefault();
                   onDownload();
                 }
               }}
               disabled={downloading}
-              placeholder="https://example.com/file.zip"
+              placeholder={
+                isBatch
+                  ? "One download link per line"
+                  : "https://example.com/file.zip"
+              }
             />
           </div>
 
+          {linkCount > 0 ? (
+            <div className="add-download-modal__detection">
+              {isBatch ? (
+                <>
+                  <Layers3 size={13} />
+                  <span>
+                    Batch detected ·{" "}
+                    {linkCount} unique links
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Link2 size={13} />
+                  <span>
+                    1 valid download link
+                  </span>
+                </>
+              )}
+            </div>
+          ) : url.trim() ? (
+            <div className="add-download-modal__detection add-download-modal__detection--warning">
+              No valid HTTP or HTTPS link detected.
+            </div>
+          ) : null}
+
           <div className="add-download-modal__destination">
             <span>Destination</span>
-            <strong>System Downloads folder</strong>
+
+            <strong>
+              System Downloads folder
+            </strong>
           </div>
 
           {downloading ? (
             <div className="add-download-modal__progress">
+              {isBatch ? (
+                <div className="add-download-modal__batch-progress">
+                  Downloading{" "}
+                  {Math.max(
+                    currentIndex,
+                    1,
+                  )}{" "}
+                  of {linkCount}
+                </div>
+              ) : null}
+
               <div className="add-download-modal__progress-track">
                 <div
                   className="add-download-modal__progress-fill"
                   style={{
-                    width: `${percent ?? 100}%`,
-                    opacity: percent === null ? 0.45 : 1,
+                    width: `${
+                      percent ?? 100
+                    }%`,
+                    opacity:
+                      percent === null
+                        ? 0.45
+                        : 1,
                   }}
                 />
               </div>
 
               <div className="add-download-modal__progress-meta">
-                <span>{formatBytes(downloadedBytes)}</span>
+                <span>
+                  {formatBytes(
+                    downloadedBytes,
+                  )}
+                </span>
 
                 <span>
                   {totalBytes
-                    ? `${formatBytes(totalBytes)} · ${percent?.toFixed(1)}%`
+                    ? `${formatBytes(
+                        totalBytes,
+                      )} · ${percent?.toFixed(
+                        1,
+                      )}%`
                     : "Downloading..."}
                 </span>
               </div>
@@ -217,14 +374,25 @@ export function AddDownloadModal({
             disabled={
               downloading ||
               !engineReady ||
-              !url.trim()
+              linkCount === 0
             }
           >
-            <Download size={16} />
+            {isBatch ? (
+              <Layers3 size={16} />
+            ) : (
+              <Download size={16} />
+            )}
 
             {downloading
-              ? "Downloading..."
-              : "Download"}
+              ? isBatch
+                ? `Downloading ${Math.max(
+                    currentIndex,
+                    1,
+                  )} of ${linkCount}`
+                : "Downloading..."
+              : isBatch
+                ? `Download ${linkCount} Files`
+                : "Download"}
           </button>
         </footer>
       </section>

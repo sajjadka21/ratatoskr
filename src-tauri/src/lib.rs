@@ -83,6 +83,74 @@ fn list_downloads(state: State<'_, AppState>) -> Result<Vec<DownloadListItemResp
         .collect())
 }
 #[tauri::command]
+fn remove_download(
+    state: State<'_, AppState>,
+    id: String,
+    delete_file: bool,
+) -> Result<(), String> {
+    let record = state
+        .storage
+        .get_download(&id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("download not found: {id}"))?;
+
+    let status = record.status.as_str();
+
+    if !matches!(status, "completed" | "failed" | "cancelled") {
+        return Err(format!("cannot remove download while status is '{status}'"));
+    }
+
+    if delete_file {
+        let destination_path = record
+            .destination_path
+            .as_deref()
+            .ok_or_else(|| "download has no destination file to delete".to_owned())?;
+
+        let path = std::path::Path::new(destination_path);
+
+        match std::fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                // The file was already removed outside the app.
+                // History can still be removed safely.
+            }
+            Err(error) => {
+                return Err(format!("failed to delete downloaded file: {error}"));
+            }
+        }
+    }
+
+    state
+        .storage
+        .remove_download_record(&id)
+        .map_err(|error| error.to_string())
+}
+#[tauri::command]
+fn get_add_download_input_mode(state: State<'_, AppState>) -> Result<String, String> {
+    let value = state
+        .storage
+        .get_setting("add_download_input_mode")
+        .map_err(|error| error.to_string())?;
+
+    match value.as_deref() {
+        Some("manual") => Ok("manual".to_owned()),
+        Some("clipboard") | None => Ok("clipboard".to_owned()),
+        Some(_) => Ok("clipboard".to_owned()),
+    }
+}
+
+#[tauri::command]
+fn set_add_download_input_mode(state: State<'_, AppState>, mode: String) -> Result<(), String> {
+    if !matches!(mode.as_str(), "clipboard" | "manual") {
+        return Err(format!("invalid add download input mode: {mode}"));
+    }
+
+    state
+        .storage
+        .set_setting("add_download_input_mode", &mode)
+        .map_err(|error| error.to_string())
+}
+#[tauri::command]
 async fn start_download(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -148,6 +216,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
             let database_path = app_data_dir.join("downloads.db");
@@ -176,6 +245,9 @@ pub fn run() {
             get_app_info,
             health_check,
             list_downloads,
+            get_add_download_input_mode,
+            set_add_download_input_mode,
+            remove_download,
             start_download
         ])
         .run(tauri::generate_context!())

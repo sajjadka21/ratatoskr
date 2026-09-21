@@ -22,8 +22,12 @@ export type SidebarCounts =
 
 type SidebarProps = {
   activeItem?: DownloadSection;
+  settingsActive?: boolean;
   counts?: SidebarCounts;
-  onSelect?: (section: DownloadSection) => void;
+  onSelect?: (
+    section: DownloadSection,
+  ) => void;
+  onOpenSettings?: () => void;
 };
 
 const items: Array<{
@@ -31,23 +35,48 @@ const items: Array<{
   label: string;
   icon: typeof List;
 }> = [
-  { id: "all", label: "All Downloads", icon: List },
-  { id: "active", label: "Active", icon: Zap },
-  { id: "queued", label: "Queued", icon: Clock3 },
-  { id: "completed", label: "Completed", icon: CheckCircle2 },
-  { id: "failed", label: "Failed", icon: CircleX },
+  {
+    id: "all",
+    label: "All Downloads",
+    icon: List,
+  },
+  {
+    id: "active",
+    label: "Active",
+    icon: Zap,
+  },
+  {
+    id: "queued",
+    label: "Queued",
+    icon: Clock3,
+  },
+  {
+    id: "completed",
+    label: "Completed",
+    icon: CheckCircle2,
+  },
+  {
+    id: "failed",
+    label: "Failed",
+    icon: CircleX,
+  },
 ];
 
 export function Sidebar({
   activeItem = "all",
+  settingsActive = false,
   counts,
   onSelect,
+  onOpenSettings,
 }: SidebarProps) {
   return (
     <aside className="sidebar">
       <div className="sidebar__brand">
         <div className="sidebar__brand-icon">
-          <Download size={18} strokeWidth={2.4} />
+          <Download
+            size={18}
+            strokeWidth={2.4}
+          />
         </div>
 
         <div className="sidebar__brand-copy">
@@ -65,47 +94,64 @@ export function Sidebar({
         className="sidebar__nav"
         aria-label="Download sections"
       >
-        {items.map(({ id, label, icon: Icon }) => {
-          const count = counts?.[id] ?? 0;
+        {items.map(
+          ({
+            id,
+            label,
+            icon: Icon,
+          }) => {
+            const count =
+              counts?.[id] ?? 0;
 
-          return (
-            <button
-              key={id}
-              type="button"
-              className={`sidebar__item ${
-                activeItem === id
-                  ? "sidebar__item--active"
-                  : ""
-              }`}
-              aria-current={
-                activeItem === id
-                  ? "page"
-                  : undefined
-              }
-              onClick={() => onSelect?.(id)}
-            >
-              <Icon size={17} strokeWidth={1.9} />
+            return (
+              <button
+                key={id}
+                type="button"
+                className={`sidebar__item ${
+                  !settingsActive &&
+                  activeItem === id
+                    ? "sidebar__item--active"
+                    : ""
+                }`}
+                onClick={() =>
+                  onSelect?.(id)
+                }
+              >
+                <Icon
+                  size={17}
+                  strokeWidth={1.9}
+                />
 
-              <span className="sidebar__item-label">
-                {label}
-              </span>
-
-              {count > 0 ? (
-                <span className="sidebar__count">
-                  {count}
+                <span className="sidebar__item-label">
+                  {label}
                 </span>
-              ) : null}
-            </button>
-          );
-        })}
+
+                {count > 0 ? (
+                  <span className="sidebar__count">
+                    {count}
+                  </span>
+                ) : null}
+              </button>
+            );
+          },
+        )}
       </nav>
 
       <div className="sidebar__footer">
         <button
-          className="sidebar__item"
+          className={`sidebar__item ${
+            settingsActive
+              ? "sidebar__item--active"
+              : ""
+          }`}
           type="button"
+          onClick={onOpenSettings}
         >
-          <Settings size={17} strokeWidth={1.9} />
+          <Settings
+            size={17}
+            strokeWidth={1.9}
+          />
+
           <span>Settings</span>
         </button>
       </div>

@@ -274,10 +274,10 @@
 
 **Acceptance criteria:**
 
-- [ ] Throughput samples produce bounded, deterministic connection targets.
-- [ ] The controller explains scale-up, stable/diminishing returns, and
+- [x] Throughput samples produce bounded, deterministic connection targets.
+- [x] The controller explains scale-up, stable/diminishing returns, and
   server backoff decisions.
-- [ ] Unit tests cover conservative start, useful gains, no-gain plateaus,
+- [x] Unit tests cover conservative start, useful gains, no-gain plateaus,
   and target reduction.
 
 **Verification:** focused `dm-core` adaptive tests.
@@ -288,9 +288,9 @@
 
 **Acceptance criteria:**
 
-- [ ] Additive schema migration stores normalized host-only observations.
-- [ ] 429/503 counts, preferred cap, and last-seen time survive reopen.
-- [ ] Credentials, headers, paths, queries, and fragments never enter the
+- [x] Additive schema migration stores normalized host-only observations.
+- [x] 429/503 counts, preferred cap, and last-seen time survive reopen.
+- [x] Credentials, headers, paths, queries, and fragments never enter the
   profile key or persisted value.
 
 **Verification:** `dm-storage` migration/reopen and redaction tests.
@@ -301,10 +301,10 @@
 
 **Acceptance criteria:**
 
-- [ ] Segmented workers start conservatively and scale only after measured
+- [x] Segmented workers start conservatively and scale only after measured
   gains, within global/task/queue/per-host bounds.
-- [ ] 429/503 responses reduce the target and schedule bounded backoff.
-- [ ] Aggregate progress and final bytes remain authoritative and unchanged.
+- [x] 429/503 responses reduce the target and schedule bounded backoff.
+- [x] Aggregate progress and final bytes remain authoritative and unchanged.
 
 **Verification:** local HTTP service tests for scale-up, diminishing returns,
   429/503 backoff, and byte-identical completion.
@@ -315,9 +315,9 @@
 
 **Acceptance criteria:**
 
-- [ ] IPC progress exposes active/max connections and the adaptive reason.
-- [ ] Existing UI renders the measured explanation without inventing state.
-- [ ] All five required commands pass and Phase 5 is committed.
+- [x] IPC progress exposes active/max connections and the adaptive reason.
+- [x] Existing UI renders the measured explanation without inventing state.
+- [x] All five required commands pass and Phase 5 is committed.
 
 **Verification:** IPC/frontend tests plus the full repository quality gate.
 

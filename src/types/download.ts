@@ -37,6 +37,9 @@ export type DownloadPriority = DownloadListItem["priority"];
 export type TransferMetrics = {
   bytesPerSecond: number | null;
   etaSeconds: number | null;
+  activeConnections: number | null;
+  maxConnections: number | null;
+  adaptiveReason: string | null;
 };
 
 export type TransferMetricsMap = Record<string, TransferMetrics>;

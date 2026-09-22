@@ -66,6 +66,9 @@ type DownloadTaskEvent = {
   totalBytes: number | null;
   bytesPerSecond: number | null;
   etaSeconds: number | null;
+  activeConnections: number | null;
+  maxConnections: number | null;
+  adaptiveReason: string | null;
   status: string;
   download: DownloadListItem | null;
 };
@@ -219,6 +222,9 @@ function App() {
       totalBytes: number | null,
       bytesPerSecond: number | null = null,
       etaSeconds: number | null = null,
+      activeConnections: number | null = null,
+      maxConnections: number | null = null,
+      adaptiveReason: string | null = null,
     ) => {
       setDownloads((current) =>
         current.map((item) =>
@@ -235,7 +241,13 @@ function App() {
 
       setLiveMetrics((current) => ({
         ...current,
-        [downloadId]: { bytesPerSecond, etaSeconds },
+        [downloadId]: {
+          bytesPerSecond,
+          etaSeconds,
+          activeConnections,
+          maxConnections,
+          adaptiveReason,
+        },
       }));
     },
     [],
@@ -303,6 +315,9 @@ function App() {
           payload.totalBytes,
           payload.bytesPerSecond,
           payload.etaSeconds,
+          payload.activeConnections,
+          payload.maxConnections,
+          payload.adaptiveReason,
         );
       },
     );

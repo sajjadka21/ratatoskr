@@ -106,12 +106,13 @@ impl AdaptiveController {
         {
             self.target_connections -= 1;
             self.reason = AdaptiveReason::DiminishingReturns;
+        } else if self.target_connections < self.max_connections {
+            // One sample establishes the baseline; the next sample probes
+            // one additional stream so its measured result can be compared.
+            self.target_connections += 1;
+            self.reason = AdaptiveReason::ThroughputImproved;
         } else {
-            self.reason = if self.target_connections < self.max_connections {
-                AdaptiveReason::DiminishingReturns
-            } else {
-                AdaptiveReason::Stable
-            };
+            self.reason = AdaptiveReason::Stable;
         }
 
         self.decision(None)
@@ -185,7 +186,7 @@ mod tests {
     }
 
     #[test]
-    fn holds_target_when_throughput_gain_is_too_small() {
+    fn probes_one_more_connection_after_a_baseline_sample() {
         let mut controller = AdaptiveController::new(4);
         controller.observe(ThroughputSample {
             connections: 1,
@@ -197,8 +198,8 @@ mod tests {
             bytes_per_second: 105,
         });
 
-        assert_eq!(decision.target_connections, 1);
-        assert_eq!(decision.reason, AdaptiveReason::DiminishingReturns);
+        assert_eq!(decision.target_connections, 2);
+        assert_eq!(decision.reason, AdaptiveReason::ThroughputImproved);
     }
 
     #[test]

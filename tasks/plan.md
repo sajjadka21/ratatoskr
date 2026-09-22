@@ -1,4 +1,4 @@
-# Implementation Plan: Download Manager Phases 0-4
+# Implementation Plan: Download Manager Phases 0-5
 
 ## Overview
 
@@ -109,15 +109,15 @@ Preserve the checkpoint architecture while separating persistent task creation f
 
 ### Phase 5: Adaptive Connections + Speed
 
-- [ ] Add a deterministic adaptive controller for measured throughput,
+- [x] Add a deterministic adaptive controller for measured throughput,
   diminishing returns, and bounded connection targets.
-- [ ] Add additive host-profile persistence with safe host-only keys and
+- [x] Add additive host-profile persistence with safe host-only keys and
   429/503 observations.
-- [ ] Integrate adaptive targets with the segmented worker pool while
+- [x] Integrate adaptive targets with the segmented worker pool while
   preserving global, task, queue, and per-host concurrency bounds.
-- [ ] Add typed server backoff and expose active/max connections and the
+- [x] Add typed server backoff and expose active/max connections and the
   adaptive explanation through IPC and the existing UI events.
-- [ ] Run focused policy/storage/service/UI tests, the full quality gate,
+- [x] Run focused policy/storage/service/UI tests, the full quality gate,
   review, document, and commit.
 
 ## Phase 5 Risks and Mitigations
@@ -131,8 +131,8 @@ Preserve the checkpoint architecture while separating persistent task creation f
 
 ## Phase 5 Checkpoint
 
-- [ ] Policy unit tests cover scale-up, stable/diminishing returns, and backoff.
-- [ ] Host profiles survive migration/reopen without credentials or URL paths.
-- [ ] Segmented downloads adapt within bounded limits and remain byte-identical.
-- [ ] IPC/UI show measured active/max connections and a reason string.
-- [ ] Full repository quality gate passes and the phase is committed.
+- [x] Policy unit tests cover scale-up, stable/diminishing returns, and backoff.
+- [x] Host profiles survive migration/reopen without credentials or URL paths.
+- [x] Segmented downloads adapt within bounded limits and remain byte-identical.
+- [x] IPC/UI show measured active/max connections and a reason string.
+- [x] Full repository quality gate passes and the phase is committed.

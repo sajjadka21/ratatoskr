@@ -159,6 +159,9 @@ fn transfer_progress_response(progress: TransferProgress) -> TransferProgressRes
         total_bytes: progress.total_bytes,
         bytes_per_second: progress.bytes_per_second,
         eta_seconds: progress.eta_seconds,
+        active_connections: progress.active_connections,
+        max_connections: progress.max_connections,
+        adaptive_reason: progress.adaptive_reason.map(str::to_owned),
     }
 }
 

@@ -337,7 +337,7 @@ active milestone.
 
 ## Phase 4 - Segmented Engine
 
-Status: In progress
+Status: Complete
 
 Phase 3 was verified from the current repository state before this phase began:
 schema version 3, task controls, partial-file resume, validator checks,
@@ -403,7 +403,7 @@ will use a conservative bounded worker count and real byte progress only.
 
 ## Phase 5 - Adaptive Connections + Speed
 
-Status: In progress
+Status: Complete
 
 ### Plan
 
@@ -417,7 +417,54 @@ Status: In progress
 4. Add typed 429/503 handling with backoff and expose active/max connections,
    measured throughput history, and the adaptive explanation through IPC/UI.
 5. Add focused policy/storage/HTTP/service/UI tests, run the full quality gate,
-   review the diff, and create focused commits.
+    review the diff, and create focused commits.
+
+### Implemented
+
+- Added a deterministic adaptive controller that starts at one connection,
+  probes bounded additional streams, detects diminishing returns, and applies
+  capped exponential backoff after 429/503 responses.
+- Added schema v5 host profiles keyed only by normalized hostname. Profiles
+  persist preferred connection caps, rate-limited/busy observations, and the
+  last numeric status without URL paths, queries, fragments, credentials, or
+  headers.
+- Integrated adaptive targets with the segmented worker pool while retaining
+  the existing process-wide, queue, per-host, and per-task bounds. Throughput
+  and connection counts are measured by Rust and remain authoritative.
+- Added typed HTTP status errors and retry classification for rate limiting and
+  server-busy responses. Host observations are persisted for both probe and
+  segment failures.
+- Extended IPC, Tauri mapping, and the existing React projection to render
+  measured active/max connections and the backend-provided adaptive reason.
+
+### Tests added/updated
+
+- Adaptive policy tests cover conservative start, gain-based probing, target
+  caps, diminishing returns, and bounded 429/503 backoff.
+- Storage tests cover v5 migration, host-only key validation, redaction, and
+  reopen/accumulation of observations.
+- Core tests cover typed rate-limit errors, retry classification, adaptive
+  segmented progress, byte-identical completion, and probe profile updates.
+- IPC and frontend tests/build cover the new measured progress fields and
+  explainability rendering.
+
+### Phase 5 quality gate
+
+- `cargo fmt --all` - passed
+- `cargo test --workspace` - passed (138 tests)
+- `cargo check --workspace` - passed
+- `cargo clippy --workspace --all-targets -- -D warnings` - passed
+- `npm run build` - passed (with `npm_config_prefix` pointed at the installed
+  Node.js npm prefix because the default user npm shim targets a missing path)
+- `npm test` - passed (21 tests)
+- Code review - approved across correctness, readability, architecture,
+  security, and performance; no unresolved required findings.
+
+### Phase boundary
+
+Phase 5 is complete and committed. The next master-spec milestone is not
+started; no categories, rules, schedulers, browser integration, media
+extraction, or post-processing work was added.
 
 ### Scope boundary
 

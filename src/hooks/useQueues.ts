@@ -20,6 +20,9 @@ type QueueRunnerEvent = {
   totalBytes: number | null;
   bytesPerSecond: number | null;
   etaSeconds: number | null;
+  activeConnections: number | null;
+  maxConnections: number | null;
+  adaptiveReason: string | null;
 };
 
 type UseQueuesOptions = {
@@ -30,6 +33,9 @@ type UseQueuesOptions = {
     totalBytes: number | null,
     bytesPerSecond?: number | null,
     etaSeconds?: number | null,
+    activeConnections?: number | null,
+    maxConnections?: number | null,
+    adaptiveReason?: string | null,
   ) => void;
   clearLiveMetrics: (downloadId: string) => void;
   refreshDownloads: () => Promise<void>;
@@ -86,6 +92,9 @@ export function useQueues({
             payload.totalBytes,
             payload.bytesPerSecond,
             payload.etaSeconds,
+            payload.activeConnections,
+            payload.maxConnections,
+            payload.adaptiveReason,
           );
         }
       },

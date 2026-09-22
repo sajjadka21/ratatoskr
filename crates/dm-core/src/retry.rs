@@ -27,6 +27,10 @@ pub fn classify_failure(error: &DownloadError) -> FailureClass {
             FailureClass::Permanent
         }
 
+        DownloadError::HttpStatus { status } => reqwest::StatusCode::from_u16(*status)
+            .map(classify_status)
+            .unwrap_or(FailureClass::Permanent),
+
         // A short transfer is usually a dropped connection, which is exactly
         // what resuming is for.
         DownloadError::IncompleteTransfer { .. } => FailureClass::Retryable,
@@ -210,6 +214,22 @@ mod tests {
                 actual: 40
             }),
             FailureClass::Retryable
+        );
+    }
+
+    #[test]
+    fn typed_rate_limit_statuses_follow_http_retry_policy() {
+        assert_eq!(
+            classify_failure(&DownloadError::HttpStatus { status: 429 }),
+            FailureClass::Retryable
+        );
+        assert_eq!(
+            classify_failure(&DownloadError::HttpStatus { status: 503 }),
+            FailureClass::Retryable
+        );
+        assert_eq!(
+            classify_failure(&DownloadError::HttpStatus { status: 404 }),
+            FailureClass::Permanent
         );
     }
 

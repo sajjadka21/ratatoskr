@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HealthState {
     Ready,
@@ -62,6 +62,9 @@ pub struct DownloadTaskEvent {
     /// Seconds remaining at the measured rate, present only when the total
     /// size is known and the transfer is moving.
     pub eta_seconds: Option<u64>,
+    pub active_connections: Option<u32>,
+    pub max_connections: Option<u32>,
+    pub adaptive_reason: Option<String>,
     pub status: String,
     pub download: Option<DownloadListItemResponse>,
 }
@@ -75,6 +78,9 @@ impl DownloadTaskEvent {
             total_bytes: progress.total_bytes,
             bytes_per_second: progress.bytes_per_second,
             eta_seconds: progress.eta_seconds,
+            active_connections: progress.active_connections,
+            max_connections: progress.max_connections,
+            adaptive_reason: progress.adaptive_reason,
             status: "downloading".to_owned(),
             download: None,
         }
@@ -88,6 +94,9 @@ impl DownloadTaskEvent {
             total_bytes: download.total_bytes,
             bytes_per_second: None,
             eta_seconds: None,
+            active_connections: None,
+            max_connections: None,
+            adaptive_reason: None,
             status: download.status.clone(),
             download: Some(download),
         }
@@ -96,13 +105,16 @@ impl DownloadTaskEvent {
 
 /// Serialized transfer measurements. Every field is measured by the engine;
 /// nothing here is interpolated by the presentation layer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransferProgressResponse {
     pub downloaded_bytes: u64,
     pub total_bytes: Option<u64>,
     pub bytes_per_second: Option<u64>,
     pub eta_seconds: Option<u64>,
+    pub active_connections: Option<u32>,
+    pub max_connections: Option<u32>,
+    pub adaptive_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -166,6 +178,9 @@ pub struct QueueRunnerEventResponse {
     pub total_bytes: Option<u64>,
     pub bytes_per_second: Option<u64>,
     pub eta_seconds: Option<u64>,
+    pub active_connections: Option<u32>,
+    pub max_connections: Option<u32>,
+    pub adaptive_reason: Option<String>,
     /// The queue the event came from, so a listener can attribute an event
     /// without having to track which runner it subscribed to.
     pub queue_id: String,
@@ -183,6 +198,9 @@ impl QueueRunnerEventResponse {
             total_bytes: None,
             bytes_per_second: None,
             eta_seconds: None,
+            active_connections: None,
+            max_connections: None,
+            adaptive_reason: None,
         }
     }
 
@@ -201,6 +219,9 @@ impl QueueRunnerEventResponse {
             total_bytes: progress.total_bytes,
             bytes_per_second: progress.bytes_per_second,
             eta_seconds: progress.eta_seconds,
+            active_connections: progress.active_connections,
+            max_connections: progress.max_connections,
+            adaptive_reason: progress.adaptive_reason.clone(),
         }
     }
 
@@ -215,6 +236,9 @@ impl QueueRunnerEventResponse {
             total_bytes: None,
             bytes_per_second: None,
             eta_seconds: None,
+            active_connections: None,
+            max_connections: None,
+            adaptive_reason: None,
         }
     }
 }
@@ -273,6 +297,9 @@ mod tests {
                 total_bytes: Some(1_024),
                 bytes_per_second: Some(256),
                 eta_seconds: Some(2),
+                active_connections: Some(2),
+                max_connections: Some(4),
+                adaptive_reason: Some("throughput improved".to_owned()),
             },
         );
 
@@ -282,6 +309,12 @@ mod tests {
         assert_eq!(event.total_bytes, Some(1_024));
         assert_eq!(event.bytes_per_second, Some(256));
         assert_eq!(event.eta_seconds, Some(2));
+        assert_eq!(event.active_connections, Some(2));
+        assert_eq!(event.max_connections, Some(4));
+        assert_eq!(
+            event.adaptive_reason.as_deref(),
+            Some("throughput improved")
+        );
         assert_eq!(event.status, "downloading");
         assert!(event.download.is_none());
     }
@@ -304,6 +337,9 @@ mod tests {
                 total_bytes: None,
                 bytes_per_second: Some(64),
                 eta_seconds: None,
+                active_connections: None,
+                max_connections: None,
+                adaptive_reason: None,
             },
         );
 

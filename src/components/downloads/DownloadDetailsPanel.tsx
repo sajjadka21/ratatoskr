@@ -246,7 +246,10 @@ export function DownloadDetailsPanel({
               : ""}
           </div>
 
-          {rate || remaining ? (
+          {rate ||
+          remaining ||
+          metrics?.activeConnections !== null &&
+            metrics?.activeConnections !== undefined ? (
             <div className="download-details__live">
               {rate ? (
                 <span>
@@ -261,6 +264,22 @@ export function DownloadDetailsPanel({
                   {remaining} left
                 </span>
               ) : null}
+
+              {metrics?.activeConnections !== null &&
+              metrics?.activeConnections !== undefined ? (
+                <span>
+                  {metrics.activeConnections}
+                  {metrics.maxConnections
+                    ? `/${metrics.maxConnections}`
+                    : ""} connections
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+
+          {isTransferring && metrics?.adaptiveReason ? (
+            <div className="download-details__live-reason">
+              {metrics.adaptiveReason}
             </div>
           ) : null}
         </div>

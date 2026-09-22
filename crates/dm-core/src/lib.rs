@@ -61,6 +61,9 @@ pub enum DownloadError {
 
     #[error("segment received more than its expected length")]
     SegmentOverflow { expected: u64, actual: u64 },
+
+    #[error("server returned HTTP status {status}")]
+    HttpStatus { status: u16 },
 }
 
 impl DownloadError {
@@ -90,6 +93,9 @@ impl DownloadError {
             }
             Self::SegmentOverflow { expected, actual } => {
                 format!("the server sent {actual} bytes for a segment limited to {expected}")
+            }
+            Self::HttpStatus { status } => {
+                format!("the download server returned HTTP status {status}")
             }
         }
     }
@@ -121,6 +127,9 @@ pub struct TransferProgress {
     pub total_bytes: Option<u64>,
     pub bytes_per_second: Option<u64>,
     pub eta_seconds: Option<u64>,
+    pub active_connections: Option<u32>,
+    pub max_connections: Option<u32>,
+    pub adaptive_reason: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -438,6 +447,14 @@ impl Downloader {
             )
             .send()
             .await?;
+
+        if response.status() != StatusCode::PARTIAL_CONTENT
+            && (response.status().is_client_error() || response.status().is_server_error())
+        {
+            return Err(DownloadError::HttpStatus {
+                status: response.status().as_u16(),
+            });
+        }
 
         let content_range = header_text(response.headers(), CONTENT_RANGE);
         let parsed_range = content_range.as_deref().and_then(parse_content_range);
@@ -1442,6 +1459,38 @@ mod tests {
             .unwrap_err();
 
         assert!(matches!(error, DownloadError::InvalidRangeResponse { .. }));
+        assert!(!fs::try_exists(&temp).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn reports_rate_limit_statuses_as_typed_segment_errors() {
+        let server = TestServer::start(ServerBehaviour {
+            status: Some((429, "Too Many Requests")),
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let directory = tempdir().unwrap();
+        let downloader = Downloader::new().unwrap();
+        let control = TaskControl::new();
+        let temp = directory.path().join("segment-0000.part");
+
+        let error = downloader
+            .transfer_segment(
+                SegmentTransferRequest {
+                    source_url: &server.url("file.bin"),
+                    temp_path: &temp,
+                    start_byte: 0,
+                    end_byte: 4,
+                    downloaded_bytes: 0,
+                    total_bytes: Some(DEFAULT_BODY.len() as u64),
+                },
+                &control,
+                |_| Ok(()),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, DownloadError::HttpStatus { status: 429 }));
         assert!(!fs::try_exists(&temp).await.unwrap());
     }
 

@@ -1,5 +1,6 @@
 use crate::{
     DownloadError, Downloader, SegmentTransferRequest, TransferProgress, TransferRequest,
+    adaptive::{AdaptiveController, ThroughputSample},
     control::{StopReason, TaskControl},
     resume::{ResumePlan, StoredTransfer, plan_resume},
     retry::{FailureClass, RetryPolicy, classify_failure},
@@ -263,7 +264,24 @@ impl DownloadService {
     where
         F: FnMut(&str, TransferProgress) + Send,
     {
-        let probe = self.downloader.probe(&task.source_url).await?;
+        let probe = match self.downloader.probe(&task.source_url).await {
+            Ok(probe) => probe,
+            Err(error) => {
+                if let DownloadError::Http(http_error) = &error
+                    && let Some(status) = http_error.status()
+                    && matches!(status.as_u16(), 429 | 503)
+                    && let Ok(host) = normalized_host(&task.source_url)
+                {
+                    self.storage.record_host_observation(
+                        &host,
+                        Some(status.as_u16()),
+                        self.segment_connections.saturating_sub(1).max(1) as u32,
+                        unix_timestamp_seconds()?,
+                    )?;
+                }
+                return Err(DownloadServiceError::Download(error));
+            }
+        };
 
         // Paths are reserved once and then kept, so a resumed task writes to
         // the same partial file rather than starting a second one.
@@ -421,6 +439,9 @@ impl DownloadService {
                             bytes_per_second,
                             eta_seconds: meter
                                 .eta_seconds(progress.downloaded_bytes, progress.total_bytes),
+                            active_connections: Some(1),
+                            max_connections: Some(1),
+                            adaptive_reason: Some("single stream"),
                         },
                     );
                     Ok(())
@@ -452,7 +473,14 @@ impl DownloadService {
         F: FnMut(&str, TransferProgress) + Send,
     {
         let total_bytes = probe.total_bytes.ok_or(SegmentPlanError::EmptyResource)?;
-        let planned = plan_segments(&task.id, temp_path, total_bytes, self.segment_connections)?;
+        let host = normalized_host(&probe.final_url)?;
+        let connection_limit = self
+            .storage
+            .get_host_profile(&host)?
+            .map(|profile| profile.preferred_max_connections as usize)
+            .unwrap_or(self.segment_connections)
+            .clamp(1, self.segment_connections);
+        let planned = plan_segments(&task.id, temp_path, total_bytes, connection_limit)?;
         let existing = self.storage.list_download_segments(&task.id)?;
         let source_changed = (task.total_bytes.is_some() && task.total_bytes != probe.total_bytes)
             || (task.etag.is_some() && task.etag != probe.etag)
@@ -516,22 +544,22 @@ impl DownloadService {
             .cloned()
             .collect::<std::collections::VecDeque<_>>();
         let mut workers = JoinSet::new();
-        for _ in 0..self.segment_connections {
-            if let Some(segment) = pending.pop_front() {
-                spawn_segment_worker(
-                    &mut workers,
-                    SegmentWorkerInput {
-                        downloader: self.downloader.clone(),
-                        storage: Arc::clone(&self.storage),
-                        control: Arc::clone(&control),
-                        source_url: probe.final_url.clone(),
-                        total_bytes,
-                        segment,
-                        progress_tx: progress_tx.clone(),
-                    },
-                );
-            }
-        }
+        let mut adaptive = AdaptiveController::new(connection_limit);
+        let mut target_connections = adaptive.target_connections();
+        let pool_context = SegmentPoolContext {
+            downloader: self.downloader.clone(),
+            storage: Arc::clone(&self.storage),
+            control: Arc::clone(&control),
+            source_url: probe.final_url.clone(),
+            total_bytes,
+            progress_tx: progress_tx.clone(),
+        };
+        spawn_pending_segments(
+            &mut workers,
+            &mut pending,
+            target_connections,
+            &pool_context,
+        );
         let progress_id = task.id.clone();
         let mut meter = ThroughputMeter::new(Instant::now(), initial_bytes);
         let mut last_persisted_at = Instant::now();
@@ -554,11 +582,27 @@ impl DownloadService {
                     }
                     let now = Instant::now();
                     let bytes_per_second = meter.sample(downloaded, now);
+                    if let Some(rate) = bytes_per_second {
+                        let decision = adaptive.observe(ThroughputSample {
+                            connections: workers.len().max(1),
+                            bytes_per_second: rate,
+                        });
+                        target_connections = decision.target_connections;
+                    }
+                    spawn_pending_segments(
+                        &mut workers,
+                        &mut pending,
+                        target_connections,
+                        &pool_context,
+                    );
                     on_progress(&progress_id, TransferProgress {
                         downloaded_bytes: downloaded,
                         total_bytes: Some(total_bytes),
                         bytes_per_second,
                         eta_seconds: meter.eta_seconds(downloaded, Some(total_bytes)),
+                        active_connections: Some(workers.len().max(1) as u32),
+                        max_connections: Some(connection_limit as u32),
+                        adaptive_reason: Some(adaptive.reason().as_str()),
                     });
                 }
                 joined = workers.join_next() => {
@@ -567,20 +611,12 @@ impl DownloadService {
                     };
                     match joined {
                         Ok(Ok(_segment_index)) => {
-                            if let Some(segment) = pending.pop_front() {
-                                spawn_segment_worker(
-                                    &mut workers,
-                                    SegmentWorkerInput {
-                                        downloader: self.downloader.clone(),
-                                        storage: Arc::clone(&self.storage),
-                                        control: Arc::clone(&control),
-                                        source_url: probe.final_url.clone(),
-                                        total_bytes,
-                                        segment,
-                                        progress_tx: progress_tx.clone(),
-                                    },
-                                );
-                            }
+                            spawn_pending_segments(
+                                &mut workers,
+                                &mut pending,
+                                target_connections,
+                                &pool_context,
+                            );
                         }
                         Ok(Err(DownloadServiceError::Download(DownloadError::InvalidRangeResponse { .. }))) => {
                             workers.abort_all();
@@ -595,6 +631,20 @@ impl DownloadService {
                             while workers.join_next().await.is_some() {}
                             persist_segment_total(&self.storage, &task.id, total_bytes)?;
                             self.storage.reset_incomplete_download_segments(&task.id)?;
+                            if let DownloadError::HttpStatus { status } = &error
+                                && matches!(*status, 429 | 503)
+                                && let Some(decision) = adaptive.record_server_status(*status)
+                            {
+                                self.storage.record_host_observation(
+                                    &host,
+                                    Some(*status),
+                                    decision.target_connections as u32,
+                                    unix_timestamp_seconds()?,
+                                )?;
+                                if let Some(backoff) = decision.backoff {
+                                    tokio::time::sleep(backoff).await;
+                                }
+                            }
                             return Err(DownloadServiceError::Download(error));
                         }
                         Ok(Err(error)) => {
@@ -828,6 +878,40 @@ struct SegmentWorkerInput {
     progress_tx: UnboundedSender<()>,
 }
 
+struct SegmentPoolContext {
+    downloader: Downloader,
+    storage: Arc<Storage>,
+    control: Arc<TaskControl>,
+    source_url: String,
+    total_bytes: u64,
+    progress_tx: UnboundedSender<()>,
+}
+
+fn spawn_pending_segments(
+    workers: &mut JoinSet<std::result::Result<u32, DownloadServiceError>>,
+    pending: &mut std::collections::VecDeque<DownloadSegment>,
+    target_connections: usize,
+    context: &SegmentPoolContext,
+) {
+    while workers.len() < target_connections {
+        let Some(segment) = pending.pop_front() else {
+            break;
+        };
+        spawn_segment_worker(
+            workers,
+            SegmentWorkerInput {
+                downloader: context.downloader.clone(),
+                storage: Arc::clone(&context.storage),
+                control: Arc::clone(&context.control),
+                source_url: context.source_url.clone(),
+                total_bytes: context.total_bytes,
+                segment,
+                progress_tx: context.progress_tx.clone(),
+            },
+        );
+    }
+}
+
 enum SegmentedTransferResult {
     Completed(crate::TransferOutcome),
     Fallback(Vec<DownloadSegment>),
@@ -919,6 +1003,9 @@ fn error_code_for(error: &DownloadError) -> &'static str {
         DownloadError::IncompleteTransfer { .. } => "incomplete_transfer",
         DownloadError::InvalidRangeResponse { .. } => "invalid_range_response",
         DownloadError::SegmentOverflow { .. } => "segment_overflow",
+        DownloadError::HttpStatus { status: 429 } => "rate_limited",
+        DownloadError::HttpStatus { status: 503 } => "server_busy",
+        DownloadError::HttpStatus { .. } => "download_error",
         DownloadError::Stopped(_) => "stopped",
     }
 }
@@ -929,6 +1016,16 @@ fn unix_timestamp_seconds() -> Result<i64> {
         .map_err(|_| DownloadServiceError::ClockBeforeUnixEpoch)?;
 
     i64::try_from(duration.as_secs()).map_err(|_| DownloadServiceError::TimestampOverflow)
+}
+
+fn normalized_host(source_url: &str) -> Result<String> {
+    let url = validate_source_url(source_url)?;
+    let host = url.host_str().ok_or_else(|| {
+        DownloadServiceError::Download(DownloadError::InvalidUrl(
+            "source URL has no host".to_owned(),
+        ))
+    })?;
+    Ok(host.trim_end_matches('.').to_ascii_lowercase())
 }
 
 #[cfg(test)]
@@ -1118,6 +1215,68 @@ mod tests {
                 .is_empty()
         );
         assert!(server.ranged_request_count() >= 2);
+    }
+
+    #[tokio::test]
+    async fn segmented_progress_explains_adaptive_connection_changes() {
+        let server = TestServer::start(ServerBehaviour {
+            chunk_size: 2,
+            chunk_delay: Some(Duration::from_millis(25)),
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+        let service = harness
+            .service
+            .clone()
+            .with_segment_connections(3)
+            .with_segmented_threshold(1);
+        let created = service.create_task(&server.url("adaptive.bin")).unwrap();
+        let mut saw_multiple_connections = false;
+        let mut saw_explanation = false;
+
+        let record = service
+            .start_task_with_progress(&created.id, &harness.destination, |_, progress| {
+                if progress.active_connections.unwrap_or(0) > 1 {
+                    saw_multiple_connections = true;
+                }
+                if progress.adaptive_reason.is_some() {
+                    saw_explanation = true;
+                }
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(record.status, DownloadStatus::Completed);
+        assert!(saw_multiple_connections);
+        assert!(saw_explanation);
+    }
+
+    #[tokio::test]
+    async fn rate_limited_probe_updates_the_host_profile() {
+        let server = TestServer::start(ServerBehaviour {
+            status: Some((429, "Too Many Requests")),
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+        let created = harness
+            .service
+            .create_task(&server.url("limited.bin"))
+            .unwrap();
+
+        let _ = harness
+            .service
+            .start_task(&created.id, &harness.destination)
+            .await;
+
+        let profile = harness
+            .storage
+            .get_host_profile("127.0.0.1")
+            .unwrap()
+            .unwrap();
+        assert_eq!(profile.rate_limited_count, 1);
+        assert_eq!(profile.last_status, Some(429));
     }
 
     #[tokio::test]

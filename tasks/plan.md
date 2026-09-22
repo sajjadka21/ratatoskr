@@ -182,3 +182,11 @@ Preserve the checkpoint architecture while separating persistent task creation f
 - [x] Matching precedence and explanation are tested against real task intake.
 - [x] Queues schedule and resume safely across restart.
 - [x] Full repository quality gate passes and the phase is committed.
+
+### Phase 8: LinkGrabber / Batch
+
+- [x] Add backend link extraction, normalization, de-duplication, and typed
+  inspection IPC.
+- [ ] Add dedicated LinkGrabber view, filters, grouping, capability probes,
+  and wildcard generation.
+- [ ] Run focused tests, the full gate, review, document, and commit.

@@ -573,6 +573,19 @@ Status: Complete
 Phase 7 is complete and committed. LinkGrabber, browser integration, media
 extraction, post-processing, and release hardening remain for later phases.
 
+## Phase 8 - LinkGrabber / Batch
+
+Status: In progress
+
+### Implemented so far
+
+- Added a backend-owned link inspector that extracts HTTP(S) URLs from plain
+  text and pasted HTML, normalizes and de-duplicates them, and returns safe
+  host/extension metadata through typed IPC.
+- Added focused parser tests for HTML/plain-text input and non-HTTP rejection.
+- Existing Add Download batch flow remains the user-facing intake surface;
+  task creation still validates each URL in Rust before persistence.
+
 ### Scope boundary
 
 Browser integration, LinkGrabber, media extraction, post-processing, and

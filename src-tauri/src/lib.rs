@@ -9,8 +9,8 @@ use dm_core::{
 };
 use dm_ipc::{
     AppInfoResponse, CategoryResponse, ComponentHealth, DownloadListItemResponse,
-    DownloadRuleResponse, DownloadTaskEvent, HealthCheckResponse, QueueResponse,
-    QueueRunnerEventResponse, QueueScheduleResponse, TransferProgressResponse,
+    DownloadRuleResponse, DownloadTaskEvent, HealthCheckResponse, LinkCandidateResponse,
+    QueueResponse, QueueRunnerEventResponse, QueueScheduleResponse, TransferProgressResponse,
 };
 use dm_storage::Storage;
 use std::{
@@ -941,6 +941,18 @@ fn rule_response(rule: DownloadRule) -> DownloadRuleResponse {
     }
 }
 
+#[tauri::command]
+fn inspect_links(input: String) -> Vec<LinkCandidateResponse> {
+    dm_core::linkgrabber::extract_links(&input)
+        .into_iter()
+        .map(|candidate| LinkCandidateResponse {
+            url: candidate.url,
+            host: candidate.host,
+            extension: candidate.extension,
+        })
+        .collect()
+}
+
 /// Runs one task's transfer in the background and publishes what happens.
 fn spawn_transfer(
     downloads: DownloadService,
@@ -1086,7 +1098,8 @@ pub fn run() {
             set_queue_schedule,
             list_categories,
             list_download_rules,
-            get_download_rule_explanation
+            get_download_rule_explanation,
+            inspect_links
         ])
         .run(tauri::generate_context!())
         .expect("error while running Download Manager");

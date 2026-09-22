@@ -213,6 +213,14 @@ pub struct DownloadRuleResponse {
     pub browser_takeover_allowed: Option<bool>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkCandidateResponse {
+    pub url: String,
+    pub host: String,
+    pub extension: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum QueueRunnerEventKind {

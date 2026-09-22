@@ -395,3 +395,22 @@
 - [x] All five required commands pass and Phase 7 is committed.
 
 **Dependencies:** Tasks 29-31.
+
+# Phase 8 Tasks: LinkGrabber / Batch
+
+## Task 33: Backend link inspection
+
+**Acceptance criteria:**
+
+- [x] Plain text and pasted HTML links are normalized and de-duplicated.
+- [x] Non-HTTP schemes are rejected before intake.
+- [x] Host and extension metadata are returned through typed IPC.
+
+## Task 34: LinkGrabber view
+
+**Acceptance criteria:**
+
+- [ ] Dedicated view supports filters, grouping, probes, and wildcard input.
+- [ ] Batch Start Now / Later / Queue actions reuse the canonical task API.
+
+**Dependencies:** Task 33.

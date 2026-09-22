@@ -1,5 +1,6 @@
 pub mod adaptive;
 pub mod control;
+pub mod linkgrabber;
 pub mod queue;
 pub mod resume;
 pub mod retry;

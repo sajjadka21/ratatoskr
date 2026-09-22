@@ -8,11 +8,12 @@ use std::{
 use thiserror::Error;
 
 mod downloads;
+mod host_profiles;
 mod queues;
 mod segments;
 mod settings;
 
-const LATEST_SCHEMA_VERSION: i32 = 4;
+const LATEST_SCHEMA_VERSION: i32 = 5;
 
 const MIGRATION_V1: &str = r#"
 BEGIN IMMEDIATE;
@@ -176,6 +177,31 @@ PRAGMA user_version = 4;
 COMMIT;
 "#;
 
+const MIGRATION_V5: &str = r#"
+BEGIN IMMEDIATE;
+
+CREATE TABLE host_profiles (
+    host TEXT PRIMARY KEY NOT NULL
+        CHECK (length(host) > 0),
+    preferred_max_connections INTEGER NOT NULL DEFAULT 1
+        CHECK (preferred_max_connections > 0),
+    rate_limited_count INTEGER NOT NULL DEFAULT 0
+        CHECK (rate_limited_count >= 0),
+    busy_count INTEGER NOT NULL DEFAULT 0
+        CHECK (busy_count >= 0),
+    last_status INTEGER
+        CHECK (last_status IS NULL OR last_status IN (429, 503)),
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX idx_host_profiles_updated_at
+    ON host_profiles(updated_at);
+
+PRAGMA user_version = 5;
+
+COMMIT;
+"#;
+
 #[derive(Debug, Error)]
 pub enum StorageError {
     #[error("failed to create database directory: {0}")]
@@ -232,6 +258,9 @@ pub enum StorageError {
 
     #[error("invalid download segment: {0}")]
     InvalidSegment(String),
+
+    #[error("invalid host profile key: {0}")]
+    InvalidHostProfile(String),
 
     #[error("value for {field} is too large for SQLite INTEGER: {value}")]
     IntegerTooLarge { field: &'static str, value: u64 },
@@ -356,6 +385,12 @@ fn run_migrations(connection: &Connection) -> Result<()> {
         connection.execute_batch(MIGRATION_V4)?;
     }
 
+    let version: i32 = connection.query_row("PRAGMA user_version;", [], |row| row.get(0))?;
+
+    if version == 4 {
+        connection.execute_batch(MIGRATION_V5)?;
+    }
+
     Ok(())
 }
 
@@ -377,6 +412,7 @@ mod tests {
         assert!(storage.table_exists("settings").unwrap());
         assert!(storage.table_exists("queues").unwrap());
         assert!(storage.table_exists("download_segments").unwrap());
+        assert!(storage.table_exists("host_profiles").unwrap());
         assert!(storage.health_check().is_ok());
     }
 
@@ -456,6 +492,7 @@ mod tests {
 
         assert_eq!(storage.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
         assert!(storage.table_exists("download_segments").unwrap());
+        assert!(storage.table_exists("host_profiles").unwrap());
         assert_eq!(
             storage.get_download("v3-id").unwrap().unwrap().source_url,
             "https://example.com/v3.bin"

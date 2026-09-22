@@ -428,6 +428,18 @@ pub struct TransferPlan {
     pub range_supported: bool,
 }
 
+/// Host-only adaptive observations. The key is a normalized hostname; no URL
+/// path, query, credentials, or request headers are part of this model.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HostProfile {
+    pub host: String,
+    pub preferred_max_connections: u32,
+    pub rate_limited_count: u32,
+    pub busy_count: u32,
+    pub last_status: Option<u16>,
+    pub updated_at: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DownloadCompletion {
     pub resolved_url: String,

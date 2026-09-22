@@ -281,6 +281,82 @@ impl fmt::Display for ParseQueueStateError {
 
 impl std::error::Error for ParseQueueStateError {}
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SegmentStatus {
+    Pending,
+    Downloading,
+    Completed,
+}
+
+impl SegmentStatus {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Downloading => "downloading",
+            Self::Completed => "completed",
+        }
+    }
+}
+
+impl fmt::Display for SegmentStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for SegmentStatus {
+    type Err = ParseSegmentStatusError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "downloading" => Ok(Self::Downloading),
+            "completed" => Ok(Self::Completed),
+            other => Err(ParseSegmentStatusError {
+                value: other.to_owned(),
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseSegmentStatusError {
+    value: String,
+}
+
+impl fmt::Display for ParseSegmentStatusError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "unknown segment status: {}", self.value)
+    }
+}
+
+impl std::error::Error for ParseSegmentStatusError {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadSegment {
+    pub download_id: String,
+    pub segment_index: u32,
+    pub start_byte: u64,
+    pub end_byte: u64,
+    pub downloaded_bytes: u64,
+    pub temp_path: String,
+    pub status: SegmentStatus,
+}
+
+impl DownloadSegment {
+    pub fn expected_bytes(&self) -> Option<u64> {
+        self.end_byte
+            .checked_sub(self.start_byte)
+            .and_then(|length| length.checked_add(1))
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.status == SegmentStatus::Completed
+            && self.expected_bytes() == Some(self.downloaded_bytes)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QueueRecord {
     pub id: String,
@@ -364,7 +440,7 @@ pub struct DownloadCompletion {
 
 #[cfg(test)]
 mod tests {
-    use super::{DownloadPriority, DownloadStatus, QueueState};
+    use super::{DownloadPriority, DownloadSegment, DownloadStatus, QueueState, SegmentStatus};
     use std::str::FromStr;
 
     #[test]
@@ -544,5 +620,32 @@ mod tests {
                 priority
             );
         }
+    }
+
+    #[test]
+    fn segment_status_string_roundtrip() {
+        for status in [
+            SegmentStatus::Pending,
+            SegmentStatus::Downloading,
+            SegmentStatus::Completed,
+        ] {
+            assert_eq!(SegmentStatus::from_str(status.as_str()).unwrap(), status);
+        }
+    }
+
+    #[test]
+    fn segment_reports_inclusive_range_length_and_completion() {
+        let segment = DownloadSegment {
+            download_id: "task".to_owned(),
+            segment_index: 0,
+            start_byte: 10,
+            end_byte: 19,
+            downloaded_bytes: 10,
+            temp_path: "task.0.part".to_owned(),
+            status: SegmentStatus::Completed,
+        };
+
+        assert_eq!(segment.expected_bytes(), Some(10));
+        assert!(segment.is_complete());
     }
 }

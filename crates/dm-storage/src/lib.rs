@@ -9,9 +9,10 @@ use thiserror::Error;
 
 mod downloads;
 mod queues;
+mod segments;
 mod settings;
 
-const LATEST_SCHEMA_VERSION: i32 = 3;
+const LATEST_SCHEMA_VERSION: i32 = 4;
 
 const MIGRATION_V1: &str = r#"
 BEGIN IMMEDIATE;
@@ -145,6 +146,36 @@ PRAGMA user_version = 3;
 COMMIT;
 "#;
 
+const MIGRATION_V4: &str = r#"
+BEGIN IMMEDIATE;
+
+CREATE TABLE download_segments (
+    download_id TEXT NOT NULL
+        REFERENCES downloads(id) ON DELETE CASCADE,
+    segment_index INTEGER NOT NULL
+        CHECK (segment_index >= 0),
+    start_byte INTEGER NOT NULL
+        CHECK (start_byte >= 0),
+    end_byte INTEGER NOT NULL
+        CHECK (end_byte >= start_byte),
+    downloaded_bytes INTEGER NOT NULL DEFAULT 0
+        CHECK (downloaded_bytes >= 0
+            AND downloaded_bytes <= end_byte - start_byte + 1),
+    temp_path TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'downloading', 'completed')),
+    PRIMARY KEY (download_id, segment_index),
+    UNIQUE (download_id, temp_path)
+);
+
+CREATE INDEX idx_download_segments_status
+    ON download_segments(download_id, status, segment_index);
+
+PRAGMA user_version = 4;
+
+COMMIT;
+"#;
+
 #[derive(Debug, Error)]
 pub enum StorageError {
     #[error("failed to create database directory: {0}")]
@@ -192,6 +223,15 @@ pub enum StorageError {
 
     #[error("queue order does not contain exactly the queued tasks for queue {0}")]
     QueueOrderMismatch(String),
+
+    #[error("download segment not found: {download_id}/{segment_index}")]
+    SegmentNotFound {
+        download_id: String,
+        segment_index: u32,
+    },
+
+    #[error("invalid download segment: {0}")]
+    InvalidSegment(String),
 
     #[error("value for {field} is too large for SQLite INTEGER: {value}")]
     IntegerTooLarge { field: &'static str, value: u64 },
@@ -310,12 +350,18 @@ fn run_migrations(connection: &Connection) -> Result<()> {
         connection.execute_batch(MIGRATION_V3)?;
     }
 
+    let version: i32 = connection.query_row("PRAGMA user_version;", [], |row| row.get(0))?;
+
+    if version == 3 {
+        connection.execute_batch(MIGRATION_V4)?;
+    }
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{LATEST_SCHEMA_VERSION, MIGRATION_V1, Storage};
+    use super::{LATEST_SCHEMA_VERSION, MIGRATION_V1, MIGRATION_V3, Storage};
     use rusqlite::Connection;
     use tempfile::tempdir;
 
@@ -330,6 +376,7 @@ mod tests {
         assert!(storage.table_exists("downloads").unwrap());
         assert!(storage.table_exists("settings").unwrap());
         assert!(storage.table_exists("queues").unwrap());
+        assert!(storage.table_exists("download_segments").unwrap());
         assert!(storage.health_check().is_ok());
     }
 
@@ -382,5 +429,36 @@ mod tests {
         assert_eq!(queues.len(), 1);
         assert_eq!(queues[0].id, "default");
         assert_eq!(queues[0].name, "Default Queue");
+    }
+
+    #[test]
+    fn migrates_v3_database_to_segment_schema_without_losing_history() {
+        let directory = tempdir().unwrap();
+        let database_path = directory.path().join("downloads.db");
+
+        {
+            let connection = Connection::open(&database_path).unwrap();
+            connection.execute_batch(MIGRATION_V1).unwrap();
+            connection.execute_batch(
+                "ALTER TABLE downloads ADD COLUMN queue_id TEXT;\n                 ALTER TABLE downloads ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal';\n                 CREATE TABLE queues (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL UNIQUE, enabled INTEGER NOT NULL DEFAULT 1, state TEXT NOT NULL DEFAULT 'stopped', sort_order INTEGER NOT NULL, max_concurrent INTEGER NOT NULL DEFAULT 3, max_concurrent_per_host INTEGER, default_priority TEXT NOT NULL DEFAULT 'normal', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);\n                 INSERT INTO queues (id, name, sort_order, created_at, updated_at) VALUES ('default', 'Default Queue', 0, 1, 1);\n                 PRAGMA user_version = 2;",
+            )
+            .unwrap();
+            connection.execute_batch(MIGRATION_V3).unwrap();
+            connection
+                .execute(
+                    "INSERT INTO downloads (id, source_url, status, created_at) VALUES (?1, ?2, 'created', ?3)",
+                    ("v3-id", "https://example.com/v3.bin", 2_000_i64),
+                )
+                .unwrap();
+        }
+
+        let storage = Storage::open(&database_path).unwrap();
+
+        assert_eq!(storage.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
+        assert!(storage.table_exists("download_segments").unwrap());
+        assert_eq!(
+            storage.get_download("v3-id").unwrap().unwrap().source_url,
+            "https://example.com/v3.bin"
+        );
     }
 }

@@ -224,9 +224,9 @@
 
 **Acceptance criteria:**
 
-- [ ] Segment status/range models are canonical and validated.
-- [ ] Schema v4 persists task segment maps and migrates v3 data without reset.
-- [ ] Segment storage tests cover creation, updates, completion, and reopen.
+- [x] Segment status/range models are canonical and validated.
+- [x] Schema v4 persists task segment maps and migrates v3 data without reset.
+- [x] Segment storage tests cover creation, updates, completion, and reopen.
 
 **Verification:** focused `dm-common` and `dm-storage` tests.
 
@@ -236,9 +236,9 @@
 
 **Acceptance criteria:**
 
-- [ ] Every segment request requires a matching `206` and `Content-Range`.
-- [ ] Segment files are bounded, independently resumable, and control-aware.
-- [ ] Invalid range responses are typed and never appended to existing bytes.
+- [x] Every segment request requires a matching `206` and `Content-Range`.
+- [x] Segment files are bounded, independently resumable, and control-aware.
+- [x] Invalid range responses are typed and never appended to existing bytes.
 
 **Verification:** local HTTP tests for valid ranges, ignored ranges, short bodies, and pause/cancel.
 
@@ -248,9 +248,9 @@
 
 **Acceptance criteria:**
 
-- [ ] Planner creates gap-free ranges with bounded worker concurrency.
-- [ ] Segment progress persists and aggregate task progress remains authoritative.
-- [ ] Ordered assembly is synced and atomically finalized; fallback uses single stream.
+- [x] Planner creates gap-free ranges with bounded worker concurrency.
+- [x] Segment progress persists and aggregate task progress remains authoritative.
+- [x] Ordered assembly is synced and atomically finalized; fallback uses single stream.
 
 **Verification:** end-to-end service tests for completion, interruption/reopen, source change, and fallback.
 
@@ -260,9 +260,9 @@
 
 **Acceptance criteria:**
 
-- [ ] All five required commands pass.
-- [ ] Code review has no unresolved required findings.
-- [ ] Progress documentation and focused Phase 4 commits are complete.
+- [x] All five required commands pass.
+- [x] Code review has no unresolved required findings.
+- [x] Progress documentation and focused Phase 4 commits are complete.
 
 **Verification:** Git status/log inspection and full quality gate.
 

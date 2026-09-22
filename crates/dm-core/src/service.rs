@@ -1,12 +1,13 @@
 use crate::{
-    DownloadError, Downloader, TransferProgress, TransferRequest,
+    DownloadError, Downloader, SegmentTransferRequest, TransferProgress, TransferRequest,
     control::{StopReason, TaskControl},
     resume::{ResumePlan, StoredTransfer, plan_resume},
     retry::{FailureClass, RetryPolicy, classify_failure},
+    segment_planner::{SegmentPlanError, plan_segments},
     throughput::ThroughputMeter,
     validate_source_url,
 };
-use dm_common::{DownloadCompletion, DownloadRecord, TransferPlan};
+use dm_common::{DownloadCompletion, DownloadRecord, DownloadSegment, SegmentStatus, TransferPlan};
 use dm_storage::{Storage, StorageError};
 use std::{
     collections::HashMap,
@@ -19,8 +20,13 @@ use std::{
 };
 use thiserror::Error;
 use tokio::sync::Semaphore;
+use tokio::sync::mpsc::UnboundedSender;
+use tokio::task::JoinSet;
 
 const DEFAULT_MAX_CONCURRENT_DOWNLOADS: usize = 3;
+const DEFAULT_SEGMENT_CONNECTIONS: usize = 4;
+const MAX_SEGMENT_CONNECTIONS: usize = 64;
+const DEFAULT_SEGMENTED_THRESHOLD: u64 = 1024 * 1024;
 const PROGRESS_PERSIST_INTERVAL: Duration = Duration::from_millis(500);
 const PROGRESS_PERSIST_BYTES: u64 = 1024 * 1024;
 
@@ -51,6 +57,9 @@ pub enum DownloadServiceError {
     #[error("download execution is unavailable")]
     ExecutionUnavailable,
 
+    #[error("could not plan download segments: {0}")]
+    SegmentPlanning(#[from] SegmentPlanError),
+
     #[error("download control registry is unavailable")]
     ControlRegistryUnavailable,
 
@@ -69,6 +78,8 @@ pub struct DownloadService {
     /// reach the transfer itself instead of only changing a row.
     controls: Arc<Mutex<HashMap<String, Arc<TaskControl>>>>,
     retry_policy: RetryPolicy,
+    segment_connections: usize,
+    segmented_threshold: u64,
 }
 
 impl DownloadService {
@@ -79,11 +90,23 @@ impl DownloadService {
             execution_slots: Arc::new(Semaphore::new(DEFAULT_MAX_CONCURRENT_DOWNLOADS)),
             controls: Arc::new(Mutex::new(HashMap::new())),
             retry_policy: RetryPolicy::default(),
+            segment_connections: DEFAULT_SEGMENT_CONNECTIONS,
+            segmented_threshold: DEFAULT_SEGMENTED_THRESHOLD,
         })
     }
 
     pub fn with_retry_policy(mut self, retry_policy: RetryPolicy) -> Self {
         self.retry_policy = retry_policy;
+        self
+    }
+
+    pub fn with_segment_connections(mut self, segment_connections: usize) -> Self {
+        self.segment_connections = segment_connections.clamp(1, MAX_SEGMENT_CONNECTIONS);
+        self
+    }
+
+    pub fn with_segmented_threshold(mut self, threshold: u64) -> Self {
+        self.segmented_threshold = threshold;
         self
     }
 
@@ -145,6 +168,7 @@ impl DownloadService {
         }
 
         remove_partial_file(task.temp_path.as_deref()).await;
+        remove_task_segments(&self.storage, download_id).await;
         self.storage.mark_cancelled(download_id)?;
         self.get_task(download_id)
     }
@@ -207,7 +231,7 @@ impl DownloadService {
             .run_transfer(
                 &task,
                 destination_directory.as_ref(),
-                &control,
+                control,
                 &mut on_progress,
             )
             .await;
@@ -233,7 +257,7 @@ impl DownloadService {
         &self,
         task: &DownloadRecord,
         destination_directory: &Path,
-        control: &TaskControl,
+        control: Arc<TaskControl>,
         on_progress: &mut F,
     ) -> Result<crate::TransferOutcome>
     where
@@ -275,29 +299,77 @@ impl DownloadService {
             },
         )?;
 
-        let start_offset = match plan_resume(&stored, &probe) {
+        if probe.range_supported
+            && probe
+                .total_bytes
+                .is_some_and(|total| total >= self.segmented_threshold)
+            && self.segment_connections > 1
+        {
+            self.storage
+                .mark_downloading(&task.id, unix_timestamp_seconds()?)?;
+
+            match self
+                .run_segmented_transfer(
+                    task,
+                    &probe,
+                    &temp_path,
+                    &destination_path,
+                    Arc::clone(&control),
+                    on_progress,
+                )
+                .await?
+            {
+                SegmentedTransferResult::Completed(outcome) => return Ok(outcome),
+                SegmentedTransferResult::Fallback(segments) => {
+                    self.storage.clear_download_segments(&task.id)?;
+                    self.storage.reset_transfer_progress(&task.id)?;
+                    remove_segment_files(&segments).await;
+                }
+            }
+        }
+
+        self.run_single_stream(
+            SingleStreamRequest {
+                task,
+                probe: &probe,
+                temp_path: &temp_path,
+                destination_path: &destination_path,
+                stored,
+                control,
+            },
+            on_progress,
+        )
+        .await
+    }
+
+    async fn run_single_stream<F>(
+        &self,
+        request: SingleStreamRequest<'_>,
+        on_progress: &mut F,
+    ) -> Result<crate::TransferOutcome>
+    where
+        F: FnMut(&str, TransferProgress) + Send,
+    {
+        let start_offset = match plan_resume(&request.stored, request.probe) {
             ResumePlan::ContinueFrom(offset) | ResumePlan::AlreadyComplete(offset) => offset,
             ResumePlan::StartFromZero(reason) => {
-                self.storage.reset_transfer_progress(&task.id)?;
-
-                // Only worth explaining when there was something to lose.
-                if stored.downloaded_bytes > 0 {
+                self.storage.reset_transfer_progress(&request.task.id)?;
+                if request.stored.downloaded_bytes > 0 {
                     self.storage.record_notice(
-                        &task.id,
+                        &request.task.id,
                         RESTARTED_NOTICE_CODE,
                         reason.explanation(),
                     )?;
                 }
-
                 0
             }
         };
 
         self.storage
-            .mark_downloading(&task.id, unix_timestamp_seconds()?)?;
+            .mark_downloading(&request.task.id, unix_timestamp_seconds()?)?;
 
         let storage = Arc::clone(&self.storage);
-        let progress_id = task.id.clone();
+        let progress_id = request.task.id.clone();
         let reached = Arc::new(AtomicU64::new(start_offset));
         let reached_writer = Arc::clone(&reached);
         let mut last_persisted_at = Instant::now();
@@ -309,16 +381,15 @@ impl DownloadService {
             .downloader
             .transfer(
                 TransferRequest {
-                    source_url: &task.source_url,
-                    temp_path: &temp_path,
-                    destination_path: &destination_path,
+                    source_url: &request.task.source_url,
+                    temp_path: request.temp_path,
+                    destination_path: request.destination_path,
                     start_offset,
-                    total_bytes: probe.total_bytes,
+                    total_bytes: request.probe.total_bytes,
                 },
-                control,
+                request.control.as_ref(),
                 |progress| {
                     reached_writer.store(progress.downloaded_bytes, Ordering::Relaxed);
-
                     let reached_known_end = progress.total_bytes == Some(progress.downloaded_bytes);
                     let bytes_since_persist = progress
                         .downloaded_bytes
@@ -336,14 +407,12 @@ impl DownloadService {
                                 progress.total_bytes,
                             )
                             .map_err(|error| DownloadError::ProgressCallback(error.to_string()))?;
-
                         has_persisted_progress = true;
                         last_persisted_at = Instant::now();
                         last_persisted_bytes = progress.downloaded_bytes;
                     }
 
                     let bytes_per_second = meter.sample(progress.downloaded_bytes, Instant::now());
-
                     on_progress(
                         &progress_id,
                         TransferProgress {
@@ -354,23 +423,222 @@ impl DownloadService {
                                 .eta_seconds(progress.downloaded_bytes, progress.total_bytes),
                         },
                     );
-
                     Ok(())
                 },
             )
             .await;
 
-        // Whatever happened, the byte count the transfer actually reached is
-        // the one worth keeping.
         let reached_bytes = reached.load(Ordering::Relaxed);
-
         if outcome.is_err() {
-            let _ = self
-                .storage
-                .update_progress(&task.id, reached_bytes, probe.total_bytes);
+            let _ = self.storage.update_progress(
+                &request.task.id,
+                reached_bytes,
+                request.probe.total_bytes,
+            );
+        }
+        Ok(outcome?)
+    }
+
+    async fn run_segmented_transfer<F>(
+        &self,
+        task: &DownloadRecord,
+        probe: &crate::SourceProbe,
+        temp_path: &Path,
+        destination_path: &Path,
+        control: Arc<TaskControl>,
+        on_progress: &mut F,
+    ) -> Result<SegmentedTransferResult>
+    where
+        F: FnMut(&str, TransferProgress) + Send,
+    {
+        let total_bytes = probe.total_bytes.ok_or(SegmentPlanError::EmptyResource)?;
+        let planned = plan_segments(&task.id, temp_path, total_bytes, self.segment_connections)?;
+        let existing = self.storage.list_download_segments(&task.id)?;
+        let source_changed = (task.total_bytes.is_some() && task.total_bytes != probe.total_bytes)
+            || (task.etag.is_some() && task.etag != probe.etag)
+            || (task.last_modified.is_some() && task.last_modified != probe.last_modified);
+        if source_changed {
+            remove_segment_files(&existing).await;
+            self.storage.clear_download_segments(&task.id)?;
+            self.storage.reset_transfer_progress(&task.id)?;
+        }
+        let existing = if source_changed { Vec::new() } else { existing };
+        let map_matches = existing.len() == planned.len()
+            && existing.iter().zip(&planned).all(|(stored, expected)| {
+                stored.download_id == expected.download_id
+                    && stored.segment_index == expected.segment_index
+                    && stored.start_byte == expected.start_byte
+                    && stored.end_byte == expected.end_byte
+                    && stored.temp_path == expected.temp_path
+            });
+
+        if !map_matches {
+            remove_segment_files(&existing).await;
+            self.storage.replace_download_segments(&task.id, &planned)?;
         }
 
-        Ok(outcome?)
+        self.storage.reset_incomplete_download_segments(&task.id)?;
+        let current = self.storage.list_download_segments(&task.id)?;
+        let mut reconciled = Vec::with_capacity(current.len());
+        for mut segment in current {
+            let expected = segment
+                .expected_bytes()
+                .ok_or(SegmentPlanError::ResourceTooLarge)?;
+            let on_disk = partial_file_size(Path::new(&segment.temp_path))
+                .await
+                .unwrap_or(0);
+            if on_disk > expected {
+                truncate_file(Path::new(&segment.temp_path), expected)
+                    .await
+                    .map_err(DownloadError::Io)?;
+            }
+            segment.downloaded_bytes = on_disk.min(expected);
+            segment.status = if segment.downloaded_bytes == expected {
+                SegmentStatus::Completed
+            } else {
+                SegmentStatus::Pending
+            };
+            reconciled.push(segment);
+        }
+        self.storage
+            .replace_download_segments(&task.id, &reconciled)?;
+
+        let initial_bytes = reconciled
+            .iter()
+            .map(|segment| segment.downloaded_bytes)
+            .sum();
+        self.storage
+            .update_progress(&task.id, initial_bytes, Some(total_bytes))?;
+        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut pending = reconciled
+            .iter()
+            .filter(|segment| !segment.is_complete())
+            .cloned()
+            .collect::<std::collections::VecDeque<_>>();
+        let mut workers = JoinSet::new();
+        for _ in 0..self.segment_connections {
+            if let Some(segment) = pending.pop_front() {
+                spawn_segment_worker(
+                    &mut workers,
+                    SegmentWorkerInput {
+                        downloader: self.downloader.clone(),
+                        storage: Arc::clone(&self.storage),
+                        control: Arc::clone(&control),
+                        source_url: probe.final_url.clone(),
+                        total_bytes,
+                        segment,
+                        progress_tx: progress_tx.clone(),
+                    },
+                );
+            }
+        }
+        let progress_id = task.id.clone();
+        let mut meter = ThroughputMeter::new(Instant::now(), initial_bytes);
+        let mut last_persisted_at = Instant::now();
+        let mut last_persisted_bytes = initial_bytes;
+        while !workers.is_empty() {
+            tokio::select! {
+                Some(()) = progress_rx.recv() => {
+                    let segments = self.storage.list_download_segments(&task.id)?;
+                    let downloaded: u64 = segments
+                        .iter()
+                        .map(|segment| segment.downloaded_bytes)
+                        .sum();
+                    let should_persist = downloaded == total_bytes
+                        || downloaded.saturating_sub(last_persisted_bytes) >= PROGRESS_PERSIST_BYTES
+                        || last_persisted_at.elapsed() >= PROGRESS_PERSIST_INTERVAL;
+                    if should_persist {
+                        self.storage.update_progress(&task.id, downloaded, Some(total_bytes))?;
+                        last_persisted_at = Instant::now();
+                        last_persisted_bytes = downloaded;
+                    }
+                    let now = Instant::now();
+                    let bytes_per_second = meter.sample(downloaded, now);
+                    on_progress(&progress_id, TransferProgress {
+                        downloaded_bytes: downloaded,
+                        total_bytes: Some(total_bytes),
+                        bytes_per_second,
+                        eta_seconds: meter.eta_seconds(downloaded, Some(total_bytes)),
+                    });
+                }
+                joined = workers.join_next() => {
+                    let Some(joined) = joined else {
+                        break;
+                    };
+                    match joined {
+                        Ok(Ok(_segment_index)) => {
+                            if let Some(segment) = pending.pop_front() {
+                                spawn_segment_worker(
+                                    &mut workers,
+                                    SegmentWorkerInput {
+                                        downloader: self.downloader.clone(),
+                                        storage: Arc::clone(&self.storage),
+                                        control: Arc::clone(&control),
+                                        source_url: probe.final_url.clone(),
+                                        total_bytes,
+                                        segment,
+                                        progress_tx: progress_tx.clone(),
+                                    },
+                                );
+                            }
+                        }
+                        Ok(Err(DownloadServiceError::Download(DownloadError::InvalidRangeResponse { .. }))) => {
+                            workers.abort_all();
+                            while workers.join_next().await.is_some() {}
+                            persist_segment_total(&self.storage, &task.id, total_bytes)?;
+                            self.storage.reset_incomplete_download_segments(&task.id)?;
+                            let fallback_segments = self.storage.list_download_segments(&task.id)?;
+                            return Ok(SegmentedTransferResult::Fallback(fallback_segments));
+                        }
+                        Ok(Err(DownloadServiceError::Download(error))) => {
+                            workers.abort_all();
+                            while workers.join_next().await.is_some() {}
+                            persist_segment_total(&self.storage, &task.id, total_bytes)?;
+                            self.storage.reset_incomplete_download_segments(&task.id)?;
+                            return Err(DownloadServiceError::Download(error));
+                        }
+                        Ok(Err(error)) => {
+                            workers.abort_all();
+                            while workers.join_next().await.is_some() {}
+                            persist_segment_total(&self.storage, &task.id, total_bytes)?;
+                            self.storage.reset_incomplete_download_segments(&task.id)?;
+                            return Err(error);
+                        }
+                        Err(_join_error) => {
+                            workers.abort_all();
+                            while workers.join_next().await.is_some() {}
+                            self.storage.reset_incomplete_download_segments(&task.id)?;
+                            return Err(DownloadServiceError::ExecutionUnavailable);
+                        }
+                    }
+                }
+            }
+        }
+
+        let final_segments = self.storage.list_download_segments(&task.id)?;
+        if final_segments.iter().any(|segment| !segment.is_complete()) {
+            self.storage.reset_incomplete_download_segments(&task.id)?;
+            return Err(DownloadServiceError::Download(
+                DownloadError::IncompleteTransfer {
+                    expected: total_bytes,
+                    actual: final_segments
+                        .iter()
+                        .map(|segment| segment.downloaded_bytes)
+                        .sum(),
+                },
+            ));
+        }
+
+        let outcome = self
+            .downloader
+            .assemble_segments(temp_path, destination_path, &final_segments, total_bytes)
+            .await?;
+        remove_segment_files(&final_segments).await;
+        self.storage.clear_download_segments(&task.id)?;
+        self.storage
+            .update_progress(&task.id, total_bytes, Some(total_bytes))?;
+        drop(progress_tx);
+        Ok(SegmentedTransferResult::Completed(outcome))
     }
 
     /// Persists a stop the user asked for. A pause keeps the partial file; a
@@ -381,10 +649,13 @@ impl DownloadService {
         match reason {
             StopReason::Pause => {
                 self.storage
+                    .reset_incomplete_download_segments(download_id)?;
+                self.storage
                     .mark_paused(download_id, task.downloaded_bytes)?;
             }
             StopReason::Cancel => {
                 remove_partial_file(task.temp_path.as_deref()).await;
+                remove_task_segments(&self.storage, download_id).await;
                 self.storage.mark_cancelled(download_id)?;
             }
         }
@@ -510,6 +781,129 @@ async fn partial_file_size(temp_path: &Path) -> Option<u64> {
         .map(|metadata| metadata.len())
 }
 
+async fn truncate_file(path: &Path, length: u64) -> std::io::Result<()> {
+    let file = tokio::fs::OpenOptions::new().write(true).open(path).await?;
+    file.set_len(length).await
+}
+
+async fn remove_segment_files(segments: &[DownloadSegment]) {
+    for segment in segments {
+        let _ = tokio::fs::remove_file(&segment.temp_path).await;
+    }
+}
+
+async fn remove_task_segments(storage: &Storage, download_id: &str) {
+    if let Ok(segments) = storage.list_download_segments(download_id) {
+        remove_segment_files(&segments).await;
+        let _ = storage.clear_download_segments(download_id);
+    }
+}
+
+fn persist_segment_total(storage: &Storage, download_id: &str, total_bytes: u64) -> Result<()> {
+    let segments = storage.list_download_segments(download_id)?;
+    let downloaded: u64 = segments
+        .iter()
+        .map(|segment| segment.downloaded_bytes)
+        .sum();
+    storage.update_progress(download_id, downloaded, Some(total_bytes))?;
+    Ok(())
+}
+
+struct SingleStreamRequest<'a> {
+    task: &'a DownloadRecord,
+    probe: &'a crate::SourceProbe,
+    temp_path: &'a Path,
+    destination_path: &'a Path,
+    stored: StoredTransfer,
+    control: Arc<TaskControl>,
+}
+
+struct SegmentWorkerInput {
+    downloader: Downloader,
+    storage: Arc<Storage>,
+    control: Arc<TaskControl>,
+    source_url: String,
+    total_bytes: u64,
+    segment: DownloadSegment,
+    progress_tx: UnboundedSender<()>,
+}
+
+enum SegmentedTransferResult {
+    Completed(crate::TransferOutcome),
+    Fallback(Vec<DownloadSegment>),
+}
+
+fn spawn_segment_worker(
+    workers: &mut JoinSet<std::result::Result<u32, DownloadServiceError>>,
+    input: SegmentWorkerInput,
+) {
+    workers.spawn(async move {
+        let SegmentWorkerInput {
+            downloader,
+            storage,
+            control,
+            source_url,
+            total_bytes,
+            segment,
+            progress_tx,
+        } = input;
+        storage.claim_download_segment(&segment.download_id, segment.segment_index)?;
+        let segment_id = segment.download_id.clone();
+        let index = segment.segment_index;
+        let progress_storage = Arc::clone(&storage);
+        let progress_download_id = segment_id.clone();
+        let callback_tx = progress_tx.clone();
+        let expected_bytes = segment
+            .expected_bytes()
+            .ok_or(SegmentPlanError::ResourceTooLarge)?;
+        let mut last_persisted_at = Instant::now();
+        let mut last_persisted_bytes = segment.downloaded_bytes;
+        let mut has_persisted_progress = false;
+        let outcome = downloader
+            .transfer_segment(
+                SegmentTransferRequest {
+                    source_url: &source_url,
+                    temp_path: Path::new(&segment.temp_path),
+                    start_byte: segment.start_byte,
+                    end_byte: segment.end_byte,
+                    downloaded_bytes: segment.downloaded_bytes,
+                    total_bytes: Some(total_bytes),
+                },
+                control.as_ref(),
+                move |progress| {
+                    let should_persist = !has_persisted_progress
+                        || progress.downloaded_bytes == expected_bytes
+                        || progress
+                            .downloaded_bytes
+                            .saturating_sub(last_persisted_bytes)
+                            >= PROGRESS_PERSIST_BYTES
+                        || last_persisted_at.elapsed() >= PROGRESS_PERSIST_INTERVAL;
+                    if should_persist {
+                        progress_storage
+                            .update_download_segment_progress(
+                                &progress_download_id,
+                                index,
+                                progress.downloaded_bytes,
+                            )
+                            .map_err(|error| DownloadError::ProgressCallback(error.to_string()))?;
+                        has_persisted_progress = true;
+                        last_persisted_bytes = progress.downloaded_bytes;
+                        last_persisted_at = Instant::now();
+                    }
+                    let _ = callback_tx.send(());
+                    Ok(())
+                },
+            )
+            .await?;
+
+        storage.update_download_segment_progress(&segment_id, index, outcome.downloaded_bytes)?;
+        storage.complete_download_segment(&segment_id, index)?;
+        let _ = progress_tx.send(());
+        let _ = outcome;
+        Ok(index)
+    });
+}
+
 async fn remove_partial_file(temp_path: Option<&str>) {
     if let Some(path) = temp_path {
         let _ = tokio::fs::remove_file(path).await;
@@ -523,6 +917,8 @@ fn error_code_for(error: &DownloadError) -> &'static str {
         DownloadError::Io(_) => "filesystem_error",
         DownloadError::ProgressCallback(_) => "storage_error",
         DownloadError::IncompleteTransfer { .. } => "incomplete_transfer",
+        DownloadError::InvalidRangeResponse { .. } => "invalid_range_response",
+        DownloadError::SegmentOverflow { .. } => "segment_overflow",
         DownloadError::Stopped(_) => "stopped",
     }
 }
@@ -589,6 +985,22 @@ mod tests {
         }
 
         panic!("{id} never wrote anything to its partial file");
+    }
+
+    async fn await_segment_bytes(storage: &Storage, id: &str) -> u64 {
+        for _ in 0..400 {
+            let bytes: u64 = storage
+                .list_download_segments(id)
+                .unwrap()
+                .iter()
+                .map(|segment| segment.downloaded_bytes)
+                .sum();
+            if bytes > 0 {
+                return bytes;
+            }
+            sleep(Duration::from_millis(5)).await;
+        }
+        panic!("{id} never wrote anything to its segment files");
     }
 
     async fn await_status(storage: &Storage, id: &str, expected: DownloadStatus) {
@@ -673,6 +1085,126 @@ mod tests {
         let downloads = harness.storage.list_downloads().unwrap();
         assert_eq!(downloads.len(), 1);
         assert_eq!(downloads[0].id, created.id);
+    }
+
+    #[tokio::test]
+    async fn segmented_service_downloads_and_assembles_ranges() {
+        let server = TestServer::start(ServerBehaviour::default()).await;
+        let harness = harness();
+        let service = harness
+            .service
+            .clone()
+            .with_segment_connections(2)
+            .with_segmented_threshold(1);
+        let created = service.create_task(&server.url("segmented.bin")).unwrap();
+
+        let record = service
+            .start_task(&created.id, &harness.destination)
+            .await
+            .unwrap();
+
+        assert_eq!(record.status, DownloadStatus::Completed);
+        assert_eq!(
+            tokio::fs::read(record.destination_path.as_ref().unwrap())
+                .await
+                .unwrap(),
+            DEFAULT_BODY
+        );
+        assert!(
+            harness
+                .storage
+                .list_download_segments(&created.id)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(server.ranged_request_count() >= 2);
+    }
+
+    #[tokio::test]
+    async fn segmented_pause_reuses_persisted_segment_files() {
+        let server = TestServer::start(ServerBehaviour {
+            chunk_size: 2,
+            chunk_delay: Some(Duration::from_millis(25)),
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+        let service = harness
+            .service
+            .clone()
+            .with_segment_connections(2)
+            .with_segmented_threshold(1);
+        let created = service
+            .create_task(&server.url("segmented-slow.bin"))
+            .unwrap();
+        let service_for_task = service.clone();
+        let destination = harness.destination.clone();
+        let task_id = created.id.clone();
+        let transfer =
+            tokio::spawn(async move { service_for_task.start_task(&task_id, destination).await });
+
+        await_status(&harness.storage, &created.id, DownloadStatus::Downloading).await;
+        let partial = await_segment_bytes(&harness.storage, &created.id).await;
+        harness.service.pause_task(&created.id).unwrap();
+        let paused = transfer.await.unwrap().unwrap();
+
+        assert_eq!(paused.status, DownloadStatus::Paused);
+        assert!(paused.downloaded_bytes >= partial);
+        assert!(
+            !harness
+                .storage
+                .list_download_segments(&created.id)
+                .unwrap()
+                .is_empty()
+        );
+
+        let resumed = service
+            .start_task(&created.id, &harness.destination)
+            .await
+            .unwrap();
+        assert_eq!(resumed.status, DownloadStatus::Completed);
+        assert_eq!(
+            tokio::fs::read(resumed.destination_path.as_ref().unwrap())
+                .await
+                .unwrap(),
+            DEFAULT_BODY
+        );
+    }
+
+    #[tokio::test]
+    async fn no_range_source_uses_single_stream_without_segment_rows() {
+        let server = TestServer::start(ServerBehaviour {
+            supports_range: false,
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+        let service = harness
+            .service
+            .clone()
+            .with_segment_connections(2)
+            .with_segmented_threshold(1);
+        let created = service.create_task(&server.url("no-range.bin")).unwrap();
+
+        let record = service
+            .start_task(&created.id, &harness.destination)
+            .await
+            .unwrap();
+
+        assert_eq!(record.status, DownloadStatus::Completed);
+        assert!(
+            harness
+                .storage
+                .list_download_segments(&created.id)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            tokio::fs::read(record.destination_path.unwrap())
+                .await
+                .unwrap(),
+            DEFAULT_BODY
+        );
     }
 
     #[test]

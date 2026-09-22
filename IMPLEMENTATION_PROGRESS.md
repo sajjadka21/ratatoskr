@@ -294,7 +294,8 @@ Status: Complete
 - Engine, against a real local HTTP server (`dm-core/src/testing.rs`):
   verified range probing, no-range probing, whole transfer, resume from disk,
   range ignored by the server, interrupted body, pause mid-transfer, pause then
-  finish, already-complete finalize, destination collision.
+  finish, already-complete finalize, destination collision, strict ranged
+  segments, ignored-range rejection, and ordered segment assembly.
 - Resume planner: validators, size change, missing partial, record ahead of
   file, already complete.
 - Retry policy: classification of statuses, IO errors and stops; backoff
@@ -302,14 +303,15 @@ Status: Complete
 - Service: pause then resume produces the exact original file, cancel deletes
   the partial, changed source is re-downloaded rather than appended to, crash
   recovery resumes from the partial file, 404 fails permanently, 503 schedules
-  a retry, the retry budget ends in failure.
+  a retry, the retry budget ends in failure, segmented completion, segmented
+  pause/resume, and no-range single-stream fallback.
 - Queue tests moved onto the shared test server and now measure real overlap
   of body transfers.
 
 ### Quality gate
 
 - `cargo fmt --all` - passed
-- `cargo test --workspace` - passed (112 tests, up from 60)
+- `cargo test --workspace` - passed (126 tests)
 - `cargo check --workspace` - passed
 - `cargo clippy --workspace --all-targets -- -D warnings` - passed
 - `cargo build -p tauri-app` - passed
@@ -318,7 +320,9 @@ Status: Complete
 
 ### Known limitations carried forward
 
-- Transfers are still single-stream; segmentation is Phase 4.
+- Adaptive connection scaling, host learning, speed profiles, and
+  explainability UI remain Phase 5; Phase 4 uses a conservative bounded worker
+  count.
 - Queue pause/resume at the queue level is still absent; tasks can now be
   paused individually.
 - Retry after connectivity returns is time-based only; there is no network
@@ -328,7 +332,9 @@ Status: Complete
 
 ### Phase boundary
 
-Phase 3 is complete. Phase 4 has not started.
+Phase 3 is complete. Phase 4 is in progress; the first three implementation
+slices (canonical segment persistence, strict ranged transfer, and service
+orchestration) are now implemented and covered by focused tests.
 
 ## Phase 4 - Segmented Engine
 
@@ -336,8 +342,8 @@ Status: In progress
 
 Phase 3 was verified from the current repository state before this phase began:
 schema version 3, task controls, partial-file resume, validator checks,
-orphan recovery, bounded retry policy, and the documented 112-test quality gate
-are present in the current history and source.
+orphan recovery, bounded retry policy, and the documented quality gate were
+present in the current history and source.
 
 ### Plan
 
@@ -354,6 +360,41 @@ are present in the current history and source.
    provide validated ranges; keep pause/cancel and retry behavior intact.
 6. Run focused local HTTP/storage tests, the full quality gate, review the
    complete diff, and create focused Phase 4 commits.
+
+### Implemented slices
+
+- Schema v4 adds an additive `download_segments` map with canonical
+  `Pending`/`Downloading`/`Completed` statuses and atomic storage operations.
+- Ranged transfers require an exact `206` plus matching `Content-Range`, write
+  only within an inclusive segment, resume from the segment offset, and reject
+  ignored/malformed ranges without appending bytes.
+- A deterministic gap-free planner and bounded dynamic worker pool persist
+  real segment progress, reuse source-compatible files after interruption,
+  assemble in index order through the existing synced finalization path, and
+  clean up segment files on success/cancel.
+- Range capability remains verified at probe time; no-range sources continue
+  through the existing single-stream engine. Segment maps are discarded when
+  validators or size change.
+
+### Focused verification so far
+
+- `dm-core`: planner, strict ranged transfer, no-range fallback, segmented
+  completion, pause/resume from segment files, and ordered assembly tests pass.
+- The focused Phase 4 tests pass; the full gate is recorded below.
+
+### Phase 4 gate
+
+- `cargo fmt --all` - passed
+- `cargo test --workspace` - passed (126 tests)
+- `cargo check --workspace` - passed
+- `cargo clippy --workspace --all-targets -- -D warnings` - passed
+- `npm run build` - passed (with `npm_config_prefix` pointed at the installed
+  Node.js npm prefix because the default user npm shim targets a missing path)
+
+### Phase boundary
+
+Phase 4 is complete. Phase 5 (adaptive connections and explainable speed)
+remains intentionally out of scope.
 
 ### Scope boundary
 

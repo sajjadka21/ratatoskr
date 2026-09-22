@@ -81,13 +81,13 @@ Preserve the checkpoint architecture while separating persistent task creation f
 
 ### Phase 4: Segmented Engine
 
-- [ ] Add a schema v4 persistent segment map without changing existing task identity.
-- [ ] Add deterministic, gap-free segment planning with conservative connection limits.
-- [ ] Add ranged segment transfer with strict `206` and `Content-Range` validation.
-- [ ] Persist segment progress and resume completed/partial segments safely after restart.
-- [ ] Assemble verified segments in order, atomically finalize, and remove segment files.
-- [ ] Fall back to the existing single-stream engine when range capability is absent or invalid.
-- [ ] Run focused local HTTP tests, the full quality gate, review, document, and commit.
+- [x] Add a schema v4 persistent segment map without changing existing task identity.
+- [x] Add deterministic, gap-free segment planning with conservative connection limits.
+- [x] Add ranged segment transfer with strict `206` and `Content-Range` validation.
+- [x] Persist segment progress and resume completed/partial segments safely after restart.
+- [x] Assemble verified segments in order, atomically finalize, and remove segment files.
+- [x] Fall back to the existing single-stream engine when range capability is absent or invalid.
+- [x] Run focused local HTTP tests, the full quality gate, review, document, and commit.
 
 ## Phase 4 Risks and Mitigations
 
@@ -101,8 +101,8 @@ Preserve the checkpoint architecture while separating persistent task creation f
 
 ## Phase 4 Checkpoint
 
-- [ ] Existing single-stream and resume behavior remains green.
-- [ ] Segmented transfers produce byte-identical files under a range-capable server.
-- [ ] Interrupted segment maps resume without duplicate or overlapping bytes.
-- [ ] No-range and invalid-range responses safely use single-stream fallback.
-- [ ] Full repository quality gate passes and the phase is committed.
+- [x] Existing single-stream and resume behavior remains green.
+- [x] Segmented transfers produce byte-identical files under a range-capable server.
+- [x] Interrupted segment maps resume without duplicate or overlapping bytes.
+- [x] No-range and invalid-range responses safely use single-stream fallback.
+- [x] Full repository quality gate passes and the phase is committed.

@@ -23,6 +23,10 @@ pub fn classify_failure(error: &DownloadError) -> FailureClass {
             FailureClass::Permanent
         }
 
+        DownloadError::InvalidRangeResponse { .. } | DownloadError::SegmentOverflow { .. } => {
+            FailureClass::Permanent
+        }
+
         // A short transfer is usually a dropped connection, which is exactly
         // what resuming is for.
         DownloadError::IncompleteTransfer { .. } => FailureClass::Retryable,

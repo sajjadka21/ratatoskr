@@ -134,3 +134,27 @@
     padding: 0;
   }
 }
+
+.topbar__throughput {
+  height: 34px;
+  padding: 0 12px;
+
+  display: flex;
+  align-items: center;
+  gap: 7px;
+
+  color: var(--text-secondary);
+
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+
+  white-space: nowrap;
+}
+
+.topbar__throughput svg {
+  color: var(--accent);
+}

@@ -1,5 +1,5 @@
 use crate::{
-    DownloadError, DownloadProgress,
+    DownloadError, TransferProgress,
     service::{DownloadService, DownloadServiceError},
     validate_source_url,
 };
@@ -12,14 +12,14 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use thiserror::Error;
-use tokio::task::JoinSet;
+use tokio::{sync::Notify, task::JoinSet};
 
 #[derive(Debug, Clone)]
 pub enum QueueRunnerEvent {
     QueueUpdated(QueueRecord),
     TaskProgress {
         download_id: String,
-        progress: DownloadProgress,
+        progress: TransferProgress,
     },
     TaskUpdated(Box<DownloadRecord>),
 }
@@ -37,6 +37,9 @@ pub enum QueueServiceError {
 
     #[error("queue runner is already active: {0}")]
     AlreadyRunning(String),
+
+    #[error("queue is disabled: {0}")]
+    QueueDisabled(String),
 
     #[error("queue runner registry is unavailable")]
     RunnerRegistryUnavailable,
@@ -58,6 +61,7 @@ pub struct QueueService {
     storage: Arc<Storage>,
     downloads: DownloadService,
     active_runners: Arc<Mutex<HashSet<String>>>,
+    wakeups: Arc<Mutex<HashMap<String, Arc<Notify>>>>,
 }
 
 impl QueueService {
@@ -66,7 +70,49 @@ impl QueueService {
             storage,
             downloads,
             active_runners: Arc::new(Mutex::new(HashSet::new())),
+            wakeups: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// True while this process is running the queue. Starting an already
+    /// running queue must not spawn a second runner, and the caller needs to
+    /// be able to tell the difference rather than discovering it through a
+    /// failure inside a detached task.
+    pub fn is_running(&self, queue_id: &str) -> Result<bool> {
+        Ok(self
+            .active_runners
+            .lock()
+            .map_err(|_| QueueServiceError::RunnerRegistryUnavailable)?
+            .contains(queue_id))
+    }
+
+    /// Wakes a running runner so it can fill free slots immediately. Without
+    /// this the runner would only look for new work when a transfer finished,
+    /// so a queue with free slots would run newly added tasks one at a time.
+    fn wake(&self, queue_id: &str) -> Result<()> {
+        let wakeups = self
+            .wakeups
+            .lock()
+            .map_err(|_| QueueServiceError::RunnerRegistryUnavailable)?;
+
+        if let Some(notify) = wakeups.get(queue_id) {
+            notify.notify_one();
+        }
+
+        Ok(())
+    }
+
+    fn wakeup_handle(&self, queue_id: &str) -> Result<Arc<Notify>> {
+        let mut wakeups = self
+            .wakeups
+            .lock()
+            .map_err(|_| QueueServiceError::RunnerRegistryUnavailable)?;
+
+        Ok(Arc::clone(
+            wakeups
+                .entry(queue_id.to_owned())
+                .or_insert_with(|| Arc::new(Notify::new())),
+        ))
     }
 
     pub fn list_queues(&self) -> Result<Vec<QueueRecord>> {
@@ -95,13 +141,19 @@ impl QueueService {
         queue_id: &str,
         priority: Option<DownloadPriority>,
     ) -> Result<DownloadRecord> {
-        Ok(self
+        let record = self
             .storage
-            .enqueue_download(download_id, queue_id, priority)?)
+            .enqueue_download(download_id, queue_id, priority)?;
+        self.wake(queue_id)?;
+
+        Ok(record)
     }
 
     pub fn move_task(&self, download_id: &str, queue_id: &str) -> Result<DownloadRecord> {
-        Ok(self.storage.move_queued_download(download_id, queue_id)?)
+        let record = self.storage.move_queued_download(download_id, queue_id)?;
+        self.wake(queue_id)?;
+
+        Ok(record)
     }
 
     pub fn remove_task(&self, download_id: &str) -> Result<DownloadRecord> {
@@ -113,29 +165,61 @@ impl QueueService {
         download_id: &str,
         priority: DownloadPriority,
     ) -> Result<DownloadRecord> {
-        Ok(self.storage.set_download_priority(download_id, priority)?)
+        let record = self.storage.set_download_priority(download_id, priority)?;
+
+        if let Some(queue_id) = record.queue_id.as_deref() {
+            self.wake(queue_id)?;
+        }
+
+        Ok(record)
     }
 
     pub fn reorder_tasks(&self, queue_id: &str, ordered_ids: &[String]) -> Result<()> {
-        Ok(self
+        self.storage
+            .reorder_queue_downloads(queue_id, ordered_ids)?;
+        self.wake(queue_id)
+    }
+
+    pub fn set_queue_enabled(&self, queue_id: &str, enabled: bool) -> Result<QueueRecord> {
+        let queue = self
             .storage
-            .reorder_queue_downloads(queue_id, ordered_ids)?)
+            .set_queue_enabled(queue_id, enabled, unix_timestamp_seconds()?)?;
+        self.wake(queue_id)?;
+
+        Ok(queue)
     }
 
     pub fn stop_queue(&self, queue_id: &str) -> Result<QueueRecord> {
-        Ok(self.storage.set_queue_state(
+        let queue = self.storage.set_queue_state(
             queue_id,
             QueueState::Stopped,
             unix_timestamp_seconds()?,
-        )?)
+        )?;
+        // Wake the runner so an idle queue exits immediately instead of
+        // waiting for a transfer that may never come.
+        self.wake(queue_id)?;
+
+        Ok(queue)
     }
 
     pub fn start_queue(&self, queue_id: &str) -> Result<QueueRecord> {
-        Ok(self.storage.set_queue_state(
+        let queue = self
+            .storage
+            .get_queue(queue_id)?
+            .ok_or_else(|| StorageError::QueueNotFound(queue_id.to_owned()))?;
+
+        if !queue.enabled {
+            return Err(QueueServiceError::QueueDisabled(queue_id.to_owned()));
+        }
+
+        let queue = self.storage.set_queue_state(
             queue_id,
             QueueState::Running,
             unix_timestamp_seconds()?,
-        )?)
+        )?;
+        self.wake(queue_id)?;
+
+        Ok(queue)
     }
 
     pub async fn run_queue<F>(
@@ -151,6 +235,7 @@ impl QueueService {
             ActiveRunnerGuard::acquire(Arc::clone(&self.active_runners), queue_id.to_owned())?;
         let destination_directory = destination_directory.as_ref().to_path_buf();
         let on_event = Arc::new(on_event);
+        let wakeup = self.wakeup_handle(queue_id)?;
         let mut queue = self.storage.set_queue_state(
             queue_id,
             QueueState::Running,
@@ -167,7 +252,7 @@ impl QueueService {
                 .get_queue(queue_id)?
                 .ok_or_else(|| StorageError::QueueNotFound(queue_id.to_owned()))?;
 
-            if queue.state == QueueState::Running {
+            if queue.is_schedulable() {
                 self.fill_available_slots(
                     &queue,
                     &destination_directory,
@@ -182,7 +267,9 @@ impl QueueService {
                     return Ok(queue);
                 }
 
-                if self.storage.list_queued_downloads(queue_id)?.is_empty() {
+                if !queue.is_schedulable()
+                    || self.storage.list_queued_downloads(queue_id)?.is_empty()
+                {
                     queue = self.storage.set_queue_state(
                         queue_id,
                         QueueState::Stopped,
@@ -193,7 +280,16 @@ impl QueueService {
                 }
             }
 
-            if let Some(result) = tasks.join_next().await {
+            // Two things can free or create work: a transfer finishing, and a
+            // task being added, moved or reprioritised while other transfers
+            // are still running. Waiting on both keeps the configured
+            // concurrency real instead of only refilling slots on completion.
+            let finished = tokio::select! {
+                result = tasks.join_next(), if !tasks.is_empty() => result,
+                () = wakeup.notified() => None,
+            };
+
+            if let Some(result) = finished {
                 let (download_id, host, execution_result) = result?;
                 decrement_host_count(&mut active_hosts, &host);
 
@@ -544,6 +640,163 @@ mod tests {
                 .iter()
                 .all(|task| task.status == DownloadStatus::Completed)
         );
+    }
+
+    #[tokio::test]
+    async fn a_running_queue_fills_free_slots_with_newly_added_work() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let active = Arc::new(AtomicUsize::new(0));
+        let maximum = Arc::new(AtomicUsize::new(0));
+        let (accepted_tx, accepted_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        let listener = Arc::new(listener);
+        let server = {
+            let active = Arc::clone(&active);
+            let maximum = Arc::clone(&maximum);
+            let listener = Arc::clone(&listener);
+
+            tokio::spawn(async move {
+                // The first transfer is held open so the second task is
+                // necessarily added while a slot is still occupied.
+                let (mut first, _) = listener.accept().await.unwrap();
+                let mut request = [0_u8; 2048];
+                let _ = first.read(&mut request).await.unwrap();
+                let current = active.fetch_add(1, Ordering::SeqCst) + 1;
+                maximum.fetch_max(current, Ordering::SeqCst);
+                accepted_tx.send(()).unwrap();
+
+                let second = tokio::spawn({
+                    let active = Arc::clone(&active);
+                    let maximum = Arc::clone(&maximum);
+                    let listener = Arc::clone(&listener);
+
+                    async move {
+                        let (mut socket, _) = listener.accept().await.unwrap();
+                        let mut request = [0_u8; 2048];
+                        let _ = socket.read(&mut request).await.unwrap();
+                        let current = active.fetch_add(1, Ordering::SeqCst) + 1;
+                        maximum.fetch_max(current, Ordering::SeqCst);
+                        write_body(&mut socket).await;
+                        active.fetch_sub(1, Ordering::SeqCst);
+                    }
+                });
+
+                release_rx.await.unwrap();
+                write_body(&mut first).await;
+                active.fetch_sub(1, Ordering::SeqCst);
+                second.await.unwrap();
+            })
+        };
+
+        let root = tempdir().unwrap();
+        let storage = Arc::new(Storage::open(root.path().join("downloads.db")).unwrap());
+        let downloads = DownloadService::new(Arc::clone(&storage)).unwrap();
+        let queues = QueueService::new(Arc::clone(&storage), downloads.clone());
+        let queue = queues
+            .create_queue("Refilled", 2, None, DownloadPriority::Normal)
+            .unwrap();
+
+        let first = downloads
+            .create_task(&format!("http://{address}/first.bin"))
+            .unwrap();
+        queues.enqueue_task(&first.id, &queue.id, None).unwrap();
+
+        let runner_service = queues.clone();
+        let queue_id = queue.id.clone();
+        let destination = root.path().join("files");
+        let runner = tokio::spawn(async move {
+            runner_service
+                .run_queue(&queue_id, destination, |_| {})
+                .await
+                .unwrap()
+        });
+
+        accepted_rx.await.unwrap();
+
+        let second = downloads
+            .create_task(&format!("http://{address}/second.bin"))
+            .unwrap();
+        queues.enqueue_task(&second.id, &queue.id, None).unwrap();
+
+        // The runner must pick the new task up while the first one is still
+        // being transferred, not after it finishes.
+        await_started(&storage, &second.id).await;
+        assert_eq!(
+            storage.get_download(&first.id).unwrap().unwrap().status,
+            DownloadStatus::Downloading,
+            "the second task must start while the first is still transferring"
+        );
+
+        release_tx.send(()).unwrap();
+        server.await.unwrap();
+        assert_eq!(runner.await.unwrap().state, QueueState::Stopped);
+
+        assert_eq!(maximum.load(Ordering::SeqCst), 2);
+        assert!(
+            storage
+                .list_downloads()
+                .unwrap()
+                .iter()
+                .all(|task| task.status == DownloadStatus::Completed)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_disabled_queue_neither_starts_nor_schedules() {
+        let root = tempdir().unwrap();
+        let storage = Arc::new(Storage::open(root.path().join("downloads.db")).unwrap());
+        let downloads = DownloadService::new(Arc::clone(&storage)).unwrap();
+        let queues = QueueService::new(Arc::clone(&storage), downloads.clone());
+        let queue = queues
+            .create_queue("Disabled", 2, None, DownloadPriority::Normal)
+            .unwrap();
+        let task = downloads
+            .create_task("http://127.0.0.1:1/never-requested.bin")
+            .unwrap();
+        queues.enqueue_task(&task.id, &queue.id, None).unwrap();
+        queues.set_queue_enabled(&queue.id, false).unwrap();
+
+        let error = queues.start_queue(&queue.id).unwrap_err();
+        assert!(matches!(error, QueueServiceError::QueueDisabled(_)));
+
+        let stopped = queues
+            .run_queue(&queue.id, root.path().join("files"), |_| {})
+            .await
+            .unwrap();
+
+        assert_eq!(stopped.state, QueueState::Stopped);
+        assert_eq!(
+            storage.get_download(&task.id).unwrap().unwrap().status,
+            DownloadStatus::Queued,
+            "a disabled queue must not hand work to its runner"
+        );
+    }
+
+    async fn write_body(socket: &mut tokio::net::TcpStream) {
+        let body = b"queue test";
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        socket.write_all(response.as_bytes()).await.unwrap();
+        socket.write_all(body).await.unwrap();
+        socket.shutdown().await.unwrap();
+    }
+
+    /// Waits until a queued task has actually been claimed by its runner.
+    async fn await_started(storage: &Storage, download_id: &str) {
+        for _ in 0..200 {
+            let record = storage.get_download(download_id).unwrap().unwrap();
+
+            if record.status != DownloadStatus::Queued {
+                return;
+            }
+
+            sleep(Duration::from_millis(10)).await;
+        }
+
+        panic!("{download_id} was never claimed by its queue runner");
     }
 
     fn spawn_test_server(

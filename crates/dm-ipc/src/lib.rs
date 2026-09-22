@@ -56,21 +56,25 @@ pub struct DownloadTaskEvent {
     pub download_id: String,
     pub downloaded_bytes: u64,
     pub total_bytes: Option<u64>,
+    /// Measured transfer rate, present only on progress events for a transfer
+    /// that has run long enough to measure.
+    pub bytes_per_second: Option<u64>,
+    /// Seconds remaining at the measured rate, present only when the total
+    /// size is known and the transfer is moving.
+    pub eta_seconds: Option<u64>,
     pub status: String,
     pub download: Option<DownloadListItemResponse>,
 }
 
 impl DownloadTaskEvent {
-    pub fn progress(
-        download_id: impl Into<String>,
-        downloaded_bytes: u64,
-        total_bytes: Option<u64>,
-    ) -> Self {
+    pub fn progress(download_id: impl Into<String>, progress: TransferProgressResponse) -> Self {
         Self {
             kind: DownloadTaskEventKind::Progress,
             download_id: download_id.into(),
-            downloaded_bytes,
-            total_bytes,
+            downloaded_bytes: progress.downloaded_bytes,
+            total_bytes: progress.total_bytes,
+            bytes_per_second: progress.bytes_per_second,
+            eta_seconds: progress.eta_seconds,
             status: "downloading".to_owned(),
             download: None,
         }
@@ -82,10 +86,23 @@ impl DownloadTaskEvent {
             download_id: download.id.clone(),
             downloaded_bytes: download.downloaded_bytes,
             total_bytes: download.total_bytes,
+            bytes_per_second: None,
+            eta_seconds: None,
             status: download.status.clone(),
             download: Some(download),
         }
     }
+}
+
+/// Serialized transfer measurements. Every field is measured by the engine;
+/// nothing here is interpolated by the presentation layer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransferProgressResponse {
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub bytes_per_second: Option<u64>,
+    pub eta_seconds: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -142,43 +159,57 @@ pub struct QueueRunnerEventResponse {
     pub download_id: Option<String>,
     pub downloaded_bytes: Option<u64>,
     pub total_bytes: Option<u64>,
+    pub bytes_per_second: Option<u64>,
+    pub eta_seconds: Option<u64>,
+    /// The queue the event came from, so a listener can attribute an event
+    /// without having to track which runner it subscribed to.
+    pub queue_id: String,
 }
 
 impl QueueRunnerEventResponse {
     pub fn queue_updated(queue: QueueResponse) -> Self {
         Self {
             kind: QueueRunnerEventKind::QueueUpdated,
+            queue_id: queue.id.clone(),
             queue: Some(queue),
             download: None,
             download_id: None,
             downloaded_bytes: None,
             total_bytes: None,
+            bytes_per_second: None,
+            eta_seconds: None,
         }
     }
 
     pub fn task_progress(
+        queue_id: impl Into<String>,
         download_id: impl Into<String>,
-        downloaded_bytes: u64,
-        total_bytes: Option<u64>,
+        progress: TransferProgressResponse,
     ) -> Self {
         Self {
             kind: QueueRunnerEventKind::TaskProgress,
+            queue_id: queue_id.into(),
             queue: None,
             download: None,
             download_id: Some(download_id.into()),
-            downloaded_bytes: Some(downloaded_bytes),
-            total_bytes,
+            downloaded_bytes: Some(progress.downloaded_bytes),
+            total_bytes: progress.total_bytes,
+            bytes_per_second: progress.bytes_per_second,
+            eta_seconds: progress.eta_seconds,
         }
     }
 
-    pub fn task_updated(download: DownloadListItemResponse) -> Self {
+    pub fn task_updated(queue_id: impl Into<String>, download: DownloadListItemResponse) -> Self {
         Self {
             kind: QueueRunnerEventKind::TaskUpdated,
+            queue_id: queue_id.into(),
             queue: None,
             download: Some(download),
             download_id: None,
             downloaded_bytes: None,
             total_bytes: None,
+            bytes_per_second: None,
+            eta_seconds: None,
         }
     }
 }
@@ -187,37 +218,11 @@ mod tests {
     use super::{
         ComponentHealth, DownloadListItemResponse, DownloadTaskEvent, DownloadTaskEventKind,
         HealthState, QueueResponse, QueueRunnerEventKind, QueueRunnerEventResponse,
+        TransferProgressResponse,
     };
 
-    #[test]
-    fn ready_component_has_no_error_message() {
-        let health = ComponentHealth::ready();
-        assert_eq!(health.status, HealthState::Ready);
-        assert!(health.message.is_none());
-    }
-
-    #[test]
-    fn error_component_contains_message() {
-        let health = ComponentHealth::error("database unavailable");
-        assert_eq!(health.status, HealthState::Error);
-        assert_eq!(health.message.as_deref(), Some("database unavailable"));
-    }
-
-    #[test]
-    fn progress_event_contains_only_task_progress() {
-        let event = DownloadTaskEvent::progress("task-1", 512, Some(1_024));
-
-        assert_eq!(event.kind, DownloadTaskEventKind::Progress);
-        assert_eq!(event.download_id, "task-1");
-        assert_eq!(event.downloaded_bytes, 512);
-        assert_eq!(event.total_bytes, Some(1_024));
-        assert_eq!(event.status, "downloading");
-        assert!(event.download.is_none());
-    }
-
-    #[test]
-    fn updated_event_carries_the_authoritative_record() {
-        let download = DownloadListItemResponse {
+    fn sample_download() -> DownloadListItemResponse {
+        DownloadListItemResponse {
             id: "task-1".to_owned(),
             source_url: "https://example.com/file.bin".to_owned(),
             resolved_url: None,
@@ -235,7 +240,75 @@ mod tests {
             completed_at: None,
             error_code: None,
             error_message: None,
-        };
+        }
+    }
+
+    #[test]
+    fn ready_component_has_no_error_message() {
+        let health = ComponentHealth::ready();
+        assert_eq!(health.status, HealthState::Ready);
+        assert!(health.message.is_none());
+    }
+
+    #[test]
+    fn error_component_contains_message() {
+        let health = ComponentHealth::error("database unavailable");
+        assert_eq!(health.status, HealthState::Error);
+        assert_eq!(health.message.as_deref(), Some("database unavailable"));
+    }
+
+    #[test]
+    fn progress_event_contains_only_measured_task_progress() {
+        let event = DownloadTaskEvent::progress(
+            "task-1",
+            TransferProgressResponse {
+                downloaded_bytes: 512,
+                total_bytes: Some(1_024),
+                bytes_per_second: Some(256),
+                eta_seconds: Some(2),
+            },
+        );
+
+        assert_eq!(event.kind, DownloadTaskEventKind::Progress);
+        assert_eq!(event.download_id, "task-1");
+        assert_eq!(event.downloaded_bytes, 512);
+        assert_eq!(event.total_bytes, Some(1_024));
+        assert_eq!(event.bytes_per_second, Some(256));
+        assert_eq!(event.eta_seconds, Some(2));
+        assert_eq!(event.status, "downloading");
+        assert!(event.download.is_none());
+    }
+
+    #[test]
+    fn a_record_event_carries_no_rate_of_its_own() {
+        let event = DownloadTaskEvent::updated(sample_download());
+
+        assert!(event.bytes_per_second.is_none());
+        assert!(event.eta_seconds.is_none());
+    }
+
+    #[test]
+    fn queue_progress_events_name_their_queue() {
+        let event = QueueRunnerEventResponse::task_progress(
+            "default",
+            "task-1",
+            TransferProgressResponse {
+                downloaded_bytes: 128,
+                total_bytes: None,
+                bytes_per_second: Some(64),
+                eta_seconds: None,
+            },
+        );
+
+        assert_eq!(event.queue_id, "default");
+        assert_eq!(event.download_id.as_deref(), Some("task-1"));
+        assert_eq!(event.bytes_per_second, Some(64));
+        assert!(event.eta_seconds.is_none());
+    }
+
+    #[test]
+    fn updated_event_carries_the_authoritative_record() {
+        let download = sample_download();
 
         let event = DownloadTaskEvent::updated(download.clone());
 

@@ -1,10 +1,14 @@
 ﻿import {
+  ChevronRight,
   Copy,
   ExternalLink,
   FileText,
   FolderOpen,
+  Layers3,
   Link2,
+  ListX,
   Play,
+  SignalHigh,
   Trash2,
 } from "lucide-react";
 
@@ -20,29 +24,63 @@ import {
   useState,
 } from "react";
 
-import type { DownloadListItem } from "../../types/download";
+import type {
+  DownloadListItem,
+  DownloadPriority,
+  DownloadQueue,
+} from "../../types/download";
 
 import "./DownloadContextMenu.css";
 
 type DownloadContextMenuProps = {
   item: DownloadListItem | null;
+  queues: DownloadQueue[];
   x: number;
   y: number;
   onClose: () => void;
   onShowDetails: (id: string) => void;
   onStart: (id: string) => void;
+  onAssignQueue: (
+    item: DownloadListItem,
+    queueId: string,
+  ) => void;
+  onRemoveFromQueue: (
+    item: DownloadListItem,
+  ) => void;
+  onChangePriority: (
+    item: DownloadListItem,
+    priority: DownloadPriority,
+  ) => void;
   onRemoveFromHistory: (
     item: DownloadListItem,
   ) => void;
 };
 
+/// Which expandable group is open. Only one can be open at a time so the menu
+/// never grows past the window on a small screen.
+type OpenGroup = "queue" | "priority" | null;
+
+const PRIORITIES: Array<{
+  value: DownloadPriority;
+  label: string;
+}> = [
+  { value: "very_high", label: "Very high" },
+  { value: "high", label: "High" },
+  { value: "normal", label: "Normal" },
+  { value: "low", label: "Low" },
+];
+
 export function DownloadContextMenu({
   item,
+  queues,
   x,
   y,
   onClose,
   onShowDetails,
   onStart,
+  onAssignQueue,
+  onRemoveFromQueue,
+  onChangePriority,
   onRemoveFromHistory,
 }: DownloadContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -55,6 +93,9 @@ export function DownloadContextMenu({
   const [copied, setCopied] = useState<
     "url" | "path" | null
   >(null);
+
+  const [openGroup, setOpenGroup] =
+    useState<OpenGroup>(null);
 
   useLayoutEffect(() => {
     const menu = menuRef.current;
@@ -81,7 +122,11 @@ export function DownloadContextMenu({
         ),
       ),
     });
-  }, [x, y, item]);
+  }, [x, y, item, openGroup]);
+
+  useEffect(() => {
+    setOpenGroup(null);
+  }, [item?.id]);
 
   useEffect(() => {
     if (!item) return;
@@ -134,7 +179,20 @@ export function DownloadContextMenu({
   const hasFile =
     Boolean(destinationPath) &&
     status === "completed";
-async function handleOpenFile() {
+
+  // Mirrors the canonical rules the backend enforces: a task an executor may
+  // still be writing to is neither removable nor free to move between queues.
+  const isRemovable = [
+    "created",
+    "queued",
+    "completed",
+    "failed",
+    "cancelled",
+  ].includes(status);
+
+  const canQueue = ["created", "queued"].includes(status);
+
+  async function handleOpenFile() {
     if (!destinationPath) return;
 
     try {
@@ -272,6 +330,121 @@ async function handleOpenFile() {
 
       <div className="download-context-menu__divider" />
 
+      {canQueue ? (
+        <>
+          <button
+            type="button"
+            role="menuitem"
+            aria-expanded={openGroup === "queue"}
+            onClick={() =>
+              setOpenGroup(
+                openGroup === "queue" ? null : "queue",
+              )
+            }
+          >
+            <Layers3 size={15} />
+
+            <span>
+              {item.queueId
+                ? "Change Queue"
+                : "Add to Queue"}
+            </span>
+
+            <ChevronRight
+              size={14}
+              className={`download-context-menu__chevron ${
+                openGroup === "queue"
+                  ? "download-context-menu__chevron--open"
+                  : ""
+              }`}
+            />
+          </button>
+
+          {openGroup === "queue" ? (
+            <div className="download-context-menu__group">
+              {queues.length > 0 ? (
+                queues.map((queue) => (
+                  <button
+                    key={queue.id}
+                    type="button"
+                    role="menuitem"
+                    disabled={queue.id === item.queueId}
+                    onClick={() => {
+                      onAssignQueue(item, queue.id);
+                      onClose();
+                    }}
+                  >
+                    <span>{queue.name}</span>
+                  </button>
+                ))
+              ) : (
+                <span className="download-context-menu__empty">
+                  No queues yet
+                </span>
+              )}
+            </div>
+          ) : null}
+
+          <button
+            type="button"
+            role="menuitem"
+            aria-expanded={openGroup === "priority"}
+            onClick={() =>
+              setOpenGroup(
+                openGroup === "priority" ? null : "priority",
+              )
+            }
+          >
+            <SignalHigh size={15} />
+            <span>Change Priority</span>
+
+            <ChevronRight
+              size={14}
+              className={`download-context-menu__chevron ${
+                openGroup === "priority"
+                  ? "download-context-menu__chevron--open"
+                  : ""
+              }`}
+            />
+          </button>
+
+          {openGroup === "priority" ? (
+            <div className="download-context-menu__group">
+              {PRIORITIES.map((priority) => (
+                <button
+                  key={priority.value}
+                  type="button"
+                  role="menuitem"
+                  disabled={priority.value === item.priority}
+                  onClick={() => {
+                    onChangePriority(item, priority.value);
+                    onClose();
+                  }}
+                >
+                  <span>{priority.label}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {item.queueId ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onRemoveFromQueue(item);
+                onClose();
+              }}
+            >
+              <ListX size={15} />
+              <span>Remove from Queue</span>
+            </button>
+          ) : null}
+
+          <div className="download-context-menu__divider" />
+        </>
+      ) : null}
+
       <button
         type="button"
         role="menuitem"
@@ -289,19 +462,18 @@ async function handleOpenFile() {
         type="button"
         role="menuitem"
         className="download-context-menu__danger"
-        disabled={
-          ![
-            "completed",
-            "failed",
-            "cancelled",
-          ].includes(status)
-        }
+        disabled={!isRemovable}
         onClick={() => {
           onRemoveFromHistory(item);
         }}
       >
         <Trash2 size={15} />
-        <span>Remove from History...</span>
+
+        <span>
+          {hasFile || status === "completed"
+            ? "Remove from History..."
+            : "Remove Task..."}
+        </span>
       </button>
     </div>
   );

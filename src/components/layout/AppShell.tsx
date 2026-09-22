@@ -24,6 +24,9 @@ type AppShellProps = {
 
   searchValue: string;
 
+  activeCount?: number;
+  aggregateBytesPerSecond?: number | null;
+
   onSearchChange: (
     value: string,
   ) => void;
@@ -46,6 +49,8 @@ export function AppShell({
   queuesActive = false,
   counts,
   searchValue,
+  activeCount,
+  aggregateBytesPerSecond,
   onSearchChange,
   onSectionChange,
   onOpenSettings,
@@ -71,6 +76,10 @@ export function AppShell({
           title={title}
           subtitle={subtitle}
           searchValue={searchValue}
+          activeCount={activeCount}
+          aggregateBytesPerSecond={
+            aggregateBytesPerSecond
+          }
           onSearchChange={
             onSearchChange
           }

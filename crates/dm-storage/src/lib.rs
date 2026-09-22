@@ -156,6 +156,9 @@ pub enum StorageError {
         to: DownloadStatus,
     },
 
+    #[error("download {id} cannot be removed while its status is {status}")]
+    DownloadNotRemovable { id: String, status: DownloadStatus },
+
     #[error("invalid queue state stored in database: {0}")]
     InvalidQueueState(String),
 

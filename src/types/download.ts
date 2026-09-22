@@ -20,6 +20,16 @@
 
 export type DownloadPriority = DownloadListItem["priority"];
 
+/// Live transfer measurements. These come from the engine with every progress
+/// event and are deliberately not persisted: they describe a transfer that is
+/// happening right now, not the stored history row.
+export type TransferMetrics = {
+  bytesPerSecond: number | null;
+  etaSeconds: number | null;
+};
+
+export type TransferMetricsMap = Record<string, TransferMetrics>;
+
 export type DownloadQueue = {
   id: string;
   name: string;

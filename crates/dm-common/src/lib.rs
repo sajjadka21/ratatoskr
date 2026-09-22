@@ -1,4 +1,4 @@
-﻿use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::{fmt, str::FromStr};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -17,6 +17,30 @@ pub enum DownloadStatus {
 }
 
 impl DownloadStatus {
+    /// Every canonical status, so callers can derive status groups from the
+    /// canonical rules instead of restating them.
+    pub const ALL: [Self; 10] = [
+        Self::Created,
+        Self::Probing,
+        Self::Queued,
+        Self::Downloading,
+        Self::Paused,
+        Self::Retrying,
+        Self::Finalizing,
+        Self::Completed,
+        Self::Failed,
+        Self::Cancelled,
+    ];
+
+    /// Statuses whose row can be deleted from history. A task that an executor
+    /// may still be writing to is never removable.
+    pub const fn is_removable(self) -> bool {
+        matches!(
+            self,
+            Self::Created | Self::Queued | Self::Completed | Self::Failed | Self::Cancelled
+        )
+    }
+
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Created => "created",
@@ -29,6 +53,25 @@ impl DownloadStatus {
             Self::Completed => "completed",
             Self::Failed => "failed",
             Self::Cancelled => "cancelled",
+        }
+    }
+
+    /// States that only exist while an executor in the owning process is
+    /// driving the transfer. A process restart leaves such a row behind with
+    /// nobody advancing it, so startup recovery has to move it back to a state
+    /// the user or a queue runner can act on again.
+    pub const fn is_orphaned_by_restart(self) -> bool {
+        matches!(self, Self::Probing | Self::Downloading | Self::Finalizing)
+    }
+
+    /// The state an orphaned task returns to after a restart. A task that
+    /// belongs to a queue goes back to its queue; anything else goes back to
+    /// the user as a created task.
+    pub const fn restart_recovery_status(has_queue: bool) -> Self {
+        if has_queue {
+            Self::Queued
+        } else {
+            Self::Created
         }
     }
 
@@ -203,6 +246,16 @@ pub struct QueueRecord {
     pub updated_at: i64,
 }
 
+impl QueueRecord {
+    /// A queue only hands work to its runner while it is both enabled and
+    /// running. `enabled` is the persistent configuration switch, `state` is
+    /// what start/stop toggles; ignoring either one would let a queue schedule
+    /// work the user has turned off.
+    pub const fn is_schedulable(&self) -> bool {
+        self.enabled && matches!(self.state, QueueState::Running)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DownloadRecord {
     pub id: String,
@@ -291,6 +344,58 @@ mod tests {
         assert!(!DownloadStatus::Created.can_transition_to(DownloadStatus::Completed));
         assert!(!DownloadStatus::Completed.can_transition_to(DownloadStatus::Downloading));
         assert!(!DownloadStatus::Failed.can_transition_to(DownloadStatus::Completed));
+    }
+
+    #[test]
+    fn only_executor_owned_states_are_orphaned_by_a_restart() {
+        for status in [
+            DownloadStatus::Probing,
+            DownloadStatus::Downloading,
+            DownloadStatus::Finalizing,
+        ] {
+            assert!(status.is_orphaned_by_restart(), "{status} must recover");
+        }
+
+        for status in [
+            DownloadStatus::Created,
+            DownloadStatus::Queued,
+            DownloadStatus::Paused,
+            DownloadStatus::Completed,
+            DownloadStatus::Failed,
+            DownloadStatus::Cancelled,
+        ] {
+            assert!(
+                !status.is_orphaned_by_restart(),
+                "{status} must survive a restart untouched"
+            );
+        }
+    }
+
+    #[test]
+    fn removable_statuses_never_overlap_executor_owned_statuses() {
+        for status in DownloadStatus::ALL {
+            assert!(
+                !(status.is_removable() && status.is_orphaned_by_restart()),
+                "{status} cannot be both removable and executor-owned"
+            );
+        }
+
+        assert!(DownloadStatus::Created.is_removable());
+        assert!(DownloadStatus::Queued.is_removable());
+        assert!(!DownloadStatus::Downloading.is_removable());
+        assert!(!DownloadStatus::Paused.is_removable());
+    }
+
+    #[test]
+    fn restart_recovery_returns_queued_tasks_to_their_queue() {
+        assert_eq!(
+            DownloadStatus::restart_recovery_status(true),
+            DownloadStatus::Queued
+        );
+        assert_eq!(
+            DownloadStatus::restart_recovery_status(false),
+            DownloadStatus::Created
+        );
     }
 
     #[test]

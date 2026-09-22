@@ -1,4 +1,7 @@
-use crate::{DownloadError, DownloadOutcome, DownloadProgress, Downloader, validate_source_url};
+use crate::{
+    DownloadError, DownloadOutcome, Downloader, TransferProgress, throughput::ThroughputMeter,
+    validate_source_url,
+};
 use dm_common::{DownloadCompletion, DownloadRecord};
 use dm_storage::{Storage, StorageError};
 use std::{
@@ -12,6 +15,11 @@ use tokio::sync::Semaphore;
 const DEFAULT_MAX_CONCURRENT_DOWNLOADS: usize = 3;
 const PROGRESS_PERSIST_INTERVAL: Duration = Duration::from_millis(500);
 const PROGRESS_PERSIST_BYTES: u64 = 1024 * 1024;
+
+/// Recorded on tasks that a process restart orphaned, so the row explains
+/// itself instead of silently reappearing as unstarted work.
+const INTERRUPTED_ERROR_CODE: &str = "interrupted";
+const INTERRUPTED_ERROR_MESSAGE: &str = "Interrupted when the app closed. This transfer cannot be resumed yet and will restart from the beginning.";
 
 #[derive(Debug, Error)]
 pub enum DownloadServiceError {
@@ -71,6 +79,16 @@ impl DownloadService {
             .await
     }
 
+    /// Returns tasks that a previous process left mid-transfer to a state the
+    /// user or a queue runner can act on again. Called once during startup,
+    /// before any runner is spawned, so no row is ever presented as active
+    /// with nobody driving it.
+    pub fn recover_orphaned_tasks(&self) -> Result<Vec<DownloadRecord>> {
+        self.storage
+            .recover_orphaned_downloads(INTERRUPTED_ERROR_CODE, INTERRUPTED_ERROR_MESSAGE)
+            .map_err(DownloadServiceError::Storage)
+    }
+
     pub async fn start_task_with_progress<F>(
         &self,
         download_id: &str,
@@ -78,7 +96,7 @@ impl DownloadService {
         on_progress: F,
     ) -> Result<DownloadRecord>
     where
-        F: FnMut(&str, DownloadProgress) + Send,
+        F: FnMut(&str, TransferProgress) + Send,
     {
         self.claim_task(download_id)?;
         self.execute_claimed_task_with_progress(download_id, destination_directory, on_progress)
@@ -92,7 +110,7 @@ impl DownloadService {
         mut on_progress: F,
     ) -> Result<DownloadRecord>
     where
-        F: FnMut(&str, DownloadProgress) + Send,
+        F: FnMut(&str, TransferProgress) + Send,
     {
         let task = self.get_task(download_id)?;
         let _execution_slot = Arc::clone(&self.execution_slots)
@@ -108,6 +126,7 @@ impl DownloadService {
         let mut last_persisted_at = Instant::now();
         let mut last_persisted_bytes = 0_u64;
         let mut has_persisted_progress = false;
+        let mut meter = ThroughputMeter::new(Instant::now(), 0);
 
         let result = self
             .downloader
@@ -135,7 +154,18 @@ impl DownloadService {
                     last_persisted_bytes = progress.downloaded_bytes;
                 }
 
-                on_progress(&progress_id, progress);
+                let bytes_per_second = meter.sample(progress.downloaded_bytes, Instant::now());
+
+                on_progress(
+                    &progress_id,
+                    TransferProgress {
+                        downloaded_bytes: progress.downloaded_bytes,
+                        total_bytes: progress.total_bytes,
+                        bytes_per_second,
+                        eta_seconds: meter
+                            .eta_seconds(progress.downloaded_bytes, progress.total_bytes),
+                    },
+                );
 
                 Ok(())
             })

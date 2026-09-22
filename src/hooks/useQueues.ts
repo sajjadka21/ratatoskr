@@ -1,5 +1,6 @@
-import { useCallback, useRef, useState } from "react";
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 import type {
   DownloadListItem,
@@ -7,13 +8,18 @@ import type {
   DownloadQueue,
 } from "../types/download";
 
+const QUEUE_RUNNER_EVENT = "queue-runner-event";
+
 type QueueRunnerEvent = {
   kind: "queueUpdated" | "taskProgress" | "taskUpdated";
+  queueId: string;
   queue: DownloadQueue | null;
   download: DownloadListItem | null;
   downloadId: string | null;
   downloadedBytes: number | null;
   totalBytes: number | null;
+  bytesPerSecond: number | null;
+  etaSeconds: number | null;
 };
 
 type UseQueuesOptions = {
@@ -22,19 +28,20 @@ type UseQueuesOptions = {
     downloadId: string,
     downloadedBytes: number,
     totalBytes: number | null,
+    bytesPerSecond?: number | null,
+    etaSeconds?: number | null,
   ) => void;
+  clearLiveMetrics: (downloadId: string) => void;
   refreshDownloads: () => Promise<void>;
 };
 
 export function useQueues({
   upsertDownloads,
   updateDownloadProgress,
+  clearLiveMetrics,
   refreshDownloads,
 }: UseQueuesOptions) {
   const [queues, setQueues] = useState<DownloadQueue[]>([]);
-  const queueChannels = useRef(
-    new Map<string, Channel<QueueRunnerEvent>>(),
-  );
 
   const upsertQueues = useCallback((records: DownloadQueue[]) => {
     setQueues((current) => {
@@ -51,32 +58,48 @@ export function useQueues({
     setQueues(await invoke<DownloadQueue[]>("list_queues"));
   }, []);
 
-  function applyQueueEvent(event: QueueRunnerEvent) {
-    if (event.kind === "queueUpdated" && event.queue) {
-      upsertQueues([event.queue]);
-      if (event.queue.state === "stopped") {
-        queueChannels.current.delete(event.queue.id);
-      }
-      return;
-    }
+  // Runner events are published to the window, so a queue this session never
+  // started - one resumed when the app launched - reports its progress too.
+  useEffect(() => {
+    const subscription = listen<QueueRunnerEvent>(
+      QUEUE_RUNNER_EVENT,
+      ({ payload }) => {
+        if (payload.kind === "queueUpdated" && payload.queue) {
+          upsertQueues([payload.queue]);
+          return;
+        }
 
-    if (event.kind === "taskUpdated" && event.download) {
-      upsertDownloads([event.download]);
-      return;
-    }
+        if (payload.kind === "taskUpdated" && payload.download) {
+          clearLiveMetrics(payload.download.id);
+          upsertDownloads([payload.download]);
+          return;
+        }
 
-    if (
-      event.kind === "taskProgress" &&
-      event.downloadId &&
-      event.downloadedBytes !== null
-    ) {
-      updateDownloadProgress(
-        event.downloadId,
-        event.downloadedBytes,
-        event.totalBytes,
-      );
-    }
-  }
+        if (
+          payload.kind === "taskProgress" &&
+          payload.downloadId &&
+          payload.downloadedBytes !== null
+        ) {
+          updateDownloadProgress(
+            payload.downloadId,
+            payload.downloadedBytes,
+            payload.totalBytes,
+            payload.bytesPerSecond,
+            payload.etaSeconds,
+          );
+        }
+      },
+    );
+
+    return () => {
+      void subscription.then((unlisten) => unlisten());
+    };
+  }, [
+    upsertQueues,
+    upsertDownloads,
+    updateDownloadProgress,
+    clearLiveMetrics,
+  ]);
 
   async function createQueue(input: {
     name: string;
@@ -90,19 +113,18 @@ export function useQueues({
   }
 
   async function startQueue(queueId: string) {
-    const onEvent = new Channel<QueueRunnerEvent>();
-    onEvent.onmessage = applyQueueEvent;
-    queueChannels.current.set(queueId, onEvent);
-    try {
-      const queue = await invoke<DownloadQueue>("start_queue", {
+    upsertQueues([
+      await invoke<DownloadQueue>("start_queue", { queueId }),
+    ]);
+  }
+
+  async function setQueueEnabled(queueId: string, enabled: boolean) {
+    upsertQueues([
+      await invoke<DownloadQueue>("set_queue_enabled", {
         queueId,
-        onEvent,
-      });
-      upsertQueues([queue]);
-    } catch (reason) {
-      queueChannels.current.delete(queueId);
-      throw reason;
-    }
+        enabled,
+      }),
+    ]);
   }
 
   async function stopQueue(queueId: string) {
@@ -147,6 +169,7 @@ export function useQueues({
     createQueue,
     startQueue,
     stopQueue,
+    setQueueEnabled,
     reorderQueue,
     moveQueuedDownload,
     removeFromQueue,

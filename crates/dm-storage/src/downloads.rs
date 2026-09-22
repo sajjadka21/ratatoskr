@@ -225,18 +225,100 @@ impl Storage {
         Ok(downloads)
     }
 
+    /// Deletes a history row, but only while no executor can still be writing
+    /// to it. The status guard lives in the `DELETE` itself so a queue runner
+    /// that claims the task at the same moment wins the race instead of
+    /// losing its row mid-transfer.
     pub fn remove_download_record(&self, id: &str) -> Result<()> {
         let connection = self.connection()?;
+        let removable = status_list(DownloadStatus::is_removable);
 
         let changed = connection.execute(
-            r#"
-            DELETE FROM downloads
-            WHERE id = ?1;
-            "#,
-            [id],
+            &format!(
+                "DELETE FROM downloads WHERE id = ?1 AND status IN ({});",
+                sql_placeholders(removable.len(), 2)
+            ),
+            rusqlite::params_from_iter(std::iter::once(id).chain(removable.iter().copied())),
         )?;
 
-        ensure_updated(id, changed)
+        if changed > 0 {
+            return Ok(());
+        }
+
+        let status = current_status(&connection, id)?;
+
+        Err(StorageError::DownloadNotRemovable {
+            id: id.to_owned(),
+            status,
+        })
+    }
+
+    /// Returns rows that a previous process left mid-transfer to a state the
+    /// user or a queue runner can act on again, and reports what was changed.
+    ///
+    /// Progress bytes are cleared because the current engine restarts an
+    /// interrupted transfer from zero; Phase 3 replaces this with a real
+    /// resume that keeps the partial bytes and their validators.
+    pub fn recover_orphaned_downloads(
+        &self,
+        error_code: &str,
+        error_message: &str,
+    ) -> Result<Vec<DownloadRecord>> {
+        let orphaned = status_list(DownloadStatus::is_orphaned_by_restart);
+        let mut connection = self.connection()?;
+        let transaction = connection.transaction()?;
+
+        let select = format!(
+            "SELECT id FROM downloads WHERE status IN ({});",
+            sql_placeholders(orphaned.len(), 1)
+        );
+
+        let mut statement = transaction.prepare(&select)?;
+
+        let ids = statement
+            .query_map(
+                rusqlite::params_from_iter(orphaned.iter().copied()),
+                |row| row.get::<_, String>(0),
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+
+        drop(statement);
+
+        for id in &ids {
+            transaction.execute(
+                r#"
+                UPDATE downloads
+                SET
+                    status = CASE WHEN queue_id IS NULL THEN ?2 ELSE ?3 END,
+                    downloaded_bytes = 0,
+                    temp_path = NULL,
+                    started_at = NULL,
+                    error_code = ?4,
+                    error_message = ?5
+                WHERE id = ?1;
+                "#,
+                params![
+                    id,
+                    DownloadStatus::restart_recovery_status(false).as_str(),
+                    DownloadStatus::restart_recovery_status(true).as_str(),
+                    error_code,
+                    error_message,
+                ],
+            )?;
+        }
+
+        transaction.commit()?;
+        drop(connection);
+
+        let mut recovered = Vec::with_capacity(ids.len());
+
+        for id in ids {
+            if let Some(record) = self.get_download(&id)? {
+                recovered.push(record);
+            }
+        }
+
+        Ok(recovered)
     }
 
     pub fn mark_probing(&self, id: &str) -> Result<()> {
@@ -409,6 +491,34 @@ impl Storage {
     }
 }
 
+/// Builds the canonical status group matching `predicate` as SQL literals, so
+/// status groups are derived from `dm-common` instead of restated in SQL.
+fn status_list(predicate: fn(DownloadStatus) -> bool) -> Vec<&'static str> {
+    DownloadStatus::ALL
+        .into_iter()
+        .filter(|status| predicate(*status))
+        .map(DownloadStatus::as_str)
+        .collect()
+}
+
+fn sql_placeholders(count: usize, first_index: usize) -> String {
+    (0..count)
+        .map(|offset| format!("?{}", first_index + offset))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn current_status(connection: &Connection, id: &str) -> Result<DownloadStatus> {
+    let status = connection
+        .query_row("SELECT status FROM downloads WHERE id = ?1;", [id], |row| {
+            row.get::<_, String>(0)
+        })
+        .optional()?
+        .ok_or_else(|| StorageError::DownloadNotFound(id.to_owned()))?;
+
+    DownloadStatus::from_str(&status).map_err(|_| StorageError::InvalidDownloadStatus(status))
+}
+
 fn ensure_updated(id: &str, changed: usize) -> Result<()> {
     if changed == 0 {
         Err(StorageError::DownloadNotFound(id.to_owned()))
@@ -521,6 +631,115 @@ mod tests {
         let downloads = storage.list_downloads().unwrap();
         assert_eq!(downloads.len(), 1);
         assert_eq!(downloads[0].id, created.id);
+    }
+
+    #[test]
+    fn recovers_orphaned_downloads_to_actionable_states() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::open(directory.path().join("downloads.db")).unwrap();
+
+        let direct = storage
+            .create_download("https://example.com/direct.bin", 1_000)
+            .unwrap();
+        storage.mark_probing(&direct.id).unwrap();
+        storage.mark_downloading(&direct.id, 1_050).unwrap();
+        storage
+            .update_progress(&direct.id, 4_096, Some(8_192))
+            .unwrap();
+
+        let queued = storage
+            .create_download("https://example.com/queued.bin", 1_001)
+            .unwrap();
+        storage
+            .enqueue_download(&queued.id, "default", None)
+            .unwrap();
+        storage
+            .claim_queued_download(&queued.id, "default")
+            .unwrap();
+
+        let untouched = storage
+            .create_download("https://example.com/idle.bin", 1_002)
+            .unwrap();
+
+        let recovered = storage
+            .recover_orphaned_downloads("interrupted", "interrupted by a restart")
+            .unwrap();
+
+        assert_eq!(recovered.len(), 2);
+
+        let direct = storage.get_download(&direct.id).unwrap().unwrap();
+        assert_eq!(direct.status, DownloadStatus::Created);
+        assert_eq!(direct.downloaded_bytes, 0);
+        assert!(direct.started_at.is_none());
+        assert_eq!(direct.error_code.as_deref(), Some("interrupted"));
+
+        let queued = storage.get_download(&queued.id).unwrap().unwrap();
+        assert_eq!(queued.status, DownloadStatus::Queued);
+        assert_eq!(queued.queue_id.as_deref(), Some("default"));
+
+        let untouched = storage.get_download(&untouched.id).unwrap().unwrap();
+        assert_eq!(untouched.status, DownloadStatus::Created);
+        assert!(untouched.error_code.is_none());
+    }
+
+    #[test]
+    fn recovery_is_a_no_op_when_nothing_was_interrupted() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::open(directory.path().join("downloads.db")).unwrap();
+
+        storage
+            .create_download("https://example.com/file.bin", 1_000)
+            .unwrap();
+
+        let recovered = storage
+            .recover_orphaned_downloads("interrupted", "interrupted by a restart")
+            .unwrap();
+
+        assert!(recovered.is_empty());
+    }
+
+    #[test]
+    fn removes_tasks_that_no_executor_owns() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::open(directory.path().join("downloads.db")).unwrap();
+
+        let created = storage
+            .create_download("https://example.com/created.bin", 1_000)
+            .unwrap();
+        let queued = storage
+            .create_download("https://example.com/queued.bin", 1_001)
+            .unwrap();
+        storage
+            .enqueue_download(&queued.id, "default", None)
+            .unwrap();
+
+        storage.remove_download_record(&created.id).unwrap();
+        storage.remove_download_record(&queued.id).unwrap();
+
+        assert!(storage.list_downloads().unwrap().is_empty());
+    }
+
+    #[test]
+    fn refuses_to_remove_a_task_while_it_is_being_transferred() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::open(directory.path().join("downloads.db")).unwrap();
+
+        let record = storage
+            .create_download("https://example.com/file.bin", 1_000)
+            .unwrap();
+        storage.mark_probing(&record.id).unwrap();
+        storage.mark_downloading(&record.id, 1_050).unwrap();
+
+        let error = storage.remove_download_record(&record.id).unwrap_err();
+
+        assert!(matches!(
+            error,
+            StorageError::DownloadNotRemovable {
+                status: DownloadStatus::Downloading,
+                ..
+            }
+        ));
+        assert_eq!(storage.list_downloads().unwrap().len(), 1);
     }
 
     #[test]

@@ -33,3 +33,24 @@
 .queue-page__order-actions { display: flex; gap: 4px; }.queue-page__order-actions button { width: 27px; height: 27px; }.queue-page__order-actions button:hover:not(:disabled) { color: var(--text-primary); border-color: var(--accent); }
 .queue-page__empty { min-height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; color: var(--text-muted); text-align: center; }.queue-page__empty strong { color: var(--text-secondary); font-size: 12px; }.queue-page__empty span { font-size: 10px; }
 @media (max-width: 1050px) { .queue-page { grid-template-columns: 210px minmax(0,1fr); }.queue-page__task { grid-template-columns: 20px minmax(120px,1fr) 95px; }.queue-page__task > select:nth-of-type(2), .queue-page__order-actions { grid-column: 2 / -1; } }
+
+.queue-page__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.queue-page__enabled {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+
+  color: var(--text-secondary);
+
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.queue-page__state--disabled {
+  color: var(--text-muted);
+}

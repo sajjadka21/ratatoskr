@@ -343,3 +343,40 @@
   font-size: 9px;
   line-height: 1.45;
 }
+
+.download-details__live {
+  margin-top: 8px;
+
+  display: flex;
+  gap: 16px;
+
+  color: var(--text-secondary);
+
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.download-details__live span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.download-details__live svg {
+  color: var(--accent);
+}
+
+.download-details__queue {
+  text-transform: capitalize;
+}
+
+/* The same block also explains a non-failure notice, such as a transfer the
+   app had to abandon when it closed. */
+.download-details__failure--notice {
+  background: rgba(229, 169, 61, 0.07);
+  border-color: rgba(229, 169, 61, 0.2);
+}
+
+.download-details__failure--notice strong {
+  color: var(--warning);
+}

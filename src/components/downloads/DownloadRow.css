@@ -81,9 +81,14 @@
 .download-row__numbers {
   flex: 0 0 auto;
 
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+
   color: var(--text-secondary);
 
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 .download-row__numbers strong {
@@ -118,21 +123,43 @@
 
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 14px;
 
   color: var(--text-muted);
 
   font-size: 10px;
 }
 
-.download-row__error {
-  overflow: hidden;
+/* The message is the only part that may grow, so the measured numbers
+   before it keep a stable position while a transfer runs. */
+.download-row__bottom > :last-child {
+  margin-left: auto;
+}
 
-  color: #e98282;
+.download-row__message {
+  overflow: hidden;
 
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.download-row__message--error {
+  color: #e98282;
+}
+
+.download-row__message--notice {
+  color: var(--warning);
+}
+
+.download-row__eta {
+  font-variant-numeric: tabular-nums;
+}
+
+.download-row__rate {
+  color: var(--text-secondary);
+
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 .download-row__queue-hint {

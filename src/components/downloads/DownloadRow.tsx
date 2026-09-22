@@ -7,12 +7,23 @@
   Video,
 } from "lucide-react";
 
-import type { DownloadListItem } from "../../types/download";
+import type {
+  DownloadListItem,
+  TransferMetrics,
+} from "../../types/download";
+
+import {
+  formatBytes,
+  formatDuration,
+  formatHost,
+  formatRate,
+} from "../../utils/format";
 
 import "./DownloadRow.css";
 
 type DownloadRowProps = {
   item: DownloadListItem;
+  metrics?: TransferMetrics;
   queueName?: string;
   selected?: boolean;
   onSelect?: () => void;
@@ -22,31 +33,6 @@ type DownloadRowProps = {
     y: number,
   ) => void;
 };
-
-function formatBytes(bytes: number): string {
-  if (bytes <= 0) {
-    return "0 B";
-  }
-
-  const units = ["B", "KB", "MB", "GB", "TB"];
-
-  const index = Math.min(
-    Math.floor(Math.log(bytes) / Math.log(1024)),
-    units.length - 1,
-  );
-
-  const value = bytes / 1024 ** index;
-
-  return `${value.toFixed(index === 0 ? 0 : 2)} ${units[index]}`;
-}
-
-function getDomain(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return url;
-  }
-}
 
 function getFileIcon(item: DownloadListItem) {
   const mime = item.mimeType?.toLowerCase() ?? "";
@@ -101,6 +87,7 @@ function statusLabel(status: string): string {
 
 export function DownloadRow({
   item,
+  metrics,
   queueName,
   selected = false,
   onSelect,
@@ -125,9 +112,19 @@ export function DownloadRow({
     item.resolvedUrl ??
     item.sourceUrl;
 
-  const domain = getDomain(
+  const domain = formatHost(
     item.resolvedUrl ?? item.sourceUrl,
   );
+
+  const isTransferring = status === "downloading";
+
+  const rate = isTransferring
+    ? formatRate(metrics?.bytesPerSecond ?? null)
+    : null;
+
+  const remaining = isTransferring
+    ? formatDuration(metrics?.etaSeconds ?? null)
+    : null;
 
   return (
     <article
@@ -173,6 +170,12 @@ export function DownloadRow({
           </div>
 
           <div className="download-row__numbers">
+            {rate ? (
+              <span className="download-row__rate">
+                {rate}
+              </span>
+            ) : null}
+
             {percent !== null && (
               <strong>
                 {percent.toFixed(
@@ -201,15 +204,24 @@ export function DownloadRow({
               : ""}
           </span>
 
+          {remaining ? (
+            <span className="download-row__eta">
+              {remaining} left
+            </span>
+          ) : null}
+
           {item.queueId ? (
             <span className="download-row__queue-hint">
               {queueName ?? item.queueId} · {item.priority.replace("_", " ")}
             </span>
           ) : null}
 
-          {status === "failed" &&
-          item.errorMessage ? (
-            <span className="download-row__error">
+          {item.errorMessage ? (
+            <span
+              className={`download-row__message download-row__message--${
+                status === "failed" ? "error" : "notice"
+              }`}
+            >
               {item.errorMessage}
             </span>
           ) : null}

@@ -1,5 +1,6 @@
 pub mod queue;
 pub mod service;
+pub mod throughput;
 
 use percent_encoding::percent_decode_str;
 use reqwest::{
@@ -70,6 +71,17 @@ pub struct DownloadMetadata {
 pub struct DownloadProgress {
     pub downloaded_bytes: u64,
     pub total_bytes: Option<u64>,
+}
+
+/// Progress as the service reports it: the byte counts the engine actually
+/// wrote, plus the measurements derived from them. Everything here comes from
+/// real transfer data — nothing is interpolated to make a bar move.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TransferProgress {
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub bytes_per_second: Option<u64>,
+    pub eta_seconds: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

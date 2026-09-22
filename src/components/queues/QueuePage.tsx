@@ -31,6 +31,10 @@ type QueuePageProps = {
   }) => Promise<DownloadQueue>;
   onStartQueue: (queueId: string) => Promise<void>;
   onStopQueue: (queueId: string) => Promise<void>;
+  onSetQueueEnabled: (
+    queueId: string,
+    enabled: boolean,
+  ) => Promise<void>;
   onReorder: (queueId: string, orderedIds: string[]) => Promise<void>;
   onMove: (downloadId: string, queueId: string) => Promise<void>;
   onRemove: (downloadId: string) => Promise<void>;
@@ -60,6 +64,7 @@ export function QueuePage({
   onCreateQueue,
   onStartQueue,
   onStopQueue,
+  onSetQueueEnabled,
   onReorder,
   onMove,
   onRemove,
@@ -252,33 +257,63 @@ export function QueuePage({
           <>
             <header className="queue-page__header">
               <div>
-                <span className={`queue-page__state queue-page__state--${selectedQueue.state}`}>
-                  {selectedQueue.state}
+                <span
+                  className={`queue-page__state queue-page__state--${
+                    selectedQueue.enabled
+                      ? selectedQueue.state
+                      : "disabled"
+                  }`}
+                >
+                  {selectedQueue.enabled
+                    ? selectedQueue.state
+                    : "disabled"}
                 </span>
                 <h2>{selectedQueue.name}</h2>
                 <p>
                   {selectedQueue.maxConcurrent} concurrent · {selectedQueue.maxConcurrentPerHost ?? "No"} per host · {selectedQueue.defaultPriority.replace("_", " ")} default
                 </p>
               </div>
-              <button
-                type="button"
-                className="queue-page__runner-button"
-                disabled={busy}
-                onClick={() =>
-                  void run(() =>
-                    selectedQueue.state === "running"
-                      ? onStopQueue(selectedQueue.id)
-                      : onStartQueue(selectedQueue.id),
-                  )
-                }
-              >
-                {selectedQueue.state === "running" ? (
-                  <CircleStop size={16} />
-                ) : (
-                  <Play size={16} />
-                )}
-                {selectedQueue.state === "running" ? "Stop queue" : "Start queue"}
-              </button>
+              <div className="queue-page__header-actions">
+                <label
+                  className="queue-page__enabled"
+                  title="A disabled queue never schedules work, even when started."
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedQueue.enabled}
+                    disabled={busy}
+                    onChange={(event) =>
+                      void run(() =>
+                        onSetQueueEnabled(
+                          selectedQueue.id,
+                          event.target.checked,
+                        ),
+                      )
+                    }
+                  />
+                  Enabled
+                </label>
+
+                <button
+                  type="button"
+                  className="queue-page__runner-button"
+                  disabled={busy || !selectedQueue.enabled}
+                  onClick={() =>
+                    void run(() =>
+                      selectedQueue.state === "running"
+                        ? onStopQueue(selectedQueue.id)
+                        : onStartQueue(selectedQueue.id),
+                    )
+                  }
+                >
+                  {selectedQueue.state === "running" ? (
+                    <CircleStop size={16} />
+                  ) : (
+                    <Play size={16} />
+                  )}
+                  {selectedQueue.state === "running" ? "Stop queue" : "Start queue"}
+                </button>
+              </div>
             </header>
 
             {error ? <div className="queue-page__error">{error}</div> : null}

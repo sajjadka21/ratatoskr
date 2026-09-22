@@ -5,8 +5,10 @@
   ExternalLink,
   File,
   FolderOpen,
+  Gauge,
   Link2,
   Play,
+  Timer,
   X,
 } from "lucide-react";
 
@@ -20,12 +22,23 @@ import {
   useState,
 } from "react";
 
-import type { DownloadListItem } from "../../types/download";
+import type {
+  DownloadListItem,
+  TransferMetrics,
+} from "../../types/download";
+
+import {
+  formatBytes,
+  formatDuration,
+  formatRate,
+} from "../../utils/format";
 
 import "./DownloadDetailsPanel.css";
 
 type DownloadDetailsPanelProps = {
   item: DownloadListItem | null;
+  metrics?: TransferMetrics;
+  queueName?: string;
   onClose: () => void;
   onStart: (id: string) => void;
 };
@@ -34,21 +47,6 @@ type CopiedField =
   | "url"
   | "path"
   | null;
-
-function formatBytes(bytes: number): string {
-  if (bytes <= 0) return "0 B";
-
-  const units = ["B", "KB", "MB", "GB", "TB"];
-
-  const index = Math.min(
-    Math.floor(Math.log(bytes) / Math.log(1024)),
-    units.length - 1,
-  );
-
-  const value = bytes / 1024 ** index;
-
-  return `${value.toFixed(index === 0 ? 0 : 2)} ${units[index]}`;
-}
 
 function formatDate(value: number | null): string {
   if (!value) return "—";
@@ -78,6 +76,8 @@ function statusLabel(status: string): string {
 
 export function DownloadDetailsPanel({
   item,
+  metrics,
+  queueName,
   onClose,
   onStart,
 }: DownloadDetailsPanelProps) {
@@ -113,6 +113,16 @@ export function DownloadDetailsPanel({
       : status === "completed"
         ? 100
         : 0;
+
+  const isTransferring = status === "downloading";
+
+  const rate = isTransferring
+    ? formatRate(metrics?.bytesPerSecond ?? null)
+    : null;
+
+  const remaining = isTransferring
+    ? formatDuration(metrics?.etaSeconds ?? null)
+    : null;
 
   async function copyText(
     value: string,
@@ -215,6 +225,24 @@ export function DownloadDetailsPanel({
               ? ` of ${formatBytes(item.totalBytes)}`
               : ""}
           </div>
+
+          {rate || remaining ? (
+            <div className="download-details__live">
+              {rate ? (
+                <span>
+                  <Gauge size={13} />
+                  {rate}
+                </span>
+              ) : null}
+
+              {remaining ? (
+                <span>
+                  <Timer size={13} />
+                  {remaining} left
+                </span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div className="download-details__actions">
@@ -344,6 +372,17 @@ export function DownloadDetailsPanel({
             <dt>Completed</dt>
             <dd>{formatDate(item.completedAt)}</dd>
           </div>
+
+          {item.queueId ? (
+            <div>
+              <dt>Queue</dt>
+
+              <dd className="download-details__queue">
+                {queueName ?? item.queueId} ·{" "}
+                {item.priority.replace("_", " ")}
+              </dd>
+            </div>
+          ) : null}
         </dl>
 
         {actionError ? (
@@ -352,12 +391,16 @@ export function DownloadDetailsPanel({
           </div>
         ) : null}
 
-        {status === "failed" &&
-        item.errorMessage ? (
-          <div className="download-details__failure">
+        {item.errorMessage ? (
+          <div
+            className={`download-details__failure download-details__failure--${
+              status === "failed" ? "error" : "notice"
+            }`}
+          >
             <strong>
-              {item.errorCode ??
-                "Download failed"}
+              {status === "failed"
+                ? (item.errorCode ?? "Download failed")
+                : "Needs attention"}
             </strong>
 
             <span>{item.errorMessage}</span>

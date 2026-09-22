@@ -6,7 +6,8 @@
   useState,
 } from "react";
 
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 
 import {
@@ -28,6 +29,7 @@ import type {
 
 import type {
   DownloadListItem,
+  TransferMetricsMap,
 } from "./types/download";
 
 import {
@@ -61,9 +63,13 @@ type DownloadTaskEvent = {
   downloadId: string;
   downloadedBytes: number;
   totalBytes: number | null;
+  bytesPerSecond: number | null;
+  etaSeconds: number | null;
   status: string;
   download: DownloadListItem | null;
 };
+
+const DOWNLOAD_TASK_EVENT = "download-task-event";
 
 const sectionTitles: Record<
   DownloadSection,
@@ -152,9 +158,9 @@ function App() {
   const [creatingTasks, setCreatingTasks] =
     useState(false);
 
-  const taskChannels = useRef(
-    new Map<string, Channel<DownloadTaskEvent>>(),
-  );
+  const [liveMetrics, setLiveMetrics] =
+    useState<TransferMetricsMap>({});
+
   const startingTaskIds = useRef(new Set<string>());
 
   const refreshHealth = useCallback(async () => {
@@ -200,7 +206,13 @@ function App() {
   }, []);
 
   const updateDownloadProgress = useCallback(
-    (downloadId: string, downloadedBytes: number, totalBytes: number | null) => {
+    (
+      downloadId: string,
+      downloadedBytes: number,
+      totalBytes: number | null,
+      bytesPerSecond: number | null = null,
+      etaSeconds: number | null = null,
+    ) => {
       setDownloads((current) =>
         current.map((item) =>
           item.id === downloadId
@@ -213,9 +225,28 @@ function App() {
             : item,
         ),
       );
+
+      setLiveMetrics((current) => ({
+        ...current,
+        [downloadId]: { bytesPerSecond, etaSeconds },
+      }));
     },
     [],
   );
+
+  /// A task that reached a terminal state is no longer moving, so its live
+  /// rate must disappear rather than freeze at the last measured value.
+  const clearLiveMetrics = useCallback((downloadId: string) => {
+    setLiveMetrics((current) => {
+      if (!(downloadId in current)) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[downloadId];
+      return next;
+    });
+  }, []);
 
   const {
     queues,
@@ -223,6 +254,7 @@ function App() {
     createQueue,
     startQueue,
     stopQueue,
+    setQueueEnabled,
     reorderQueue,
     moveQueuedDownload,
     removeFromQueue,
@@ -230,6 +262,7 @@ function App() {
   } = useQueues({
     upsertDownloads,
     updateDownloadProgress,
+    clearLiveMetrics,
     refreshDownloads,
   });
 
@@ -243,6 +276,34 @@ function App() {
       setError(String(reason));
     });
   }, [refreshHealth, refreshDownloads, refreshInputMode, refreshQueues]);
+
+  // Engine events are published to the window rather than to the invoke that
+  // started the work, so a transfer that this session did not start - a queue
+  // resumed when the app launched - still updates the list.
+  useEffect(() => {
+    const subscription = listen<DownloadTaskEvent>(
+      DOWNLOAD_TASK_EVENT,
+      ({ payload }) => {
+        if (payload.kind === "updated" && payload.download) {
+          clearLiveMetrics(payload.downloadId);
+          upsertDownloads([payload.download]);
+          return;
+        }
+
+        updateDownloadProgress(
+          payload.downloadId,
+          payload.downloadedBytes,
+          payload.totalBytes,
+          payload.bytesPerSecond,
+          payload.etaSeconds,
+        );
+      },
+    );
+
+    return () => {
+      void subscription.then((unlisten) => unlisten());
+    };
+  }, [upsertDownloads, updateDownloadProgress, clearLiveMetrics]);
 
   useEffect(() => {
     function handleEscape(event: KeyboardEvent) {
@@ -369,34 +430,32 @@ function App() {
     [queues],
   );
 
+  /// Aggregate throughput is the sum of what the engine is currently
+  /// measuring per transfer - never an average or an extrapolation.
+  const throughput = useMemo(() => {
+    let bytesPerSecond = 0;
+    let transfers = 0;
+
+    for (const item of downloads) {
+      if (item.status.toLowerCase() !== "downloading") {
+        continue;
+      }
+
+      transfers += 1;
+      bytesPerSecond += liveMetrics[item.id]?.bytesPerSecond ?? 0;
+    }
+
+    return {
+      transfers,
+      bytesPerSecond: transfers > 0 ? bytesPerSecond : null,
+    };
+  }, [downloads, liveMetrics]);
+
   const selectedDownload =
     filteredDownloads.find(
       (item) =>
         item.id === selectedDownloadId,
     ) ?? null;
-
-  function applyTaskEvent(event: DownloadTaskEvent) {
-    if (event.kind === "updated" && event.download) {
-      upsertDownloads([event.download]);
-      taskChannels.current.delete(event.downloadId);
-      return;
-    }
-
-    setDownloads((current) =>
-      current.map((item) =>
-        item.id === event.downloadId
-          ? {
-              ...item,
-              downloadedBytes: event.downloadedBytes,
-              totalBytes:
-                event.totalBytes ??
-                item.totalBytes,
-              status: event.status,
-            }
-          : item,
-      ),
-    );
-  }
 
   async function startPersistedTask(id: string) {
     if (startingTaskIds.current.has(id)) {
@@ -405,17 +464,11 @@ function App() {
 
     startingTaskIds.current.add(id);
 
-    const onEvent = new Channel<DownloadTaskEvent>();
-
-    onEvent.onmessage = applyTaskEvent;
-    taskChannels.current.set(id, onEvent);
-
     try {
       const claimed = await invoke<DownloadListItem>(
         "start_download",
         {
           id,
-          onEvent,
         },
       );
 
@@ -437,7 +490,6 @@ function App() {
         );
       });
     } catch (reason) {
-      taskChannels.current.delete(id);
       console.error(
         `Could not start task ${id}:`,
         reason,
@@ -589,6 +641,39 @@ function App() {
 
     setError(null);
     setModalOpen(false);
+  }
+
+  /// Queue changes are applied by Rust; the UI only reports what failed.
+  async function runQueueAction(
+    action: () => Promise<unknown>,
+  ) {
+    try {
+      await action();
+    } catch (reason) {
+      console.error("Queue action failed:", reason);
+      setError(String(reason));
+      await refreshDownloads();
+    }
+  }
+
+  async function assignToQueue(
+    item: DownloadListItem,
+    queueId: string,
+  ) {
+    await runQueueAction(() =>
+      item.queueId
+        ? moveQueuedDownload(item.id, queueId)
+        : invoke<DownloadListItem>(
+            "enqueue_download_task",
+            {
+              id: item.id,
+              queueId,
+              priority: null,
+            },
+          ).then((record) =>
+            upsertDownloads([record]),
+          ),
+    );
   }
 
   function openContextMenu(
@@ -743,6 +828,10 @@ function App() {
         onOpenSettings={openSettings}
         onOpenQueues={openQueues}
         searchValue={searchQuery}
+        activeCount={throughput.transfers}
+        aggregateBytesPerSecond={
+          throughput.bytesPerSecond
+        }
         onSearchChange={setSearchQuery}
         onSectionChange={changeSection}
         onAddDownload={openAddDownload}
@@ -771,6 +860,7 @@ function App() {
             onCreateQueue={createQueue}
             onStartQueue={startQueue}
             onStopQueue={stopQueue}
+            onSetQueueEnabled={setQueueEnabled}
             onReorder={reorderQueue}
             onMove={moveQueuedDownload}
             onRemove={removeFromQueue}
@@ -797,6 +887,7 @@ function App() {
                   <DownloadRow
                     key={item.id}
                     item={item}
+                    metrics={liveMetrics[item.id]}
                     queueName={
                       item.queueId
                         ? queueNames.get(item.queueId)
@@ -843,6 +934,18 @@ function App() {
 
           <DownloadDetailsPanel
             item={selectedDownload}
+            metrics={
+              selectedDownload
+                ? liveMetrics[selectedDownload.id]
+                : undefined
+            }
+            queueName={
+              selectedDownload?.queueId
+                ? queueNames.get(
+                    selectedDownload.queueId,
+                  )
+                : undefined
+            }
             onStart={(id) =>
               void startPersistedTask(id)
             }
@@ -856,6 +959,7 @@ function App() {
 
       <DownloadContextMenu
         item={contextMenu?.item ?? null}
+        queues={queues}
         x={contextMenu?.x ?? 0}
         y={contextMenu?.y ?? 0}
         onClose={() =>
@@ -866,6 +970,19 @@ function App() {
         }
         onStart={(id) =>
           void startPersistedTask(id)
+        }
+        onAssignQueue={(item, queueId) =>
+          void assignToQueue(item, queueId)
+        }
+        onRemoveFromQueue={(item) =>
+          void runQueueAction(() =>
+            removeFromQueue(item.id),
+          )
+        }
+        onChangePriority={(item, priority) =>
+          void runQueueAction(() =>
+            changePriority(item.id, priority),
+          )
         }
         onRemoveFromHistory={
           requestRemoveFromHistory

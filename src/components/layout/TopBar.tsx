@@ -1,4 +1,6 @@
-﻿import { Plus, Search } from "lucide-react";
+﻿import { Gauge, Plus, Search } from "lucide-react";
+
+import { formatRate } from "../../utils/format";
 
 import "./TopBar.css";
 
@@ -6,6 +8,8 @@ type TopBarProps = {
   title: string;
   subtitle?: string;
   searchValue: string;
+  activeCount?: number;
+  aggregateBytesPerSecond?: number | null;
   onSearchChange: (value: string) => void;
   onAddDownload?: () => void;
 };
@@ -14,9 +18,12 @@ export function TopBar({
   title,
   subtitle,
   searchValue,
+  activeCount = 0,
+  aggregateBytesPerSecond = null,
   onSearchChange,
   onAddDownload,
 }: TopBarProps) {
+  const aggregateRate = formatRate(aggregateBytesPerSecond);
   return (
     <header className="topbar">
       <div className="topbar__heading">
@@ -25,6 +32,18 @@ export function TopBar({
       </div>
 
       <div className="topbar__actions">
+        {aggregateRate ? (
+          <div
+            className="topbar__throughput"
+            title={`${activeCount} active ${
+              activeCount === 1 ? "transfer" : "transfers"
+            }`}
+          >
+            <Gauge size={15} strokeWidth={1.9} />
+            <span>{aggregateRate}</span>
+          </div>
+        ) : null}
+
         <label className="topbar__search">
           <Search size={16} strokeWidth={1.9} />
 

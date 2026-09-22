@@ -2,11 +2,11 @@ use dm_common::{DownloadPriority, DownloadRecord, QueueRecord, QueueState};
 use dm_core::{
     queue::{QueueRunnerEvent, QueueService},
     service::DownloadService,
-    CoreService,
+    CoreService, TransferProgress,
 };
 use dm_ipc::{
     AppInfoResponse, ComponentHealth, DownloadListItemResponse, DownloadTaskEvent,
-    HealthCheckResponse, QueueResponse, QueueRunnerEventResponse,
+    HealthCheckResponse, QueueResponse, QueueRunnerEventResponse, TransferProgressResponse,
 };
 use dm_storage::Storage;
 use std::{
@@ -15,17 +15,158 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
-use tauri::{ipc::Channel, AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 const PROGRESS_EVENT_INTERVAL: Duration = Duration::from_millis(100);
+
+/// Application-level event names. Runner output is published to the whole
+/// window rather than through a per-invoke channel, so work that a command did
+/// not start — a queue resumed during startup, for example — still reaches the
+/// UI instead of running invisibly.
+const DOWNLOAD_TASK_EVENT: &str = "download-task-event";
+const QUEUE_RUNNER_EVENT: &str = "queue-runner-event";
 
 pub struct AppState {
     core: CoreService,
     storage: Arc<Storage>,
     downloads: DownloadService,
     queues: QueueService,
+}
+
+/// Publishes engine events to the UI and enforces the per-task event rate.
+/// Throttling lives here, not in the engine, because it is a presentation
+/// concern: the engine measures every chunk, the window only needs ten updates
+/// a second.
+#[derive(Clone)]
+struct EventPublisher {
+    app: AppHandle,
+    last_sent: Arc<Mutex<HashMap<String, Instant>>>,
+}
+
+impl EventPublisher {
+    fn new(app: AppHandle) -> Self {
+        Self {
+            app,
+            last_sent: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// True when a progress update for this task is due. A transfer that has
+    /// reached its known total always reports, so the final byte count is
+    /// never dropped by the rate limit.
+    fn should_publish_progress(&self, download_id: &str, progress: &TransferProgress) -> bool {
+        let reached_known_end = progress.total_bytes == Some(progress.downloaded_bytes);
+        let Ok(mut last_sent) = self.last_sent.lock() else {
+            return false;
+        };
+
+        match last_sent.get(download_id) {
+            Some(sent_at) if !reached_known_end && sent_at.elapsed() < PROGRESS_EVENT_INTERVAL => {
+                false
+            }
+            _ => {
+                last_sent.insert(download_id.to_owned(), Instant::now());
+                true
+            }
+        }
+    }
+
+    fn forget(&self, download_id: &str) {
+        if let Ok(mut last_sent) = self.last_sent.lock() {
+            last_sent.remove(download_id);
+        }
+    }
+
+    fn emit<T: serde::Serialize + Clone>(&self, name: &str, payload: T) {
+        if let Err(error) = self.app.emit(name, payload) {
+            warn!(event = name, error = %error, "failed to publish engine event");
+        }
+    }
+
+    fn download_progress(&self, download_id: &str, progress: TransferProgress) {
+        if !self.should_publish_progress(download_id, &progress) {
+            return;
+        }
+
+        self.emit(
+            DOWNLOAD_TASK_EVENT,
+            DownloadTaskEvent::progress(download_id, transfer_progress_response(progress)),
+        );
+    }
+
+    fn download_updated(&self, record: DownloadRecord) {
+        self.forget(&record.id);
+        self.emit(
+            DOWNLOAD_TASK_EVENT,
+            DownloadTaskEvent::updated(download_list_item_response(record)),
+        );
+    }
+
+    fn queue_event(&self, queue_id: &str, event: QueueRunnerEvent) {
+        let response = match event {
+            QueueRunnerEvent::QueueUpdated(queue) => {
+                QueueRunnerEventResponse::queue_updated(queue_response(queue))
+            }
+            QueueRunnerEvent::TaskUpdated(download) => {
+                self.forget(&download.id);
+                QueueRunnerEventResponse::task_updated(
+                    queue_id,
+                    download_list_item_response(*download),
+                )
+            }
+            QueueRunnerEvent::TaskProgress {
+                download_id,
+                progress,
+            } => {
+                if !self.should_publish_progress(&download_id, &progress) {
+                    return;
+                }
+
+                QueueRunnerEventResponse::task_progress(
+                    queue_id,
+                    download_id,
+                    transfer_progress_response(progress),
+                )
+            }
+        };
+
+        self.emit(QUEUE_RUNNER_EVENT, response);
+    }
+}
+
+fn transfer_progress_response(progress: TransferProgress) -> TransferProgressResponse {
+    TransferProgressResponse {
+        downloaded_bytes: progress.downloaded_bytes,
+        total_bytes: progress.total_bytes,
+        bytes_per_second: progress.bytes_per_second,
+        eta_seconds: progress.eta_seconds,
+    }
+}
+
+/// Starts a queue runner in the background and publishes everything it does.
+/// Used both by the start command and by startup resume, so neither path can
+/// end up running silently.
+fn spawn_queue_runner(
+    queues: QueueService,
+    publisher: EventPublisher,
+    queue_id: String,
+    destination_directory: std::path::PathBuf,
+) {
+    tauri::async_runtime::spawn(async move {
+        let events_queue_id = queue_id.clone();
+        let result = queues
+            .run_queue(&queue_id, destination_directory, move |event| {
+                publisher.queue_event(&events_queue_id, event);
+            })
+            .await;
+
+        match result {
+            Ok(_) => info!(queue_id = %queue_id, "queue runner stopped"),
+            Err(error) => warn!(queue_id = %queue_id, error = %error, "queue runner failed"),
+        }
+    });
 }
 
 fn init_logging() {
@@ -230,7 +371,6 @@ fn start_queue(
     app: AppHandle,
     state: State<'_, AppState>,
     queue_id: String,
-    on_event: Channel<QueueRunnerEventResponse>,
 ) -> Result<QueueResponse, String> {
     let destination_directory = app
         .path()
@@ -240,63 +380,41 @@ fn start_queue(
         .queues
         .start_queue(&queue_id)
         .map_err(|error| error.to_string())?;
-    let service = state.queues.clone();
-    let progress_times = Arc::new(Mutex::new(HashMap::<String, Instant>::new()));
-    let task_queue_id = queue_id.clone();
 
-    info!(queue_id = %task_queue_id, "starting queue runner");
+    // A queue resumed at startup is already running; starting it again must
+    // reuse that runner rather than spawn a second one that immediately fails.
+    if state
+        .queues
+        .is_running(&queue_id)
+        .map_err(|error| error.to_string())?
+    {
+        info!(queue_id = %queue_id, "queue runner already active");
+        return Ok(queue_response(queue));
+    }
 
-    tauri::async_runtime::spawn(async move {
-        let result = service
-            .run_queue(&task_queue_id, destination_directory, move |event| {
-                let response = match event {
-                    QueueRunnerEvent::QueueUpdated(queue) => {
-                        QueueRunnerEventResponse::queue_updated(queue_response(queue))
-                    }
-                    QueueRunnerEvent::TaskUpdated(download) => {
-                        QueueRunnerEventResponse::task_updated(download_list_item_response(
-                            *download,
-                        ))
-                    }
-                    QueueRunnerEvent::TaskProgress {
-                        download_id,
-                        progress,
-                    } => {
-                        let reached_known_end =
-                            progress.total_bytes == Some(progress.downloaded_bytes);
-                        let Ok(mut progress_times) = progress_times.lock() else {
-                            return;
-                        };
-                        let should_send = progress_times.get(&download_id).is_none_or(|last| {
-                            reached_known_end || last.elapsed() >= PROGRESS_EVENT_INTERVAL
-                        });
-                        if !should_send {
-                            return;
-                        }
-                        progress_times.insert(download_id.clone(), Instant::now());
-                        QueueRunnerEventResponse::task_progress(
-                            download_id,
-                            progress.downloaded_bytes,
-                            progress.total_bytes,
-                        )
-                    }
-                };
+    info!(queue_id = %queue_id, "starting queue runner");
 
-                if let Err(error) = on_event.send(response) {
-                    warn!(error = %error, "failed to send queue runner event");
-                }
-            })
-            .await;
-
-        match result {
-            Ok(_) => info!(queue_id = %task_queue_id, "queue runner stopped"),
-            Err(error) => {
-                warn!(queue_id = %task_queue_id, error = %error, "queue runner failed")
-            }
-        }
-    });
+    spawn_queue_runner(
+        state.queues.clone(),
+        EventPublisher::new(app),
+        queue_id,
+        destination_directory,
+    );
 
     Ok(queue_response(queue))
+}
+
+#[tauri::command]
+fn set_queue_enabled(
+    state: State<'_, AppState>,
+    queue_id: String,
+    enabled: bool,
+) -> Result<QueueResponse, String> {
+    state
+        .queues
+        .set_queue_enabled(&queue_id, enabled)
+        .map(queue_response)
+        .map_err(|error| error.to_string())
 }
 #[tauri::command]
 fn remove_download(
@@ -310,10 +428,14 @@ fn remove_download(
         .map_err(|error| error.to_string())?
         .ok_or_else(|| format!("download not found: {id}"))?;
 
-    let status = record.status.as_str();
-
-    if !matches!(status, "completed" | "failed" | "cancelled") {
-        return Err(format!("cannot remove download while status is '{status}'"));
+    // Reported early so the user gets a clear reason; the delete itself is
+    // guarded in SQL as well, so a runner claiming the task at the same
+    // moment still cannot lose its row mid-transfer.
+    if !record.status.is_removable() {
+        return Err(format!(
+            "cannot remove download while status is '{}'",
+            record.status
+        ));
     }
 
     if delete_file {
@@ -383,7 +505,6 @@ fn start_download(
     app: AppHandle,
     state: State<'_, AppState>,
     id: String,
-    on_event: Channel<DownloadTaskEvent>,
 ) -> Result<DownloadListItemResponse, String> {
     let destination_directory = app
         .path()
@@ -395,43 +516,18 @@ fn start_download(
     let claimed = service.claim_task(&id).map_err(|error| error.to_string())?;
     let response = download_list_item_response(claimed);
     let task_id = id.clone();
-    let progress_events = on_event.clone();
+    let publisher = EventPublisher::new(app);
+    let progress_publisher = publisher.clone();
 
     info!(download_id = %task_id, "starting background download");
 
     tauri::async_runtime::spawn(async move {
-        let mut last_progress_event_at = Instant::now();
-        let mut sent_progress_event = false;
-
         let result = service
             .execute_claimed_task_with_progress(
                 &task_id,
                 &destination_directory,
                 move |download_id, progress| {
-                    let reached_known_end = progress.total_bytes == Some(progress.downloaded_bytes);
-                    let should_send = !sent_progress_event
-                        || reached_known_end
-                        || last_progress_event_at.elapsed() >= PROGRESS_EVENT_INTERVAL;
-
-                    if !should_send {
-                        return;
-                    }
-
-                    let event = DownloadTaskEvent::progress(
-                        download_id,
-                        progress.downloaded_bytes,
-                        progress.total_bytes,
-                    );
-
-                    if let Err(error) = progress_events.send(event) {
-                        warn!(
-                            error = %error,
-                            "failed to send background download event"
-                        );
-                    }
-
-                    sent_progress_event = true;
-                    last_progress_event_at = Instant::now();
+                    progress_publisher.download_progress(download_id, progress);
                 },
             )
             .await;
@@ -439,17 +535,13 @@ fn start_download(
         match result {
             Ok(record) => {
                 info!(download_id = %task_id, "background download completed");
-                let _ = on_event.send(DownloadTaskEvent::updated(download_list_item_response(
-                    record,
-                )));
+                publisher.download_updated(record);
             }
             Err(_) => {
                 warn!(download_id = %task_id, "background download failed");
 
                 if let Ok(Some(record)) = storage.get_download(&task_id) {
-                    let _ = on_event.send(DownloadTaskEvent::updated(download_list_item_response(
-                        record,
-                    )));
+                    publisher.download_updated(record);
                 }
             }
         }
@@ -474,6 +566,19 @@ pub fn run() {
             let storage = Arc::new(Storage::open(&database_path)?);
 
             let downloads = DownloadService::new(Arc::clone(&storage))?;
+
+            // Recover before anything is listed or resumed, so a transfer the
+            // previous process was in the middle of never appears as active
+            // work that nothing is driving.
+            let recovered = downloads.recover_orphaned_tasks()?;
+
+            if !recovered.is_empty() {
+                info!(
+                    count = recovered.len(),
+                    "recovered tasks interrupted by a previous run"
+                );
+            }
+
             let queues = QueueService::new(Arc::clone(&storage), downloads.clone());
             let running_queue_ids = queues
                 .list_queues()?
@@ -496,18 +601,17 @@ pub fn run() {
                 queues: queues.clone(),
             });
 
+            let publisher = EventPublisher::new(app.handle().clone());
+
             for queue_id in running_queue_ids {
-                let service = queues.clone();
-                let destination_directory = destination_directory.clone();
-                tauri::async_runtime::spawn(async move {
-                    info!(queue_id = %queue_id, "resuming persisted queue runner");
-                    if let Err(error) = service
-                        .run_queue(&queue_id, destination_directory, |_| {})
-                        .await
-                    {
-                        warn!(queue_id = %queue_id, error = %error, "persisted queue runner failed");
-                    }
-                });
+                info!(queue_id = %queue_id, "resuming persisted queue runner");
+
+                spawn_queue_runner(
+                    queues.clone(),
+                    publisher.clone(),
+                    queue_id,
+                    destination_directory.clone(),
+                );
             }
 
             info!("application state initialized");
@@ -531,7 +635,8 @@ pub fn run() {
             set_download_priority,
             reorder_queue_downloads,
             start_queue,
-            stop_queue
+            stop_queue,
+            set_queue_enabled
         ])
         .run(tauri::generate_context!())
         .expect("error while running Download Manager");

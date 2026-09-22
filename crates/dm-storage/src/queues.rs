@@ -131,6 +131,37 @@ impl Storage {
             .ok_or_else(|| StorageError::QueueNotFound(id.to_owned()))
     }
 
+    /// Turns a queue on or off as a configuration switch, independently of
+    /// whether it is currently started. Disabling also stops it, so a disabled
+    /// queue can never be left with a runner scheduling work.
+    pub fn set_queue_enabled(
+        &self,
+        id: &str,
+        enabled: bool,
+        updated_at: i64,
+    ) -> Result<QueueRecord> {
+        let connection = self.connection()?;
+        let changed = connection.execute(
+            r#"
+            UPDATE queues
+            SET
+                enabled = ?2,
+                state = CASE WHEN ?2 = 0 THEN 'stopped' ELSE state END,
+                updated_at = ?3
+            WHERE id = ?1;
+            "#,
+            params![id, enabled, updated_at],
+        )?;
+        drop(connection);
+
+        if changed == 0 {
+            return Err(StorageError::QueueNotFound(id.to_owned()));
+        }
+
+        self.get_queue(id)?
+            .ok_or_else(|| StorageError::QueueNotFound(id.to_owned()))
+    }
+
     pub fn enqueue_download(
         &self,
         download_id: &str,

@@ -72,6 +72,10 @@ export function RemoveHistoryDialog({
   const canDeleteFile =
     Boolean(item.destinationPath);
 
+  // A task that never transferred anything has no file to keep or delete, so
+  // the dialog says what will actually happen instead of mentioning a file.
+  const hasFile = canDeleteFile;
+
   return (
     <div
       className="remove-history-dialog__backdrop"
@@ -97,11 +101,15 @@ export function RemoveHistoryDialog({
 
           <div className="remove-history-dialog__heading">
             <h2 id="remove-history-title">
-              Remove from History?
+              {hasFile
+                ? "Remove from History?"
+                : "Remove Task?"}
             </h2>
 
             <p>
-              Remove this download from the app.
+              {hasFile
+                ? "Remove this download from the app."
+                : "Remove this task before it has downloaded anything."}
             </p>
           </div>
 
@@ -118,7 +126,7 @@ export function RemoveHistoryDialog({
 
         <div className="remove-history-dialog__body">
           <div className="remove-history-dialog__file">
-            <span>Download</span>
+            <span>{hasFile ? "Download" : "Task"}</span>
 
             <strong title={name}>
               {name}
@@ -161,7 +169,9 @@ export function RemoveHistoryDialog({
           >
             {deleteFile
               ? "The file will be permanently deleted from your computer. This cannot be undone."
-              : "The downloaded file will remain on your computer."}
+              : hasFile
+                ? "The downloaded file will remain on your computer."
+                : "Nothing has been downloaded yet, so no file is removed."}
           </div>
 
           {error ? (
@@ -201,7 +211,9 @@ export function RemoveHistoryDialog({
               ? "Removing..."
               : deleteFile
                 ? "Remove & Delete File"
-                : "Remove from History"}
+                : hasFile
+                  ? "Remove from History"
+                  : "Remove Task"}
           </button>
         </footer>
       </section>

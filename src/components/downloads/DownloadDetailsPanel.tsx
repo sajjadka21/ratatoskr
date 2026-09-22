@@ -9,6 +9,7 @@
   Link2,
   Pause,
   Play,
+  RefreshCw,
   RotateCcw,
   Timer,
   X,
@@ -61,6 +62,7 @@ const ACTION_ICONS = {
   pause: Pause,
   retry: RotateCcw,
   cancel: XCircle,
+  restart: RefreshCw,
 } as const;
 
 type CopiedField =

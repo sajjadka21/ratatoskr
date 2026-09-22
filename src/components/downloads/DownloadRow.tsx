@@ -6,6 +6,7 @@
   MoreHorizontal,
   Pause,
   Play,
+  RefreshCw,
   RotateCcw,
   Video,
 } from "lucide-react";
@@ -107,6 +108,7 @@ const ACTION_ICONS = {
   pause: Pause,
   retry: RotateCcw,
   cancel: RotateCcw,
+  restart: RefreshCw,
 } as const;
 
 export function DownloadRow({

@@ -617,6 +617,33 @@ async fn cancel_download(
         .map_err(|error| error.to_string())
 }
 
+/// Explicitly discards all transfer bytes and starts the task from zero. A
+/// task that belongs to a queue is returned to that queue rather than
+/// bypassing its runner.
+#[tauri::command]
+async fn restart_download(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<DownloadListItemResponse, String> {
+    info!(download_id = %id, "restarting download from zero");
+
+    let restarted = state
+        .downloads
+        .restart_task(&id)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    if let Some(queue_id) = restarted.queue_id.clone() {
+        return state
+            .queues
+            .enqueue_task(&id, &queue_id, Some(restarted.priority))
+            .map(download_list_item_response)
+            .map_err(|error| error.to_string());
+    }
+
+    Ok(download_list_item_response(restarted))
+}
+
 /// Restarts tasks whose retry backoff has elapsed.
 ///
 /// Queued work is handed back to its queue so per-queue concurrency still
@@ -794,6 +821,7 @@ pub fn run() {
             pause_download,
             resume_download,
             cancel_download,
+            restart_download,
             list_queues,
             create_queue,
             enqueue_download_task,

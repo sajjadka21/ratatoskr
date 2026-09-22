@@ -466,6 +466,26 @@ Phase 5 is complete and committed. The next master-spec milestone is not
 started; no categories, rules, schedulers, browser integration, media
 extraction, or post-processing work was added.
 
+## Phase 6 - Main UX Completion
+
+Status: In progress
+
+### Plan
+
+1. Close the remaining task-management gaps with a backend-authoritative
+   restart-from-zero operation and typed IPC contract.
+2. Add keyboard-friendly multi-selection and a contextual bulk action bar for
+   start, pause, resume, retry, cancel, queue, priority, and removal actions.
+3. Complete details/context actions for restart, refresh-source, properties,
+   copy/open/reveal, and measured speed/ETA without duplicating state in React.
+4. Add focused lifecycle, IPC, frontend interaction, and accessibility tests;
+   run the full quality gate and commit the phase.
+
+### Scope boundary
+
+Phase 6 does not introduce categories, rules, schedules, LinkGrabber, browser
+integration, media extraction, post-processing, or system power actions.
+
 ### Scope boundary
 
 Phase 5 will not add categories, rules, schedulers, browser integration, media

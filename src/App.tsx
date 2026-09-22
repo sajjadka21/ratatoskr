@@ -713,6 +713,15 @@ function App() {
           break;
         }
 
+        case "restart": {
+          const record = await invoke<DownloadListItem>(
+            "restart_download",
+            { id: item.id },
+          );
+          upsertDownloads([record]);
+          break;
+        }
+
         case "pause": {
           await invoke<DownloadListItem>("pause_download", {
             id: item.id,

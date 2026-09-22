@@ -112,7 +112,7 @@ impl DownloadStatus {
                     Self::Finalizing | Self::Paused | Self::Retrying | Self::Failed
                         | Self::Cancelled
                 )
-                | (Self::Paused, Self::Probing | Self::Queued | Self::Cancelled)
+                | (Self::Paused, Self::Created | Self::Probing | Self::Queued | Self::Cancelled)
                 | (
                     Self::Retrying,
                     Self::Probing | Self::Queued | Self::Failed | Self::Cancelled
@@ -120,8 +120,8 @@ impl DownloadStatus {
                 | (Self::Finalizing, Self::Completed | Self::Failed)
                 // Retry and restart re-enter the lifecycle from a terminal
                 // state; the task keeps its identity either way.
-                | (Self::Failed, Self::Probing | Self::Queued)
-                | (Self::Cancelled, Self::Probing | Self::Queued)
+                | (Self::Failed, Self::Created | Self::Probing | Self::Queued)
+                | (Self::Cancelled, Self::Created | Self::Probing | Self::Queued)
         )
     }
 
@@ -583,6 +583,19 @@ mod tests {
         assert!(DownloadStatus::Cancelled.can_transition_to(DownloadStatus::Probing));
         assert!(!DownloadStatus::Completed.can_transition_to(DownloadStatus::Probing));
         assert!(!DownloadStatus::Failed.can_transition_to(DownloadStatus::Completed));
+    }
+
+    #[test]
+    fn restart_from_zero_is_legal_for_reusable_states() {
+        for status in [
+            DownloadStatus::Paused,
+            DownloadStatus::Failed,
+            DownloadStatus::Cancelled,
+        ] {
+            assert!(status.can_transition_to(DownloadStatus::Created));
+        }
+
+        assert!(!DownloadStatus::Downloading.can_transition_to(DownloadStatus::Created));
     }
 
     #[test]

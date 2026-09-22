@@ -22,14 +22,14 @@ export function availableActions(
       return ["pause", "cancel"];
 
     case "paused":
-      return ["resume", "cancel"];
+      return ["resume", "restart", "cancel"];
 
     case "retrying":
       return ["resume", "cancel"];
 
     case "failed":
     case "cancelled":
-      return ["retry"];
+      return ["retry", "restart"];
 
     default:
       return [];
@@ -50,6 +50,7 @@ export function primaryAction(
     "resume",
     "start",
     "retry",
+    "restart",
   ] as const) {
     if (actions.includes(candidate)) {
       return candidate;
@@ -65,4 +66,5 @@ export const ACTION_LABELS: Record<TaskAction, string> = {
   resume: "Resume",
   cancel: "Cancel",
   retry: "Retry",
+  restart: "Restart from zero",
 };

@@ -136,3 +136,26 @@ Preserve the checkpoint architecture while separating persistent task creation f
 - [x] Segmented downloads adapt within bounded limits and remain byte-identical.
 - [x] IPC/UI show measured active/max connections and a reason string.
 - [x] Full repository quality gate passes and the phase is committed.
+
+### Phase 6: Main UX Completion
+
+- [ ] Add backend-authoritative restart-from-zero and refresh/properties actions.
+- [ ] Add Ctrl/Shift multi-select and a contextual bulk action bar.
+- [ ] Complete task actions, details, speed/ETA, shortcuts, and notifications.
+- [ ] Run focused UI/backend tests, the full quality gate, review, document,
+  and commit.
+
+## Phase 6 Risks and Mitigations
+
+| Risk | Impact | Mitigation |
+| --- | --- | --- |
+| Bulk actions race with running transfers | Invalid transitions or stale rows | Reuse existing typed per-task commands and refresh authoritative records. |
+| Restart discards useful bytes unexpectedly | User data loss or confusion | Make restart explicit, clear partial files atomically, and preserve task ID. |
+| React selection diverges from backend state | Incorrect action availability | Selection is presentation-only; every mutation goes through Rust commands. |
+
+## Phase 6 Checkpoint
+
+- [ ] Restart preserves identity and starts from zero safely.
+- [ ] Ctrl/Shift multi-select and bulk actions are keyboard accessible.
+- [ ] Details/context actions expose the complete valid task surface.
+- [ ] Full repository quality gate passes and the phase is committed.

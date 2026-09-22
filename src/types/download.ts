@@ -27,7 +27,8 @@ export type TaskAction =
   | "pause"
   | "resume"
   | "cancel"
-  | "retry";
+  | "retry"
+  | "restart";
 
 export type DownloadPriority = DownloadListItem["priority"];
 

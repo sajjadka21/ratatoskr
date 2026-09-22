@@ -9,6 +9,7 @@
   ListX,
   Pause,
   Play,
+  RefreshCw,
   RotateCcw,
   SignalHigh,
   Trash2,
@@ -74,6 +75,7 @@ const ACTION_ICONS = {
   pause: Pause,
   retry: RotateCcw,
   cancel: XCircle,
+  restart: RefreshCw,
 } as const;
 
 /// Which expandable group is open. Only one can be open at a time so the menu

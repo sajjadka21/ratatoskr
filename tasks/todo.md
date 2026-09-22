@@ -322,3 +322,35 @@
 **Verification:** IPC/frontend tests plus the full repository quality gate.
 
 **Dependencies:** Task 24.
+
+# Phase 6 Tasks: Main UX Completion
+
+## Task 26: Restart and task properties
+
+**Acceptance criteria:**
+
+- [ ] Restart from zero keeps the task ID and clears partial/segment state.
+- [ ] Rust validates the operation against the canonical lifecycle.
+- [ ] Details/context actions expose restart, refresh source, and properties.
+
+**Dependencies:** Phase 5.
+
+## Task 27: Bulk selection and actions
+
+**Acceptance criteria:**
+
+- [ ] Ctrl/Shift selection and select-all are keyboard accessible.
+- [ ] Bulk start/pause/resume/retry/cancel/remove use Rust commands and refresh.
+- [ ] Queue and priority bulk actions preserve existing queue constraints.
+
+**Dependencies:** Task 26.
+
+## Task 28: Phase 6 gate
+
+**Acceptance criteria:**
+
+- [ ] Details/list rows expose measured speed, ETA, status, and valid actions.
+- [ ] Keyboard shortcuts and notification feedback are covered by tests.
+- [ ] All five required commands pass and Phase 6 is committed.
+
+**Dependencies:** Task 27.

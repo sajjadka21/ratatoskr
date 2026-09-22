@@ -477,6 +477,33 @@ impl Storage {
         )
     }
 
+    /// Resets a reusable task to `created` without changing its identity or
+    /// source URL. Transfer metadata and retry state are cleared so the next
+    /// probe builds a fresh destination and validator snapshot.
+    pub fn reset_for_restart(&self, id: &str) -> Result<()> {
+        self.transition(
+            id,
+            DownloadStatus::Created,
+            "downloaded_bytes = 0,
+             resolved_url = NULL,
+             filename = NULL,
+             destination_path = NULL,
+             temp_path = NULL,
+             mime_type = NULL,
+             total_bytes = NULL,
+             etag = NULL,
+             last_modified = NULL,
+             range_supported = NULL,
+             started_at = NULL,
+             completed_at = NULL,
+             retry_at = NULL,
+             error_code = NULL,
+             error_message = NULL,
+             queue_position = NULL",
+            params![id],
+        )
+    }
+
     /// Schedules an automatic retry. `attempts` is authoritative in the row so
     /// the budget survives a restart.
     pub fn mark_retrying(
@@ -1026,6 +1053,35 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn restart_from_zero_clears_transfer_metadata_but_keeps_identity() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::open(directory.path().join("downloads.db")).unwrap();
+
+        let record = storage
+            .create_download("https://example.com/file.bin", 1_000)
+            .unwrap();
+        storage.mark_probing(&record.id).unwrap();
+        storage
+            .set_transfer_plan(&record.id, &sample_plan("C:\\Downloads\\file.bin.part"))
+            .unwrap();
+        storage.mark_downloading(&record.id, 1_050).unwrap();
+        storage
+            .mark_failed(&record.id, "network", "connection reset")
+            .unwrap();
+
+        storage.reset_for_restart(&record.id).unwrap();
+        let restarted = storage.get_download(&record.id).unwrap().unwrap();
+
+        assert_eq!(restarted.id, record.id);
+        assert_eq!(restarted.status, DownloadStatus::Created);
+        assert_eq!(restarted.downloaded_bytes, 0);
+        assert!(restarted.destination_path.is_none());
+        assert!(restarted.total_bytes.is_none());
+        assert!(restarted.completed_at.is_none());
+        assert_eq!(restarted.source_url, record.source_url);
     }
 
     #[test]

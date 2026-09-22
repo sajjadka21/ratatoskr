@@ -66,6 +66,9 @@ pub enum DownloadServiceError {
 
     #[error("download {0} is not running")]
     NotRunning(String),
+
+    #[error("download {0} is already running")]
+    AlreadyRunning(String),
 }
 
 pub type Result<T> = std::result::Result<T, DownloadServiceError>;
@@ -171,6 +174,23 @@ impl DownloadService {
         remove_partial_file(task.temp_path.as_deref()).await;
         remove_task_segments(&self.storage, download_id).await;
         self.storage.mark_cancelled(download_id)?;
+        self.get_task(download_id)
+    }
+
+    /// Explicitly discards all partial transfer bytes and metadata, preserving
+    /// the task identity and source URL for a fresh probe. Completed history is
+    /// intentionally final; users can remove it and add the source again.
+    pub async fn restart_task(&self, download_id: &str) -> Result<DownloadRecord> {
+        let task = self.get_task(download_id)?;
+
+        if self.control_for(download_id)?.is_some() {
+            return Err(DownloadServiceError::AlreadyRunning(download_id.to_owned()));
+        }
+
+        remove_partial_file(task.temp_path.as_deref()).await;
+        remove_task_segments(&self.storage, download_id).await;
+
+        self.storage.reset_for_restart(download_id)?;
         self.get_task(download_id)
     }
 
@@ -1182,6 +1202,25 @@ mod tests {
         let downloads = harness.storage.list_downloads().unwrap();
         assert_eq!(downloads.len(), 1);
         assert_eq!(downloads[0].id, created.id);
+    }
+
+    #[tokio::test]
+    async fn restart_from_zero_removes_old_file_and_preserves_task_id() {
+        let harness = harness();
+        let created = harness
+            .service
+            .create_task("https://example.com/restart.bin")
+            .unwrap();
+        harness.storage.mark_probing(&created.id).unwrap();
+        harness.storage.mark_paused(&created.id, 128).unwrap();
+
+        let restarted = harness.service.restart_task(&created.id).await.unwrap();
+
+        assert_eq!(restarted.id, created.id);
+        assert_eq!(restarted.status, DownloadStatus::Created);
+        assert_eq!(restarted.downloaded_bytes, 0);
+        assert!(restarted.destination_path.is_none());
+        assert_eq!(harness.storage.list_downloads().unwrap().len(), 1);
     }
 
     #[tokio::test]

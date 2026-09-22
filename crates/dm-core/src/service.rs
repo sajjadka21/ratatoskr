@@ -194,6 +194,23 @@ impl DownloadService {
         self.get_task(download_id)
     }
 
+    /// Replaces an expired or corrected source URL while preserving the task
+    /// identity. The next attempt probes the new source from byte zero.
+    pub fn refresh_source_url(
+        &self,
+        download_id: &str,
+        source_url: &str,
+    ) -> Result<DownloadRecord> {
+        validate_source_url(source_url)?;
+
+        if self.control_for(download_id)?.is_some() {
+            return Err(DownloadServiceError::AlreadyRunning(download_id.to_owned()));
+        }
+
+        self.storage.update_source_url(download_id, source_url)?;
+        self.get_task(download_id)
+    }
+
     /// True while this process is transferring the task.
     pub fn is_running(&self, download_id: &str) -> Result<bool> {
         Ok(self.control_for(download_id)?.is_some())
@@ -1221,6 +1238,36 @@ mod tests {
         assert_eq!(restarted.downloaded_bytes, 0);
         assert!(restarted.destination_path.is_none());
         assert_eq!(harness.storage.list_downloads().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn refreshing_source_url_validates_input_and_keeps_task_id() {
+        let harness = harness();
+        let created = harness
+            .service
+            .create_task("https://example.com/expired.bin")
+            .unwrap();
+        harness.storage.mark_probing(&created.id).unwrap();
+        harness
+            .storage
+            .mark_failed(&created.id, "http_404", "not found")
+            .unwrap();
+
+        let refreshed = harness
+            .service
+            .refresh_source_url(&created.id, "https://cdn.example.com/fresh.bin")
+            .unwrap();
+        assert_eq!(refreshed.id, created.id);
+        assert_eq!(refreshed.source_url, "https://cdn.example.com/fresh.bin");
+
+        let invalid = harness
+            .service
+            .refresh_source_url(&created.id, "file:///not-http")
+            .unwrap_err();
+        assert!(matches!(
+            invalid,
+            DownloadServiceError::Download(DownloadError::UnsupportedScheme(_))
+        ));
     }
 
     #[tokio::test]

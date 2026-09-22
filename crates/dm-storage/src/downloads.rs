@@ -504,6 +504,34 @@ impl Storage {
         )
     }
 
+    /// Replaces the source URL and resets the transfer metadata in one guarded
+    /// lifecycle transition. The caller validates the URL before reaching the
+    /// storage layer; this method never concatenates user input into SQL.
+    pub fn update_source_url(&self, id: &str, source_url: &str) -> Result<()> {
+        self.transition(
+            id,
+            DownloadStatus::Created,
+            "source_url = ?2,
+             downloaded_bytes = 0,
+             resolved_url = NULL,
+             filename = NULL,
+             destination_path = NULL,
+             temp_path = NULL,
+             mime_type = NULL,
+             total_bytes = NULL,
+             etag = NULL,
+             last_modified = NULL,
+             range_supported = NULL,
+             started_at = NULL,
+             completed_at = NULL,
+             retry_at = NULL,
+             error_code = NULL,
+             error_message = NULL,
+             queue_position = NULL",
+            params![id, source_url],
+        )
+    }
+
     /// Schedules an automatic retry. `attempts` is authoritative in the row so
     /// the budget survives a restart.
     pub fn mark_retrying(
@@ -1082,6 +1110,29 @@ mod tests {
         assert!(restarted.total_bytes.is_none());
         assert!(restarted.completed_at.is_none());
         assert_eq!(restarted.source_url, record.source_url);
+    }
+
+    #[test]
+    fn source_refresh_reuses_identity_and_resets_transfer_state() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::open(directory.path().join("downloads.db")).unwrap();
+        let record = storage
+            .create_download("https://example.com/expired.bin", 1_000)
+            .unwrap();
+        storage.mark_probing(&record.id).unwrap();
+        storage
+            .mark_failed(&record.id, "http_404", "not found")
+            .unwrap();
+
+        storage
+            .update_source_url(&record.id, "https://cdn.example.com/fresh.bin")
+            .unwrap();
+        let refreshed = storage.get_download(&record.id).unwrap().unwrap();
+
+        assert_eq!(refreshed.id, record.id);
+        assert_eq!(refreshed.source_url, "https://cdn.example.com/fresh.bin");
+        assert_eq!(refreshed.status, DownloadStatus::Created);
+        assert!(refreshed.error_code.is_none());
     }
 
     #[test]

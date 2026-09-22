@@ -250,6 +250,9 @@ fn download_list_item_response(record: DownloadRecord) -> DownloadListItemRespon
         filename: record.filename,
         destination_path: record.destination_path,
         mime_type: record.mime_type,
+        etag: record.etag,
+        last_modified: record.last_modified,
+        range_supported: record.range_supported,
         total_bytes: record.total_bytes,
         downloaded_bytes: record.downloaded_bytes,
         status: record.status.to_string(),
@@ -644,6 +647,22 @@ async fn restart_download(
     Ok(download_list_item_response(restarted))
 }
 
+/// Replaces an expired or corrected source URL while keeping the task ID.
+#[tauri::command]
+fn refresh_download_source(
+    state: State<'_, AppState>,
+    id: String,
+    source_url: String,
+) -> Result<DownloadListItemResponse, String> {
+    info!(download_id = %id, "refreshing download source");
+
+    state
+        .downloads
+        .refresh_source_url(&id, &source_url)
+        .map(download_list_item_response)
+        .map_err(|error| error.to_string())
+}
+
 /// Restarts tasks whose retry backoff has elapsed.
 ///
 /// Queued work is handed back to its queue so per-queue concurrency still
@@ -822,6 +841,7 @@ pub fn run() {
             resume_download,
             cancel_download,
             restart_download,
+            refresh_download_source,
             list_queues,
             create_queue,
             enqueue_download_task,

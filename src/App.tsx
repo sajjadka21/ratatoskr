@@ -888,6 +888,28 @@ function App() {
     }
   }
 
+  async function refreshSource(item: DownloadListItem) {
+    const sourceUrl = window.prompt(
+      "Enter the refreshed HTTP or HTTPS source URL",
+      item.sourceUrl,
+    );
+
+    if (!sourceUrl || sourceUrl.trim() === item.sourceUrl.trim()) {
+      return;
+    }
+
+    try {
+      const record = await invoke<DownloadListItem>(
+        "refresh_download_source",
+        { id: item.id, sourceUrl: sourceUrl.trim() },
+      );
+      upsertDownloads([record]);
+    } catch (reason) {
+      setError(`Could not refresh source: ${String(reason)}`);
+      await refreshDownloads();
+    }
+  }
+
   /// Queue changes are applied by Rust; the UI only reports what failed.
   async function runQueueAction(
     action: () => Promise<unknown>,
@@ -1206,6 +1228,7 @@ function App() {
             onAction={(target, action) =>
               void runTaskAction(target, action)
             }
+            onRefreshSource={(target) => void refreshSource(target)}
             onClose={() =>
               setSelectedDownloadId(null)
             }
@@ -1244,6 +1267,7 @@ function App() {
         onRemoveFromHistory={
           requestRemoveFromHistory
         }
+        onRefreshSource={(target) => void refreshSource(target)}
       />
 
       <RemoveHistoryDialog

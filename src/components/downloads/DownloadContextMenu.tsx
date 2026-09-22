@@ -67,6 +67,7 @@ type DownloadContextMenuProps = {
   onRemoveFromHistory: (
     item: DownloadListItem,
   ) => void;
+  onRefreshSource: (item: DownloadListItem) => void;
 };
 
 const ACTION_ICONS = {
@@ -104,6 +105,7 @@ export function DownloadContextMenu({
   onRemoveFromQueue,
   onChangePriority,
   onRemoveFromHistory,
+  onRefreshSource,
 }: DownloadContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -216,6 +218,7 @@ export function DownloadContextMenu({
     "created",
     "queued",
     "paused",
+    "retrying",
     "failed",
     "cancelled",
   ].includes(status);
@@ -323,6 +326,19 @@ export function DownloadContextMenu({
       >
         <FolderOpen size={15} />
         <span>Show in Folder</span>
+      </button>
+
+      <button
+        type="button"
+        role="menuitem"
+        disabled={!canQueue}
+        onClick={() => {
+          onRefreshSource(item);
+          onClose();
+        }}
+      >
+        <RefreshCw size={15} />
+        <span>Refresh Source URL</span>
       </button>
 
       <div className="download-context-menu__divider" />

@@ -5,6 +5,9 @@
   filename: string | null;
   destinationPath: string | null;
   mimeType: string | null;
+  etag: string | null;
+  lastModified: string | null;
+  rangeSupported: boolean | null;
   totalBytes: number | null;
   downloadedBytes: number;
   status: string;

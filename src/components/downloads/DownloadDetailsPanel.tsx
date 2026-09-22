@@ -54,6 +54,7 @@ type DownloadDetailsPanelProps = {
     item: DownloadListItem,
     action: TaskAction,
   ) => void;
+  onRefreshSource: (item: DownloadListItem) => void;
 };
 
 const ACTION_ICONS = {
@@ -102,6 +103,7 @@ export function DownloadDetailsPanel({
   queueName,
   onClose,
   onAction,
+  onRefreshSource,
 }: DownloadDetailsPanelProps) {
   const [copiedField, setCopiedField] =
     useState<CopiedField>(null);
@@ -323,6 +325,15 @@ export function DownloadDetailsPanel({
             <FolderOpen size={14} />
             Show in Folder
           </button>
+
+          <button
+            type="button"
+            disabled={!['created', 'queued', 'paused', 'retrying', 'failed', 'cancelled'].includes(status)}
+            onClick={() => onRefreshSource(item)}
+          >
+            <RefreshCw size={14} />
+            Refresh Source URL
+          </button>
         </div>
 
         <dl className="download-details__properties">
@@ -417,6 +428,27 @@ export function DownloadDetailsPanel({
           <div>
             <dt>Completed</dt>
             <dd>{formatDate(item.completedAt)}</dd>
+          </div>
+
+          <div>
+            <dt>Range support</dt>
+            <dd>
+              {item.rangeSupported === null
+                ? "Unknown"
+                : item.rangeSupported
+                  ? "Supported"
+                  : "Single stream"}
+            </dd>
+          </div>
+
+          <div>
+            <dt>ETag</dt>
+            <dd>{item.etag ?? "—"}</dd>
+          </div>
+
+          <div>
+            <dt>Last-Modified</dt>
+            <dd>{item.lastModified ?? "—"}</dd>
           </div>
 
           {item.attempts > 0 ? (

@@ -16,6 +16,7 @@ import type {
   TaskAction,
   TransferMetrics,
 } from "../../types/download";
+import type { SyntheticEvent } from "react";
 
 import {
   ACTION_LABELS,
@@ -43,7 +44,7 @@ type DownloadRowProps = {
     item: DownloadListItem,
     action: TaskAction,
   ) => void;
-  onSelect?: () => void;
+  onSelect?: (event: SyntheticEvent) => void;
   onContextMenu?: (
     item: DownloadListItem,
     x: number,
@@ -189,7 +190,7 @@ export function DownloadRow({
           event.key === " "
         ) {
           event.preventDefault();
-          onSelect?.();
+          onSelect?.(event);
         }
       }}
     >

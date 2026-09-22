@@ -5,6 +5,11 @@
   useRef,
   useState,
 } from "react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  SyntheticEvent,
+} from "react";
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -15,6 +20,10 @@ import {
   type AddDownloadAction,
 } from "./components/downloads/AddDownloadModal";
 import { DownloadContextMenu } from "./components/downloads/DownloadContextMenu";
+import {
+  BulkActionBar,
+  type BulkAction,
+} from "./components/downloads/BulkActionBar";
 import { RemoveHistoryDialog } from "./components/downloads/RemoveHistoryDialog";
 import { DownloadDetailsPanel } from "./components/downloads/DownloadDetailsPanel";
 import { DownloadRow } from "./components/downloads/DownloadRow";
@@ -29,6 +38,7 @@ import type {
 
 import type {
   DownloadListItem,
+  DownloadPriority,
   TaskAction,
   TransferMetricsMap,
 } from "./types/download";
@@ -135,6 +145,9 @@ function App() {
   const [selectedDownloadId, setSelectedDownloadId] =
     useState<string | null>(null);
 
+  const [selectedDownloadIds, setSelectedDownloadIds] =
+    useState<Set<string>>(() => new Set());
+
   const [contextMenu, setContextMenu] =
     useState<{
       item: DownloadListItem;
@@ -172,6 +185,7 @@ function App() {
   );
 
   const startingTaskIds = useRef(new Set<string>());
+  const lastSelectedIndex = useRef<number | null>(null);
 
   const refreshHealth = useCallback(async () => {
     const [healthResult, appInfoResult] =
@@ -502,6 +516,135 @@ function App() {
       (item) =>
         item.id === selectedDownloadId,
     ) ?? null;
+
+  const selectedDownloads = useMemo(
+    () => downloads.filter((item) => selectedDownloadIds.has(item.id)),
+    [downloads, selectedDownloadIds],
+  );
+
+  function selectDownload(
+    item: DownloadListItem,
+    index: number,
+    event: SyntheticEvent,
+  ) {
+    const mouseEvent = event as ReactMouseEvent;
+    const keyboardEvent = event as ReactKeyboardEvent;
+    const additive = mouseEvent.ctrlKey || mouseEvent.metaKey || keyboardEvent.ctrlKey || keyboardEvent.metaKey;
+    const shift = mouseEvent.shiftKey || keyboardEvent.shiftKey;
+    const previousIndex = lastSelectedIndex.current;
+
+    setSelectedDownloadId(item.id);
+    lastSelectedIndex.current = index;
+
+    setSelectedDownloadIds((current) => {
+      if (shift && previousIndex !== null) {
+        const start = Math.min(previousIndex, index);
+        const end = Math.max(previousIndex, index);
+        return new Set(filteredDownloads.slice(start, end + 1).map((download) => download.id));
+      }
+
+      if (additive) {
+        const next = new Set(current);
+        if (next.has(item.id)) next.delete(item.id);
+        else next.add(item.id);
+        return next;
+      }
+
+      return new Set([item.id]);
+    });
+  }
+
+  function clearSelection() {
+    setSelectedDownloadIds(new Set());
+    lastSelectedIndex.current = null;
+  }
+
+  useEffect(() => {
+    function handleSelectionShortcut(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
+        event.preventDefault();
+        setSelectedDownloadIds(new Set(filteredDownloads.map((item) => item.id)));
+        return;
+      }
+
+      if (event.key === "Escape" && selectedDownloadIds.size > 0) {
+        event.preventDefault();
+        clearSelection();
+      }
+    }
+
+    window.addEventListener("keydown", handleSelectionShortcut);
+    return () => window.removeEventListener("keydown", handleSelectionShortcut);
+  }, [filteredDownloads, selectedDownloadIds.size]);
+
+  async function runBulkAction(action: BulkAction) {
+    const targets = [...selectedDownloads];
+
+    for (const item of targets) {
+      try {
+        switch (action) {
+          case "start":
+          case "retry":
+            await startPersistedTask(item.id);
+            break;
+          case "pause":
+            await invoke("pause_download", { id: item.id });
+            break;
+          case "resume":
+            await invoke("resume_download", { id: item.id });
+            break;
+          case "cancel":
+            await invoke("cancel_download", { id: item.id });
+            break;
+          case "remove":
+            await invoke("remove_download", { id: item.id, deleteFile: false });
+            break;
+        }
+      } catch (reason) {
+        setError(`Bulk ${action} failed: ${String(reason)}`);
+      }
+    }
+
+    await refreshDownloads();
+    clearSelection();
+  }
+
+  async function runBulkQueue(queueId: string) {
+    for (const item of selectedDownloads) {
+      try {
+        if (item.queueId) {
+          await moveQueuedDownload(item.id, queueId);
+        } else {
+          await invoke("enqueue_download_task", {
+            id: item.id,
+            queueId,
+            priority: null,
+          });
+        }
+      } catch (reason) {
+        setError(`Bulk queue change failed: ${String(reason)}`);
+      }
+    }
+    await refreshDownloads();
+    clearSelection();
+  }
+
+  async function runBulkPriority(priority: DownloadPriority) {
+    for (const item of selectedDownloads) {
+      try {
+        await changePriority(item.id, priority);
+      } catch (reason) {
+        setError(`Bulk priority change failed: ${String(reason)}`);
+      }
+    }
+    await refreshDownloads();
+    clearSelection();
+  }
 
   async function startPersistedTask(id: string) {
     if (startingTaskIds.current.has(id)) {
@@ -983,9 +1126,20 @@ function App() {
               </div>
             </div>
 
+            {selectedDownloadIds.size > 0 ? (
+              <BulkActionBar
+                count={selectedDownloadIds.size}
+                queues={queues}
+                onAction={(action) => void runBulkAction(action)}
+                onQueue={(queueId) => void runBulkQueue(queueId)}
+                onPriority={(priority) => void runBulkPriority(priority)}
+                onClear={clearSelection}
+              />
+            ) : null}
+
             {filteredDownloads.length > 0 ? (
               <div className="download-library__list">
-                {filteredDownloads.map((item) => (
+                {filteredDownloads.map((item, index) => (
                   <DownloadRow
                     key={item.id}
                     item={item}
@@ -1000,13 +1154,10 @@ function App() {
                         : undefined
                     }
                     selected={
-                      selectedDownloadId ===
-                      item.id
+                      selectedDownloadIds.has(item.id)
                     }
-                    onSelect={() =>
-                      setSelectedDownloadId(
-                        item.id,
-                      )
+                    onSelect={(event) =>
+                      selectDownload(item, index, event)
                     }
                     onContextMenu={
                       openContextMenu

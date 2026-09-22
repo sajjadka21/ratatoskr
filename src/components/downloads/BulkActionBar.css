@@ -1,0 +1,8 @@
+.bulk-action-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--border-strong); background: var(--bg-elevated); }
+.bulk-action-bar strong { margin-right: 4px; font-size: 12px; }
+.bulk-action-bar button, .bulk-action-bar select { min-height: 28px; border: 1px solid var(--border-subtle); background: var(--bg-surface); color: var(--text-primary); font: inherit; font-size: 11px; }
+.bulk-action-bar button { display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; cursor: pointer; }
+.bulk-action-bar button:hover { border-color: var(--accent); }
+.bulk-action-bar__select { display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); font-size: 10px; }
+.bulk-action-bar__select select { padding: 0 4px; }
+.bulk-action-bar__close { margin-left: auto; padding: 0 6px !important; }

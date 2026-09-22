@@ -10,7 +10,8 @@ use dm_core::{
 use dm_ipc::{
     AppInfoResponse, CategoryResponse, ComponentHealth, DownloadListItemResponse,
     DownloadRuleResponse, DownloadTaskEvent, HealthCheckResponse, LinkCandidateResponse,
-    QueueResponse, QueueRunnerEventResponse, QueueScheduleResponse, TransferProgressResponse,
+    MediaClassificationResponse, QueueResponse, QueueRunnerEventResponse, QueueScheduleResponse,
+    TransferProgressResponse,
 };
 use dm_storage::Storage;
 use std::{
@@ -648,6 +649,25 @@ fn create_download_task(
 }
 
 #[tauri::command]
+fn handoff_browser_download(
+    state: State<'_, AppState>,
+    url: String,
+    filename_hint: Option<String>,
+    referrer: Option<String>,
+    user_agent: Option<String>,
+) -> Result<DownloadListItemResponse, String> {
+    let handoff = dm_core::browser::BrowserHandoff {
+        url,
+        filename_hint,
+        referrer,
+        user_agent,
+    }
+    .validate()
+    .map_err(|error| error.to_string())?;
+    create_download_task(state, handoff.url)
+}
+
+#[tauri::command]
 fn start_download(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -953,6 +973,24 @@ fn inspect_links(input: String) -> Vec<LinkCandidateResponse> {
         .collect()
 }
 
+#[tauri::command]
+fn classify_media_source(
+    url: String,
+    mime_type: Option<String>,
+) -> Result<MediaClassificationResponse, String> {
+    let kind = dm_core::media::classify_source(&url, mime_type.as_deref())
+        .ok_or_else(|| "invalid media URL".to_owned())?;
+    let kind = match kind {
+        dm_core::media::MediaKind::Direct => "direct",
+        dm_core::media::MediaKind::Hls => "hls",
+        dm_core::media::MediaKind::Dash => "dash",
+        dm_core::media::MediaKind::UnsupportedProtected => "unsupported_protected",
+    };
+    Ok(MediaClassificationResponse {
+        kind: kind.to_owned(),
+    })
+}
+
 /// Runs one task's transfer in the background and publishes what happens.
 fn spawn_transfer(
     downloads: DownloadService,
@@ -1078,6 +1116,7 @@ pub fn run() {
             set_add_download_input_mode,
             remove_download,
             create_download_task,
+            handoff_browser_download,
             start_download,
             pause_download,
             resume_download,
@@ -1099,7 +1138,8 @@ pub fn run() {
             list_categories,
             list_download_rules,
             get_download_rule_explanation,
-            inspect_links
+            inspect_links,
+            classify_media_source
         ])
         .run(tauri::generate_context!())
         .expect("error while running Download Manager");

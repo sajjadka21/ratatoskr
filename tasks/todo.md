@@ -414,3 +414,23 @@
 - [ ] Batch Start Now / Later / Queue actions reuse the canonical task API.
 
 **Dependencies:** Task 33.
+
+# Phase 9 Tasks: Browser Integration
+
+## Task 35: Safe browser handoff
+
+**Acceptance criteria:**
+
+- [x] HTTP(S)-only handoff validates and rejects URL credentials.
+- [x] Referrer, UA, and filename hints are bounded and not persisted.
+- [ ] Native Messaging host and browser extensions are packaged.
+
+# Phase 10 Tasks: Resource / Media
+
+## Task 36: Media source classification
+
+**Acceptance criteria:**
+
+- [x] Direct, HLS, DASH, and protected sources are classified in Rust.
+- [x] Protected media is reported unsupported without DRM bypass.
+- [ ] Manifest parsing, variants, and FFmpeg finalization are implemented.

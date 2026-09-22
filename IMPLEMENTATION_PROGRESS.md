@@ -586,6 +586,26 @@ Status: In progress
 - Existing Add Download batch flow remains the user-facing intake surface;
   task creation still validates each URL in Rust before persistence.
 
+## Phase 9 - Browser Integration
+
+Status: In progress
+
+### Implemented so far
+
+- Added a validated browser handoff model and Tauri command for native-message
+  style intake. HTTP(S) only, URL credentials rejected, and context metadata is
+  bounded and never persisted or logged.
+
+## Phase 10 - Resource / Media
+
+Status: In progress
+
+### Implemented so far
+
+- Added backend media-source classification for direct resources, HLS, DASH,
+  and explicitly unsupported protected entry points. No DRM bypass is
+  attempted; classification is exposed through typed IPC.
+
 ### Scope boundary
 
 Browser integration, LinkGrabber, media extraction, post-processing, and

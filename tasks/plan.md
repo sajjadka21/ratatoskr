@@ -190,3 +190,13 @@ Preserve the checkpoint architecture while separating persistent task creation f
 - [ ] Add dedicated LinkGrabber view, filters, grouping, capability probes,
   and wildcard generation.
 - [ ] Run focused tests, the full gate, review, document, and commit.
+
+### Phase 9: Browser Integration
+
+- [x] Add validated browser handoff contract with credential rejection.
+- [ ] Add extension/native-messaging host, takeover settings, and popup.
+
+### Phase 10: Resource / Media
+
+- [x] Add safe direct/HLS/DASH/protected-source classification.
+- [ ] Add manifest parsing, variant selection, and optional FFmpeg finalize.

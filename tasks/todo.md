@@ -354,3 +354,44 @@
 - [x] All five required commands pass and Phase 6 is committed.
 
 **Dependencies:** Task 27.
+
+# Phase 7 Tasks: Categories / Rules / Scheduler
+
+## Task 29: Category and rule persistence
+
+**Acceptance criteria:**
+
+- [ ] Schema v6 adds built-ins without resetting existing history.
+- [ ] Custom categories and ordered rules persist with typed validation.
+- [ ] Rule actions never store secrets or unvalidated paths.
+
+**Dependencies:** Phase 6.
+
+## Task 30: Rule evaluation and intake application
+
+**Acceptance criteria:**
+
+- [ ] Explicit rule -> MIME -> extension -> host -> Other precedence is tested.
+- [ ] Matching explanations remain available to details/diagnostics.
+- [ ] Queue, priority, destination, and connection actions are backend-owned.
+
+**Dependencies:** Task 29.
+
+## Task 31: Queue scheduler
+
+**Acceptance criteria:**
+
+- [ ] One-time/daily/weekday/repeating windows persist and survive reopen.
+- [ ] Scheduler starts only eligible queues and manual Start Now overrides safely.
+- [ ] Completion actions default to no-op and power actions require opt-in.
+
+**Dependencies:** Task 30.
+
+## Task 32: Phase 7 gate
+
+**Acceptance criteria:**
+
+- [ ] Categories, rules, scheduler UI, and tests are production-ready.
+- [ ] All five required commands pass and Phase 7 is committed.
+
+**Dependencies:** Tasks 29-31.

@@ -412,6 +412,44 @@ pub struct DownloadRecord {
     pub error_message: Option<String>,
 }
 
+/// User-configurable destination/category metadata. Lists are kept canonical
+/// and serializable so storage and IPC can preserve the exact rule inputs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CategoryRecord {
+    pub id: String,
+    pub name: String,
+    pub extensions: Vec<String>,
+    pub mime_patterns: Vec<String>,
+    pub default_directory: Option<String>,
+    pub host_patterns: Vec<String>,
+    pub priority: DownloadPriority,
+    pub queue_id: Option<String>,
+}
+
+/// A deterministic rule evaluated before a task starts. Empty match fields are
+/// wildcards; actions are optional and applied in precedence order by core.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadRule {
+    pub id: String,
+    pub name: String,
+    pub enabled: bool,
+    pub sort_order: i64,
+    pub domain: Option<String>,
+    pub url_pattern: Option<String>,
+    pub extension: Option<String>,
+    pub mime_pattern: Option<String>,
+    pub min_size: Option<u64>,
+    pub max_size: Option<u64>,
+    pub category_id: Option<String>,
+    pub destination_directory: Option<String>,
+    pub queue_id: Option<String>,
+    pub priority: Option<DownloadPriority>,
+    pub max_connections: Option<u32>,
+    pub max_host_concurrency: Option<u32>,
+    pub speed_cap: Option<u64>,
+    pub browser_takeover_allowed: Option<bool>,
+}
+
 /// Everything probing learned about a source, persisted before any bytes are
 /// written. A restart reads this back to decide whether the partial file on
 /// disk still belongs to the same remote content.

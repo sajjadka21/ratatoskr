@@ -7,13 +7,14 @@ use std::{
 };
 use thiserror::Error;
 
+mod categories;
 mod downloads;
 mod host_profiles;
 mod queues;
 mod segments;
 mod settings;
 
-const LATEST_SCHEMA_VERSION: i32 = 5;
+const LATEST_SCHEMA_VERSION: i32 = 6;
 
 const MIGRATION_V1: &str = r#"
 BEGIN IMMEDIATE;
@@ -202,6 +203,60 @@ PRAGMA user_version = 5;
 COMMIT;
 "#;
 
+const MIGRATION_V6: &str = r#"
+BEGIN IMMEDIATE;
+
+CREATE TABLE categories (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL UNIQUE,
+    extensions_json TEXT NOT NULL DEFAULT '[]',
+    mime_patterns_json TEXT NOT NULL DEFAULT '[]',
+    default_directory TEXT,
+    host_patterns_json TEXT NOT NULL DEFAULT '[]',
+    priority TEXT NOT NULL DEFAULT 'normal'
+        CHECK (priority IN ('low', 'normal', 'high', 'very_high')),
+    queue_id TEXT REFERENCES queues(id) ON DELETE SET NULL
+);
+
+CREATE TABLE download_rules (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL UNIQUE,
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+    sort_order INTEGER NOT NULL,
+    domain TEXT,
+    url_pattern TEXT,
+    extension TEXT,
+    mime_pattern TEXT,
+    min_size INTEGER CHECK (min_size IS NULL OR min_size >= 0),
+    max_size INTEGER CHECK (max_size IS NULL OR max_size >= 0),
+    category_id TEXT REFERENCES categories(id) ON DELETE SET NULL,
+    destination_directory TEXT,
+    queue_id TEXT REFERENCES queues(id) ON DELETE SET NULL,
+    priority TEXT CHECK (priority IS NULL OR priority IN ('low', 'normal', 'high', 'very_high')),
+    max_connections INTEGER CHECK (max_connections IS NULL OR max_connections > 0),
+    max_host_concurrency INTEGER CHECK (max_host_concurrency IS NULL OR max_host_concurrency > 0),
+    speed_cap INTEGER CHECK (speed_cap IS NULL OR speed_cap > 0),
+    browser_takeover_allowed INTEGER
+        CHECK (browser_takeover_allowed IS NULL OR browser_takeover_allowed IN (0, 1))
+);
+
+CREATE INDEX idx_download_rules_order ON download_rules(enabled, sort_order, id);
+
+INSERT INTO categories (id, name, extensions_json, mime_patterns_json, priority)
+VALUES
+    ('applications', 'Applications', '["exe","msi","msix","appx"]', '["application/*"]', 'normal'),
+    ('archives', 'Archives', '["zip","rar","7z","tar","gz","bz2","xz"]', '["application/zip","application/x-7z-compressed","application/x-rar-compressed"]', 'normal'),
+    ('documents', 'Documents', '["pdf","doc","docx","xls","xlsx","ppt","pptx","txt","csv"]', '["application/pdf","text/*"]', 'normal'),
+    ('video', 'Video', '["mp4","mkv","mov","avi","webm"]', '["video/*"]', 'normal'),
+    ('audio', 'Audio', '["mp3","wav","flac","aac","m4a","ogg"]', '["audio/*"]', 'normal'),
+    ('images', 'Images', '["png","jpg","jpeg","gif","webp","svg"]', '["image/*"]', 'normal'),
+    ('other', 'Other', '[]', '[]', 'normal');
+
+PRAGMA user_version = 6;
+
+COMMIT;
+"#;
+
 #[derive(Debug, Error)]
 pub enum StorageError {
     #[error("failed to create database directory: {0}")]
@@ -246,6 +301,12 @@ pub enum StorageError {
 
     #[error("invalid queue configuration: {0}")]
     InvalidQueueConfiguration(String),
+
+    #[error("invalid category configuration: {0}")]
+    InvalidCategoryConfiguration(String),
+
+    #[error("invalid rule configuration: {0}")]
+    InvalidRuleConfiguration(String),
 
     #[error("queue order does not contain exactly the queued tasks for queue {0}")]
     QueueOrderMismatch(String),
@@ -391,6 +452,12 @@ fn run_migrations(connection: &Connection) -> Result<()> {
         connection.execute_batch(MIGRATION_V5)?;
     }
 
+    let version: i32 = connection.query_row("PRAGMA user_version;", [], |row| row.get(0))?;
+
+    if version == 5 {
+        connection.execute_batch(MIGRATION_V6)?;
+    }
+
     Ok(())
 }
 
@@ -413,6 +480,8 @@ mod tests {
         assert!(storage.table_exists("queues").unwrap());
         assert!(storage.table_exists("download_segments").unwrap());
         assert!(storage.table_exists("host_profiles").unwrap());
+        assert!(storage.table_exists("categories").unwrap());
+        assert!(storage.table_exists("download_rules").unwrap());
         assert!(storage.health_check().is_ok());
     }
 

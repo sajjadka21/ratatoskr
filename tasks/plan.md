@@ -159,3 +159,26 @@ Preserve the checkpoint architecture while separating persistent task creation f
 - [x] Ctrl/Shift multi-select and bulk actions are keyboard accessible.
 - [x] Details/context actions expose the complete valid task surface.
 - [x] Full repository quality gate passes and the phase is committed.
+
+### Phase 7: Categories / Rules / Scheduler
+
+- [ ] Add schema v6 category/rule persistence and built-in categories.
+- [ ] Evaluate ordered rules during task intake and explain matches.
+- [ ] Add persistent queue schedules and manual Start Now override.
+- [ ] Add Categories/Rules/Scheduler UI and completion-action safeguards.
+- [ ] Run focused tests, the full gate, review, document, and commit.
+
+## Phase 7 Risks and Mitigations
+
+| Risk | Impact | Mitigation |
+| --- | --- | --- |
+| A rule changes task identity or lifecycle | Corrupt or duplicated rows | Apply only validated metadata before claim; keep Rust as authority. |
+| Scheduler starts work outside its window | Unexpected network activity | Persist UTC timestamps, evaluate windows centrally, and honor manual override explicitly. |
+| User paths or patterns become unsafe | Wrong destination or privacy leak | Validate Windows paths and keep rule matching data out of logs. |
+
+## Phase 7 Checkpoint
+
+- [ ] Categories and rules survive migration/reopen with deterministic order.
+- [ ] Matching precedence and explanation are tested against real task intake.
+- [ ] Queues schedule and resume safely across restart.
+- [ ] Full repository quality gate passes and the phase is committed.

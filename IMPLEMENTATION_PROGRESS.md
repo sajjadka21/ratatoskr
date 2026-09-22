@@ -526,6 +526,35 @@ remain for later master-spec phases.
 Phase 6 does not introduce categories, rules, schedules, LinkGrabber, browser
 integration, media extraction, post-processing, or system power actions.
 
+## Phase 7 - Categories / Rules / Scheduler
+
+Status: In progress
+
+### Plan
+
+1. Add additive schema v6 for built-in/custom categories and ordered rules.
+2. Add typed common models and storage CRUD with validated JSON list fields.
+3. Add rule evaluation and apply category/queue/priority actions during task
+   intake without moving business logic into React.
+4. Add queue schedules and a persistent scheduler runner with manual override;
+   test restart persistence and time-window boundaries.
+5. Add Settings/Categories/Rules/Scheduler UI, run the full gate, review, and
+   commit the phase.
+
+### Implemented so far
+
+- Schema v6 creates built-in Applications, Archives, Documents, Video, Audio,
+  Images, and Other categories plus an ordered `download_rules` table.
+- `dm-common` now owns serializable category and rule models; `dm-storage`
+  persists custom category lists and rule match/action fields with validation.
+- Migration, built-in category, custom category, and custom rule persistence
+  tests pass. Rule evaluation and scheduler remain the next slices.
+
+### Scope boundary
+
+Browser integration, LinkGrabber, media extraction, post-processing, and
+release hardening remain out of scope until their dedicated phases.
+
 ### Scope boundary
 
 Phase 5 will not add categories, rules, schedulers, browser integration, media

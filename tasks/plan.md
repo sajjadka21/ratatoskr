@@ -106,3 +106,33 @@ Preserve the checkpoint architecture while separating persistent task creation f
 - [x] Interrupted segment maps resume without duplicate or overlapping bytes.
 - [x] No-range and invalid-range responses safely use single-stream fallback.
 - [x] Full repository quality gate passes and the phase is committed.
+
+### Phase 5: Adaptive Connections + Speed
+
+- [ ] Add a deterministic adaptive controller for measured throughput,
+  diminishing returns, and bounded connection targets.
+- [ ] Add additive host-profile persistence with safe host-only keys and
+  429/503 observations.
+- [ ] Integrate adaptive targets with the segmented worker pool while
+  preserving global, task, queue, and per-host concurrency bounds.
+- [ ] Add typed server backoff and expose active/max connections and the
+  adaptive explanation through IPC and the existing UI events.
+- [ ] Run focused policy/storage/service/UI tests, the full quality gate,
+  review, document, and commit.
+
+## Phase 5 Risks and Mitigations
+
+| Risk | Impact | Mitigation |
+| --- | --- | --- |
+| Extra streams reduce throughput | Server overload or slower downloads | Start at one connection, require measured gains, and cap targets. |
+| 429/503 feedback oscillates | Repeated throttling or retries | Exponential bounded backoff and immediate target reduction. |
+| Host data leaks sensitive URLs | Privacy/security issue | Persist only normalized hostname and numeric observations; never paths, queries, or headers. |
+| Adaptive state bypasses queue limits | Global overload | Derive target from global/task/queue/per-host caps before spawning workers. |
+
+## Phase 5 Checkpoint
+
+- [ ] Policy unit tests cover scale-up, stable/diminishing returns, and backoff.
+- [ ] Host profiles survive migration/reopen without credentials or URL paths.
+- [ ] Segmented downloads adapt within bounded limits and remain byte-identical.
+- [ ] IPC/UI show measured active/max connections and a reason string.
+- [ ] Full repository quality gate passes and the phase is committed.

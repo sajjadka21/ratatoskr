@@ -332,9 +332,8 @@ Status: Complete
 
 ### Phase boundary
 
-Phase 3 is complete. Phase 4 is in progress; the first three implementation
-slices (canonical segment persistence, strict ranged transfer, and service
-orchestration) are now implemented and covered by focused tests.
+Phase 3 is complete. Phase 4 is complete and committed; Phase 5 is the next
+active milestone.
 
 ## Phase 4 - Segmented Engine
 
@@ -401,3 +400,27 @@ remains intentionally out of scope.
 Phase 4 will not add adaptive connection scaling, host learning, speed
 profiles, or explainability UI; those remain Phase 5. The segmented engine
 will use a conservative bounded worker count and real byte progress only.
+
+## Phase 5 - Adaptive Connections + Speed
+
+Status: In progress
+
+### Plan
+
+1. Add a deterministic adaptive controller with throughput samples, bounded
+   connection targets, diminishing-return detection, and explainable reasons.
+2. Add additive host-profile persistence and source-safe host keying for
+   reusable connection limits and observed 429/503 behavior.
+3. Connect the controller to the segmented worker pool: start conservatively,
+   scale up when measured throughput improves, scale down on diminishing gains
+   or server instability, and honor bounded global/task/queue limits.
+4. Add typed 429/503 handling with backoff and expose active/max connections,
+   measured throughput history, and the adaptive explanation through IPC/UI.
+5. Add focused policy/storage/HTTP/service/UI tests, run the full quality gate,
+   review the diff, and create focused commits.
+
+### Scope boundary
+
+Phase 5 will not add categories, rules, schedulers, browser integration, media
+extraction, or post-processing. Speed controls remain conservative and local;
+no cookies, credentials, or authorization data are persisted in host profiles.

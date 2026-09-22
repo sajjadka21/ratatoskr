@@ -267,3 +267,58 @@
 **Verification:** Git status/log inspection and full quality gate.
 
 **Dependencies:** Tasks 18-20.
+
+# Phase 5 Tasks: Adaptive Connections + Speed
+
+## Task 22: Adaptive controller
+
+**Acceptance criteria:**
+
+- [ ] Throughput samples produce bounded, deterministic connection targets.
+- [ ] The controller explains scale-up, stable/diminishing returns, and
+  server backoff decisions.
+- [ ] Unit tests cover conservative start, useful gains, no-gain plateaus,
+  and target reduction.
+
+**Verification:** focused `dm-core` adaptive tests.
+
+**Dependencies:** Phase 4.
+
+## Task 23: Host profile persistence
+
+**Acceptance criteria:**
+
+- [ ] Additive schema migration stores normalized host-only observations.
+- [ ] 429/503 counts, preferred cap, and last-seen time survive reopen.
+- [ ] Credentials, headers, paths, queries, and fragments never enter the
+  profile key or persisted value.
+
+**Verification:** `dm-storage` migration/reopen and redaction tests.
+
+**Dependencies:** Task 22.
+
+## Task 24: Adaptive segmented execution
+
+**Acceptance criteria:**
+
+- [ ] Segmented workers start conservatively and scale only after measured
+  gains, within global/task/queue/per-host bounds.
+- [ ] 429/503 responses reduce the target and schedule bounded backoff.
+- [ ] Aggregate progress and final bytes remain authoritative and unchanged.
+
+**Verification:** local HTTP service tests for scale-up, diminishing returns,
+  429/503 backoff, and byte-identical completion.
+
+**Dependencies:** Tasks 22-23.
+
+## Task 25: Explainability contract and Phase 5 gate
+
+**Acceptance criteria:**
+
+- [ ] IPC progress exposes active/max connections and the adaptive reason.
+- [ ] Existing UI renders the measured explanation without inventing state.
+- [ ] All five required commands pass and Phase 5 is committed.
+
+**Verification:** IPC/frontend tests plus the full repository quality gate.
+
+**Dependencies:** Task 24.

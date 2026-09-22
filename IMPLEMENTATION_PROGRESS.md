@@ -143,3 +143,86 @@ Phase 2 will not add schedules, speed profiles, task pause/resume, retry policy,
 ### Phase boundary
 
 Phase 2 is complete. Phase 3 has not started. Task pause/resume, in-flight crash recovery, validators, and retry state remain assigned to Phase 3 by the master specification.
+
+## Phase 2.5 - Defect Closure
+
+Status: Complete
+
+Not a phase from the master specification. It closes defects found by the
+Phase 2 review in `docs/phase2-review.md` before Phase 3 builds on them.
+
+### Plan
+
+1. Recover tasks a restart orphaned, and make the canonical rules for that
+   recovery live in `dm-common`.
+2. Publish engine events at application level so every runner reports to the
+   UI, including one resumed during startup.
+3. Wake a running queue when work is added so configured concurrency is real.
+4. Allow removing tasks no executor owns, guarded against a concurrent claim.
+5. Measure transfer rate and remaining time in the engine and surface them.
+6. Add a frontend test runner, including an IPC contract test.
+
+### Implemented
+
+- Added canonical `is_orphaned_by_restart`, `restart_recovery_status`,
+  `is_removable` and `QueueRecord::is_schedulable` so status groups are derived
+  from `dm-common` rather than restated in SQL or in React.
+- Startup now returns `probing`/`downloading`/`finalizing` rows to `created`
+  or, for queued work, to `queued`, clears their progress bytes, and records
+  an `interrupted` explanation on the row. Previously such a row could not be
+  started, claimed, retried or removed, so it stayed in the list forever.
+- Replaced per-invoke channels with the application events
+  `download-task-event` and `queue-runner-event`. A queue resumed at startup
+  now reports progress; previously it transferred silently and pressing Start
+  left the UI waiting on a channel nothing would ever write to.
+- `start_queue` detects an already-active runner and reuses it instead of
+  spawning a second one that fails inside a detached task.
+- The queue runner now waits on both task completion and a wakeup, so a task
+  added, moved or reprioritised while transfers are running starts
+  immediately instead of waiting for a slot to free by completion.
+- A disabled queue neither starts nor schedules, and `enabled` is now a real
+  setting with storage, a command and a UI toggle.
+- Created and queued tasks can be removed. The delete is status-guarded in SQL,
+  so a runner claiming the task at the same moment wins the race rather than
+  losing its row mid-transfer.
+- Added `ThroughputMeter` in `dm-core`: a smoothed rate built from the bytes
+  the engine actually wrote, plus an ETA that reports nothing rather than
+  guessing when a transfer stalls or its size is unknown. Rate and ETA travel
+  on progress events and appear in rows, the details panel, and as aggregate
+  throughput in the top bar.
+- Added queue, priority and remove-from-queue actions to the download row
+  context menu, so a task no longer has to be managed from the Queues page.
+
+### Tests added/updated
+
+- Canonical recovery, removability and schedulability rules.
+- Storage recovery for queued and non-queued tasks, and the no-op case.
+- Guarded removal, including refusal while a transfer is active.
+- Throughput measurement: first window, smoothing, stalls, unknown totals.
+- A running queue filling a free slot with newly added work. Verified to fail
+  when the wakeup is removed.
+- A disabled queue refusing to start or schedule.
+- Frontend: byte/rate/duration/host formatting, link extraction, and an IPC
+  contract test that checks command names, argument casing and event names
+  against `src-tauri/src/lib.rs`. Verified to fail on a renamed argument.
+
+### Quality gate
+
+- `cargo fmt --all` - passed
+- `cargo test --workspace` - passed (60 tests, up from 42)
+- `cargo check --workspace` - passed
+- `cargo clippy --workspace --all-targets -- -D warnings` - passed
+- `cargo build -p tauri-app` - passed
+- `npm run build` - passed
+- `npm test` - passed (21 tests)
+
+### Known limitations carried into Phase 3
+
+- Recovery restarts an interrupted transfer from zero. Partial bytes and their
+  validators are not kept yet, which is exactly what Phase 3 adds.
+- `temp_path` is still never persisted, so a `.part` file left by a killed
+  process is not cleaned up. Phase 3 owns temp-file identity.
+- Queue pause/resume is still absent; stop is the only control, because pause
+  without task-level pause would be indistinguishable from stop.
+- A drained running queue still stops itself. Documented as deliberate: work
+  added afterwards waits for an explicit Start.

@@ -143,3 +143,77 @@
 **Verification:** Git status/log inspection.
 
 **Dependencies:** Tasks 7-10.
+
+# Phase 2.5 Tasks: Defect Closure
+
+## Task 12: Restart recovery for orphaned tasks
+
+**Acceptance criteria:**
+
+- [x] Statuses only an executor can own are canonical in `dm-common`.
+- [x] Startup returns orphaned rows to an actionable state and explains why.
+- [x] Storage tests cover queued and non-queued recovery and the no-op case.
+
+**Verification:** `dm-common` and `dm-storage` tests.
+
+**Dependencies:** Phase 2.
+
+## Task 13: Application-level engine events
+
+**Acceptance criteria:**
+
+- [x] Runner and transfer events are published to the window, not to a per-invoke channel.
+- [x] A queue resumed at startup reports progress to the UI.
+- [x] Starting an already running queue reuses its runner instead of failing silently.
+
+**Verification:** frontend IPC contract test plus manual runtime check.
+
+**Dependencies:** Task 12.
+
+## Task 14: Queue slot refill and enablement
+
+**Acceptance criteria:**
+
+- [x] A running queue starts newly added work while other transfers are active.
+- [x] A disabled queue neither starts nor schedules.
+- [x] Local HTTP tests cover both, and fail without the fix.
+
+**Verification:** `dm-core` queue tests.
+
+**Dependencies:** Task 13.
+
+## Task 15: Removable tasks
+
+**Acceptance criteria:**
+
+- [x] Created and queued tasks can be removed.
+- [x] The delete is guarded in SQL against a concurrent claim.
+- [x] The dialog explains what happens when no file exists yet.
+
+**Verification:** `dm-storage` removal tests.
+
+**Dependencies:** Task 12.
+
+## Task 16: Measured speed and ETA
+
+**Acceptance criteria:**
+
+- [x] Rate and remaining time are measured in the engine, never in React.
+- [x] Rows, the details panel and the top bar show real measurements only.
+- [x] Meter unit tests cover the first window, smoothing, stalls and unknown totals.
+
+**Verification:** `dm-core` throughput tests and the frontend format tests.
+
+**Dependencies:** Task 13.
+
+## Task 17: Frontend test runner
+
+**Acceptance criteria:**
+
+- [x] `npm test` runs a real suite.
+- [x] Helpers and link extraction are covered.
+- [x] Command names and argument names are checked against the Rust surface.
+
+**Verification:** `npm test`.
+
+**Dependencies:** None.

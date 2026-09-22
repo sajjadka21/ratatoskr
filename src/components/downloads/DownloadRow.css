@@ -169,7 +169,9 @@
 
 .download-row__status-area {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 8px;
 }
 
 .download-row__status {
@@ -336,4 +338,35 @@
 .download-row__menu-button:hover {
   color: var(--text-primary);
   background: var(--bg-surface-hover);
+}
+
+/* The one control that lives on the row itself. Everything else stays in
+   the menu, so a long list keeps a single predictable hit target. */
+.download-row__action {
+  width: 27px;
+  height: 27px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  color: var(--text-secondary);
+
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+
+  cursor: pointer;
+
+  transition:
+    color 120ms ease,
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.download-row__action:hover {
+  color: var(--text-primary);
+
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }

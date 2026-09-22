@@ -1,5 +1,7 @@
 use crate::{Result, Storage, StorageError};
-use dm_common::{DownloadCompletion, DownloadPriority, DownloadRecord, DownloadStatus};
+use dm_common::{
+    DownloadCompletion, DownloadPriority, DownloadRecord, DownloadStatus, TransferPlan,
+};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use std::str::FromStr;
 use uuid::Uuid;
@@ -25,6 +27,8 @@ SELECT
     created_at,
     started_at,
     completed_at,
+    attempts,
+    retry_at,
     error_code,
     error_message
 FROM downloads
@@ -51,6 +55,8 @@ struct StoredDownloadRow {
     created_at: i64,
     started_at: Option<i64>,
     completed_at: Option<i64>,
+    attempts: i64,
+    retry_at: Option<i64>,
     error_code: Option<String>,
     error_message: Option<String>,
 }
@@ -77,8 +83,10 @@ impl StoredDownloadRow {
             created_at: row.get(16)?,
             started_at: row.get(17)?,
             completed_at: row.get(18)?,
-            error_code: row.get(19)?,
-            error_message: row.get(20)?,
+            attempts: row.get(19)?,
+            retry_at: row.get(20)?,
+            error_code: row.get(21)?,
+            error_message: row.get(22)?,
         })
     }
 
@@ -115,6 +123,11 @@ impl StoredDownloadRow {
             created_at: self.created_at,
             started_at: self.started_at,
             completed_at: self.completed_at,
+            attempts: u32::try_from(self.attempts).map_err(|_| StorageError::NegativeInteger {
+                field: "attempts",
+                value: self.attempts,
+            })?,
+            retry_at: self.retry_at,
             error_code: self.error_code,
             error_message: self.error_message,
         })
@@ -143,6 +156,8 @@ impl Storage {
             created_at,
             started_at: None,
             completed_at: None,
+            attempts: 0,
+            retry_at: None,
             error_code: None,
             error_message: None,
         };
@@ -256,56 +271,58 @@ impl Storage {
     /// Returns rows that a previous process left mid-transfer to a state the
     /// user or a queue runner can act on again, and reports what was changed.
     ///
-    /// Progress bytes are cleared because the current engine restarts an
-    /// interrupted transfer from zero; Phase 3 replaces this with a real
-    /// resume that keeps the partial bytes and their validators.
+    /// Partial bytes are kept: a row with a temp file and a byte count becomes
+    /// paused or returns to its queue, and the engine decides on the next
+    /// attempt whether those bytes are still valid for the remote content. A
+    /// row with nothing on disk goes back to created.
     pub fn recover_orphaned_downloads(
         &self,
         error_code: &str,
         error_message: &str,
     ) -> Result<Vec<DownloadRecord>> {
-        let orphaned = status_list(DownloadStatus::is_orphaned_by_restart);
+        let orphaned = status_in_clause(
+            &DownloadStatus::ALL
+                .into_iter()
+                .filter(|status| status.is_orphaned_by_restart())
+                .collect::<Vec<_>>(),
+        );
+
         let mut connection = self.connection()?;
         let transaction = connection.transaction()?;
 
-        let select = format!(
-            "SELECT id FROM downloads WHERE status IN ({});",
-            sql_placeholders(orphaned.len(), 1)
-        );
-
+        let select = format!("SELECT id FROM downloads WHERE status IN ({orphaned});");
         let mut statement = transaction.prepare(&select)?;
 
         let ids = statement
-            .query_map(
-                rusqlite::params_from_iter(orphaned.iter().copied()),
-                |row| row.get::<_, String>(0),
-            )?
+            .query_map([], |row| row.get::<_, String>(0))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
 
         drop(statement);
 
-        for id in &ids {
-            transaction.execute(
+        transaction.execute(
+            &format!(
                 r#"
                 UPDATE downloads
                 SET
-                    status = CASE WHEN queue_id IS NULL THEN ?2 ELSE ?3 END,
-                    downloaded_bytes = 0,
-                    temp_path = NULL,
-                    started_at = NULL,
-                    error_code = ?4,
-                    error_message = ?5
-                WHERE id = ?1;
+                    status = CASE
+                        WHEN queue_id IS NOT NULL THEN '{queued}'
+                        WHEN temp_path IS NOT NULL AND downloaded_bytes > 0 THEN '{paused}'
+                        ELSE '{created}'
+                    END,
+                    downloaded_bytes = CASE
+                        WHEN temp_path IS NOT NULL THEN downloaded_bytes
+                        ELSE 0
+                    END,
+                    error_code = ?1,
+                    error_message = ?2
+                WHERE status IN ({orphaned});
                 "#,
-                params![
-                    id,
-                    DownloadStatus::restart_recovery_status(false).as_str(),
-                    DownloadStatus::restart_recovery_status(true).as_str(),
-                    error_code,
-                    error_message,
-                ],
-            )?;
-        }
+                queued = DownloadStatus::restart_recovery_status(true, true).as_str(),
+                paused = DownloadStatus::restart_recovery_status(false, true).as_str(),
+                created = DownloadStatus::restart_recovery_status(false, false).as_str(),
+            ),
+            params![error_code, error_message],
+        )?;
 
         transaction.commit()?;
         drop(connection);
@@ -321,19 +338,34 @@ impl Storage {
         Ok(recovered)
     }
 
+    /// Claims a task for a direct start, resume or retry.
+    ///
+    /// The canonical machine also allows `queued -> probing`, but that path
+    /// belongs to the queue runner alone: a queued task must not be able to
+    /// jump its queue by being started directly.
     pub fn mark_probing(&self, id: &str) -> Result<()> {
+        let sources = DownloadStatus::sources_of(DownloadStatus::Probing)
+            .into_iter()
+            .filter(|status| *status != DownloadStatus::Queued)
+            .collect::<Vec<_>>();
+
         let connection = self.connection()?;
 
         let changed = connection.execute(
-            r#"
-            UPDATE downloads
-            SET
-                status = 'probing',
-                error_code = NULL,
-                error_message = NULL
-            WHERE id = ?1
-              AND status = 'created';
-            "#,
+            &format!(
+                r#"
+                UPDATE downloads
+                SET
+                    status = '{probing}',
+                    retry_at = NULL,
+                    error_code = NULL,
+                    error_message = NULL
+                WHERE id = ?1
+                  AND status IN ({sources});
+                "#,
+                probing = DownloadStatus::Probing.as_str(),
+                sources = status_in_clause(&sources),
+            ),
             [id],
         )?;
 
@@ -343,13 +375,19 @@ impl Storage {
     pub fn claim_queued_download(&self, id: &str, queue_id: &str) -> Result<DownloadRecord> {
         let connection = self.connection()?;
         let changed = connection.execute(
-            r#"
-            UPDATE downloads
-            SET status = 'probing'
-            WHERE id = ?1
-              AND queue_id = ?2
-              AND status = 'queued';
-            "#,
+            &format!(
+                r#"
+                UPDATE downloads
+                SET
+                    status = '{probing}',
+                    retry_at = NULL
+                WHERE id = ?1
+                  AND queue_id = ?2
+                  AND status = '{queued}';
+                "#,
+                probing = DownloadStatus::Probing.as_str(),
+                queued = DownloadStatus::Queued.as_str(),
+            ),
             params![id, queue_id],
         )?;
         ensure_transitioned(&connection, id, changed, DownloadStatus::Probing)?;
@@ -359,24 +397,166 @@ impl Storage {
             .ok_or_else(|| StorageError::DownloadNotFound(id.to_owned()))
     }
 
-    pub fn mark_downloading(&self, id: &str, started_at: i64) -> Result<()> {
+    /// Records what probing learned before a single byte is written, so a
+    /// process that dies mid-transfer leaves behind enough to validate the
+    /// partial file against the source on the next attempt.
+    pub fn set_transfer_plan(&self, id: &str, plan: &TransferPlan) -> Result<()> {
+        let total_bytes = plan
+            .total_bytes
+            .map(|value| u64_to_i64(value, "total_bytes"))
+            .transpose()?;
+
         let connection = self.connection()?;
 
         let changed = connection.execute(
             r#"
             UPDATE downloads
             SET
-                status = 'downloading',
-                started_at = ?2,
-                error_code = NULL,
-                error_message = NULL
-            WHERE id = ?1
-              AND status = 'probing';
+                resolved_url = ?2,
+                filename = ?3,
+                destination_path = ?4,
+                temp_path = ?5,
+                mime_type = COALESCE(?6, mime_type),
+                total_bytes = ?7,
+                etag = ?8,
+                last_modified = ?9,
+                range_supported = ?10
+            WHERE id = ?1;
             "#,
-            params![id, started_at],
+            params![
+                id,
+                &plan.resolved_url,
+                &plan.filename,
+                &plan.destination_path,
+                &plan.temp_path,
+                &plan.mime_type,
+                total_bytes,
+                &plan.etag,
+                &plan.last_modified,
+                plan.range_supported,
+            ],
         )?;
 
-        ensure_transitioned(&connection, id, changed, DownloadStatus::Downloading)
+        ensure_updated(id, changed)
+    }
+
+    /// Starts the transfer. Any explanation left by probing - a restart from
+    /// zero, for instance - is deliberately kept, because it describes the
+    /// transfer that is about to run.
+    pub fn mark_downloading(&self, id: &str, started_at: i64) -> Result<()> {
+        self.transition(
+            id,
+            DownloadStatus::Downloading,
+            "started_at = ?2",
+            params![id, started_at],
+        )
+    }
+
+    /// Persists a transfer that was stopped on purpose. The partial file is
+    /// kept exactly as it is so the next attempt can continue from it.
+    pub fn mark_paused(&self, id: &str, downloaded_bytes: u64) -> Result<()> {
+        let downloaded_bytes = u64_to_i64(downloaded_bytes, "downloaded_bytes")?;
+
+        self.transition(
+            id,
+            DownloadStatus::Paused,
+            "downloaded_bytes = ?2, error_code = NULL, error_message = NULL",
+            params![id, downloaded_bytes],
+        )
+    }
+
+    /// Cancellation is terminal and discards the partial transfer, so the row
+    /// no longer points at a file that has been deleted.
+    pub fn mark_cancelled(&self, id: &str) -> Result<()> {
+        self.transition(
+            id,
+            DownloadStatus::Cancelled,
+            "downloaded_bytes = 0, temp_path = NULL, retry_at = NULL,
+             error_code = NULL, error_message = NULL",
+            params![id],
+        )
+    }
+
+    /// Schedules an automatic retry. `attempts` is authoritative in the row so
+    /// the budget survives a restart.
+    pub fn mark_retrying(
+        &self,
+        id: &str,
+        attempts: u32,
+        retry_at: i64,
+        error_code: &str,
+        error_message: &str,
+    ) -> Result<()> {
+        self.transition(
+            id,
+            DownloadStatus::Retrying,
+            "attempts = ?2, retry_at = ?3, error_code = ?4, error_message = ?5",
+            params![id, attempts, retry_at, error_code, error_message],
+        )
+    }
+
+    /// Retrying tasks whose backoff has elapsed, oldest first.
+    pub fn list_due_retries(&self, now: i64) -> Result<Vec<DownloadRecord>> {
+        let connection = self.connection()?;
+        let sql = format!(
+            "{DOWNLOAD_SELECT}
+             WHERE status = '{retrying}'
+               AND retry_at IS NOT NULL
+               AND retry_at <= ?1
+             ORDER BY retry_at ASC, id ASC",
+            retrying = DownloadStatus::Retrying.as_str(),
+        );
+
+        let mut statement = connection.prepare(&sql)?;
+        let rows = statement.query_map([now], StoredDownloadRow::from_row)?;
+        let mut downloads = Vec::new();
+
+        for row in rows {
+            downloads.push(row?.into_record()?);
+        }
+
+        Ok(downloads)
+    }
+
+    /// Clears a partial transfer that can no longer be trusted, so the next
+    /// attempt starts from zero instead of appending to stale bytes.
+    pub fn reset_transfer_progress(&self, id: &str) -> Result<()> {
+        let connection = self.connection()?;
+
+        let changed = connection.execute(
+            "UPDATE downloads SET downloaded_bytes = 0 WHERE id = ?1;",
+            [id],
+        )?;
+
+        ensure_updated(id, changed)
+    }
+
+    /// Records an explanation on a row without changing its status.
+    ///
+    /// The `error_*` columns are the row's explanation, not strictly its
+    /// failure: a task that had to restart from zero, or one interrupted by a
+    /// restart, uses them to say so while still being perfectly healthy. The
+    /// next successful transition clears them.
+    pub fn record_notice(&self, id: &str, code: &str, message: &str) -> Result<()> {
+        let connection = self.connection()?;
+
+        let changed = connection.execute(
+            "UPDATE downloads SET error_code = ?2, error_message = ?3 WHERE id = ?1;",
+            params![id, code, message],
+        )?;
+
+        ensure_updated(id, changed)
+    }
+
+    pub fn record_attempt(&self, id: &str, attempts: u32) -> Result<()> {
+        let connection = self.connection()?;
+
+        let changed = connection.execute(
+            "UPDATE downloads SET attempts = ?2 WHERE id = ?1;",
+            params![id, attempts],
+        )?;
+
+        ensure_updated(id, changed)
     }
 
     pub fn update_progress(
@@ -420,26 +600,12 @@ impl Storage {
             .map(|value| u64_to_i64(value, "total_bytes"))
             .transpose()?;
 
-        let connection = self.connection()?;
-
-        let changed = connection.execute(
-            r#"
-            UPDATE downloads
-            SET
-                resolved_url = ?2,
-                filename = ?3,
-                destination_path = ?4,
-                temp_path = NULL,
-                mime_type = ?5,
-                total_bytes = ?6,
-                downloaded_bytes = ?7,
-                status = 'completed',
-                completed_at = ?8,
-                error_code = NULL,
-                error_message = NULL
-            WHERE id = ?1
-              AND status = 'finalizing';
-            "#,
+        self.transition(
+            id,
+            DownloadStatus::Completed,
+            "resolved_url = ?2, filename = ?3, destination_path = ?4, temp_path = NULL,
+             mime_type = ?5, total_bytes = ?6, downloaded_bytes = ?7, completed_at = ?8,
+             retry_at = NULL, error_code = NULL, error_message = NULL",
             params![
                 id,
                 &completion.resolved_url,
@@ -450,45 +616,65 @@ impl Storage {
                 downloaded_bytes,
                 completed_at,
             ],
-        )?;
-
-        ensure_transitioned(&connection, id, changed, DownloadStatus::Completed)
+        )
     }
 
     pub fn mark_finalizing(&self, id: &str) -> Result<()> {
-        let connection = self.connection()?;
-
-        let changed = connection.execute(
-            r#"
-            UPDATE downloads
-            SET status = 'finalizing'
-            WHERE id = ?1
-              AND status = 'downloading';
-            "#,
-            [id],
-        )?;
-
-        ensure_transitioned(&connection, id, changed, DownloadStatus::Finalizing)
+        self.transition(id, DownloadStatus::Finalizing, "", params![id])
     }
 
     pub fn mark_failed(&self, id: &str, error_code: &str, error_message: &str) -> Result<()> {
+        self.transition(
+            id,
+            DownloadStatus::Failed,
+            "retry_at = NULL, error_code = ?2, error_message = ?3",
+            params![id, error_code, error_message],
+        )
+    }
+
+    /// Applies a status change whose legality comes from the canonical state
+    /// machine rather than from a status list written into each statement.
+    fn transition(
+        &self,
+        id: &str,
+        to: DownloadStatus,
+        assignments: &str,
+        parameters: &[&dyn rusqlite::ToSql],
+    ) -> Result<()> {
+        let assignments = if assignments.trim().is_empty() {
+            String::new()
+        } else {
+            format!(", {assignments}")
+        };
+
         let connection = self.connection()?;
 
         let changed = connection.execute(
-            r#"
-            UPDATE downloads
-            SET
-                status = 'failed',
-                error_code = ?2,
-                error_message = ?3
-            WHERE id = ?1
-              AND status IN ('probing', 'downloading', 'finalizing');
-            "#,
-            params![id, error_code, error_message],
+            &format!(
+                r#"
+                UPDATE downloads
+                SET status = '{to}'{assignments}
+                WHERE id = ?1
+                  AND status IN ({sources});
+                "#,
+                to = to.as_str(),
+                sources = status_in_clause(&DownloadStatus::sources_of(to)),
+            ),
+            parameters,
         )?;
 
-        ensure_transitioned(&connection, id, changed, DownloadStatus::Failed)
+        ensure_transitioned(&connection, id, changed, to)
     }
+}
+
+/// Renders a canonical status group as SQL literals. The values come from a
+/// closed enum of lowercase identifiers, never from user input.
+pub(crate) fn status_in_clause(statuses: &[DownloadStatus]) -> String {
+    statuses
+        .iter()
+        .map(|status| format!("'{}'", status.as_str()))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Builds the canonical status group matching `predicate` as SQL literals, so
@@ -633,19 +819,69 @@ mod tests {
         assert_eq!(downloads[0].id, created.id);
     }
 
+    fn sample_plan(temp_path: &str) -> TransferPlan {
+        TransferPlan {
+            resolved_url: "https://cdn.example.com/file.bin".to_owned(),
+            filename: "file.bin".to_owned(),
+            destination_path: "C:\\Downloads\\file.bin".to_owned(),
+            temp_path: temp_path.to_owned(),
+            mime_type: Some("application/octet-stream".to_owned()),
+            total_bytes: Some(8_192),
+            etag: Some("\"v1\"".to_owned()),
+            last_modified: Some("Wed, 21 Oct 2026 07:28:00 GMT".to_owned()),
+            range_supported: true,
+        }
+    }
+
+    #[test]
+    fn recovers_a_partial_transfer_as_resumable() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::open(directory.path().join("downloads.db")).unwrap();
+
+        let record = storage
+            .create_download("https://example.com/direct.bin", 1_000)
+            .unwrap();
+        storage.mark_probing(&record.id).unwrap();
+        storage
+            .set_transfer_plan(&record.id, &sample_plan("C:\\Downloads\\file.bin.part"))
+            .unwrap();
+        storage.mark_downloading(&record.id, 1_050).unwrap();
+        storage
+            .update_progress(&record.id, 4_096, Some(8_192))
+            .unwrap();
+
+        let recovered = storage
+            .recover_orphaned_downloads("interrupted", "interrupted by a restart")
+            .unwrap();
+
+        assert_eq!(recovered.len(), 1);
+
+        let record = storage.get_download(&record.id).unwrap().unwrap();
+
+        assert_eq!(record.status, DownloadStatus::Paused);
+        assert_eq!(
+            record.downloaded_bytes, 4_096,
+            "partial bytes must survive a restart"
+        );
+        assert_eq!(record.etag.as_deref(), Some("\"v1\""));
+        assert_eq!(
+            record.temp_path.as_deref(),
+            Some("C:\\Downloads\\file.bin.part")
+        );
+        assert_eq!(record.error_code.as_deref(), Some("interrupted"));
+    }
+
     #[test]
     fn recovers_orphaned_downloads_to_actionable_states() {
         let directory = tempdir().unwrap();
         let storage = Storage::open(directory.path().join("downloads.db")).unwrap();
 
+        // Interrupted before probing wrote a plan, so there is nothing on disk
+        // to resume from.
         let direct = storage
             .create_download("https://example.com/direct.bin", 1_000)
             .unwrap();
         storage.mark_probing(&direct.id).unwrap();
-        storage.mark_downloading(&direct.id, 1_050).unwrap();
-        storage
-            .update_progress(&direct.id, 4_096, Some(8_192))
-            .unwrap();
 
         let queued = storage
             .create_download("https://example.com/queued.bin", 1_001)
@@ -670,11 +906,14 @@ mod tests {
         let direct = storage.get_download(&direct.id).unwrap().unwrap();
         assert_eq!(direct.status, DownloadStatus::Created);
         assert_eq!(direct.downloaded_bytes, 0);
-        assert!(direct.started_at.is_none());
         assert_eq!(direct.error_code.as_deref(), Some("interrupted"));
 
         let queued = storage.get_download(&queued.id).unwrap().unwrap();
-        assert_eq!(queued.status, DownloadStatus::Queued);
+        assert_eq!(
+            queued.status,
+            DownloadStatus::Queued,
+            "queued work returns to its queue rather than to the user"
+        );
         assert_eq!(queued.queue_id.as_deref(), Some("default"));
 
         let untouched = storage.get_download(&untouched.id).unwrap().unwrap();
@@ -696,6 +935,144 @@ mod tests {
             .unwrap();
 
         assert!(recovered.is_empty());
+    }
+
+    #[test]
+    fn pauses_and_resumes_without_losing_partial_bytes() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::open(directory.path().join("downloads.db")).unwrap();
+
+        let record = storage
+            .create_download("https://example.com/file.bin", 1_000)
+            .unwrap();
+        storage.mark_probing(&record.id).unwrap();
+        storage
+            .set_transfer_plan(&record.id, &sample_plan("C:\\Downloads\\file.bin.part"))
+            .unwrap();
+        storage.mark_downloading(&record.id, 1_050).unwrap();
+        storage.mark_paused(&record.id, 2_048).unwrap();
+
+        let paused = storage.get_download(&record.id).unwrap().unwrap();
+        assert_eq!(paused.status, DownloadStatus::Paused);
+        assert_eq!(paused.downloaded_bytes, 2_048);
+        assert_eq!(paused.range_supported, Some(true));
+
+        storage.mark_probing(&record.id).unwrap();
+
+        let resumed = storage.get_download(&record.id).unwrap().unwrap();
+        assert_eq!(resumed.status, DownloadStatus::Probing);
+        assert_eq!(
+            resumed.downloaded_bytes, 2_048,
+            "resuming must not discard what was already transferred"
+        );
+    }
+
+    #[test]
+    fn cancelling_discards_the_partial_transfer() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::open(directory.path().join("downloads.db")).unwrap();
+
+        let record = storage
+            .create_download("https://example.com/file.bin", 1_000)
+            .unwrap();
+        storage.mark_probing(&record.id).unwrap();
+        storage
+            .set_transfer_plan(&record.id, &sample_plan("C:\\Downloads\\file.bin.part"))
+            .unwrap();
+        storage.mark_downloading(&record.id, 1_050).unwrap();
+        storage.update_progress(&record.id, 900, None).unwrap();
+        storage.mark_cancelled(&record.id).unwrap();
+
+        let cancelled = storage.get_download(&record.id).unwrap().unwrap();
+
+        assert_eq!(cancelled.status, DownloadStatus::Cancelled);
+        assert_eq!(cancelled.downloaded_bytes, 0);
+        assert!(cancelled.temp_path.is_none());
+    }
+
+    #[test]
+    fn a_completed_download_cannot_be_reopened() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::open(directory.path().join("downloads.db")).unwrap();
+
+        let record = storage
+            .create_download("https://example.com/file.bin", 1_000)
+            .unwrap();
+        storage.mark_probing(&record.id).unwrap();
+        storage.mark_downloading(&record.id, 1_050).unwrap();
+        storage.mark_finalizing(&record.id).unwrap();
+        storage
+            .mark_completed(
+                &record.id,
+                &DownloadCompletion {
+                    resolved_url: "https://example.com/file.bin".to_owned(),
+                    filename: "file.bin".to_owned(),
+                    destination_path: "C:\\Downloads\\file.bin".to_owned(),
+                    mime_type: None,
+                    total_bytes: Some(4),
+                    downloaded_bytes: 4,
+                },
+                1_200,
+            )
+            .unwrap();
+
+        let error = storage.mark_probing(&record.id).unwrap_err();
+
+        assert!(matches!(
+            error,
+            StorageError::InvalidStatusTransition {
+                from: DownloadStatus::Completed,
+                to: DownloadStatus::Probing,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn a_failed_download_can_be_retried_with_the_same_identity() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::open(directory.path().join("downloads.db")).unwrap();
+
+        let record = storage
+            .create_download("https://example.com/file.bin", 1_000)
+            .unwrap();
+        storage.mark_probing(&record.id).unwrap();
+        storage.mark_downloading(&record.id, 1_050).unwrap();
+        storage
+            .mark_failed(&record.id, "download_error", "HTTP request failed")
+            .unwrap();
+
+        storage.mark_probing(&record.id).unwrap();
+
+        let retried = storage.get_download(&record.id).unwrap().unwrap();
+
+        assert_eq!(retried.id, record.id);
+        assert_eq!(retried.status, DownloadStatus::Probing);
+        assert!(retried.error_message.is_none());
+    }
+
+    #[test]
+    fn due_retries_are_listed_only_once_their_backoff_elapsed() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::open(directory.path().join("downloads.db")).unwrap();
+
+        let record = storage
+            .create_download("https://example.com/file.bin", 1_000)
+            .unwrap();
+        storage.mark_probing(&record.id).unwrap();
+        storage.mark_downloading(&record.id, 1_050).unwrap();
+        storage
+            .mark_retrying(&record.id, 1, 2_000, "network", "connection reset")
+            .unwrap();
+
+        assert!(storage.list_due_retries(1_999).unwrap().is_empty());
+
+        let due = storage.list_due_retries(2_000).unwrap();
+
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].id, record.id);
+        assert_eq!(due[0].attempts, 1);
+        assert_eq!(due[0].retry_at, Some(2_000));
     }
 
     #[test]

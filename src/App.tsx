@@ -29,6 +29,7 @@ import type {
 
 import type {
   DownloadListItem,
+  TaskAction,
   TransferMetricsMap,
 } from "./types/download";
 
@@ -160,6 +161,12 @@ function App() {
 
   const [liveMetrics, setLiveMetrics] =
     useState<TransferMetricsMap>({});
+
+  /// Ticks only while something is waiting to retry, so a quiet list costs
+  /// nothing.
+  const [nowSeconds, setNowSeconds] = useState(() =>
+    Math.floor(Date.now() / 1000),
+  );
 
   const startingTaskIds = useRef(new Set<string>());
 
@@ -304,6 +311,30 @@ function App() {
       void subscription.then((unlisten) => unlisten());
     };
   }, [upsertDownloads, updateDownloadProgress, clearLiveMetrics]);
+
+  const hasPendingRetry = useMemo(
+    () =>
+      downloads.some(
+        (item) =>
+          item.status.toLowerCase() === "retrying" &&
+          item.retryAt !== null,
+      ),
+    [downloads],
+  );
+
+  useEffect(() => {
+    if (!hasPendingRetry) {
+      return;
+    }
+
+    setNowSeconds(Math.floor(Date.now() / 1000));
+
+    const timer = window.setInterval(() => {
+      setNowSeconds(Math.floor(Date.now() / 1000));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [hasPendingRetry]);
 
   useEffect(() => {
     function handleEscape(event: KeyboardEvent) {
@@ -643,6 +674,53 @@ function App() {
     setModalOpen(false);
   }
 
+  /// Every task control goes straight to Rust, which owns the lifecycle and
+  /// refuses anything the state machine does not allow.
+  async function runTaskAction(
+    item: DownloadListItem,
+    action: TaskAction,
+  ) {
+    setContextMenu(null);
+
+    try {
+      switch (action) {
+        case "start":
+        case "retry":
+          await startPersistedTask(item.id);
+          break;
+
+        case "resume": {
+          const record = await invoke<DownloadListItem>(
+            "resume_download",
+            { id: item.id },
+          );
+          upsertDownloads([record]);
+          break;
+        }
+
+        case "pause": {
+          await invoke<DownloadListItem>("pause_download", {
+            id: item.id,
+          });
+          break;
+        }
+
+        case "cancel": {
+          const record = await invoke<DownloadListItem>(
+            "cancel_download",
+            { id: item.id },
+          );
+          upsertDownloads([record]);
+          break;
+        }
+      }
+    } catch (reason) {
+      console.error(`Could not ${action} task ${item.id}:`, reason);
+      setError(String(reason));
+      await refreshDownloads();
+    }
+  }
+
   /// Queue changes are applied by Rust; the UI only reports what failed.
   async function runQueueAction(
     action: () => Promise<unknown>,
@@ -888,6 +966,10 @@ function App() {
                     key={item.id}
                     item={item}
                     metrics={liveMetrics[item.id]}
+                    nowSeconds={nowSeconds}
+                    onAction={(target, action) =>
+                      void runTaskAction(target, action)
+                    }
                     queueName={
                       item.queueId
                         ? queueNames.get(item.queueId)
@@ -946,8 +1028,8 @@ function App() {
                   )
                 : undefined
             }
-            onStart={(id) =>
-              void startPersistedTask(id)
+            onAction={(target, action) =>
+              void runTaskAction(target, action)
             }
             onClose={() =>
               setSelectedDownloadId(null)
@@ -968,8 +1050,8 @@ function App() {
         onShowDetails={(id) =>
           setSelectedDownloadId(id)
         }
-        onStart={(id) =>
-          void startPersistedTask(id)
+        onAction={(target, action) =>
+          void runTaskAction(target, action)
         }
         onAssignQueue={(item, queueId) =>
           void assignToQueue(item, queueId)

@@ -4,13 +4,22 @@
   Image,
   Music,
   MoreHorizontal,
+  Pause,
+  Play,
+  RotateCcw,
   Video,
 } from "lucide-react";
 
 import type {
   DownloadListItem,
+  TaskAction,
   TransferMetrics,
 } from "../../types/download";
+
+import {
+  ACTION_LABELS,
+  primaryAction,
+} from "../../utils/taskActions";
 
 import {
   formatBytes,
@@ -25,7 +34,14 @@ type DownloadRowProps = {
   item: DownloadListItem;
   metrics?: TransferMetrics;
   queueName?: string;
+  /// Current wall clock in seconds, supplied by the page so a retry
+  /// countdown ticks without every row owning a timer.
+  nowSeconds?: number;
   selected?: boolean;
+  onAction?: (
+    item: DownloadListItem,
+    action: TaskAction,
+  ) => void;
   onSelect?: () => void;
   onContextMenu?: (
     item: DownloadListItem,
@@ -85,11 +101,21 @@ function statusLabel(status: string): string {
   return labels[status.toLowerCase()] ?? status;
 }
 
+const ACTION_ICONS = {
+  start: Play,
+  resume: Play,
+  pause: Pause,
+  retry: RotateCcw,
+  cancel: RotateCcw,
+} as const;
+
 export function DownloadRow({
   item,
   metrics,
   queueName,
+  nowSeconds,
   selected = false,
+  onAction,
   onSelect,
   onContextMenu,
 }: DownloadRowProps) {
@@ -125,6 +151,18 @@ export function DownloadRow({
   const remaining = isTransferring
     ? formatDuration(metrics?.etaSeconds ?? null)
     : null;
+
+  const retryIn =
+    status === "retrying" &&
+    item.retryAt !== null &&
+    nowSeconds !== undefined
+      ? formatDuration(
+          Math.max(0, item.retryAt - nowSeconds),
+        )
+      : null;
+
+  const action = primaryAction(item);
+  const ActionIcon = action ? ACTION_ICONS[action] : null;
 
   return (
     <article
@@ -210,6 +248,12 @@ export function DownloadRow({
             </span>
           ) : null}
 
+          {retryIn ? (
+            <span className="download-row__eta">
+              Attempt {item.attempts + 1} in {retryIn}
+            </span>
+          ) : null}
+
           {item.queueId ? (
             <span className="download-row__queue-hint">
               {queueName ?? item.queueId} · {item.priority.replace("_", " ")}
@@ -229,6 +273,21 @@ export function DownloadRow({
       </div>
 
       <div className="download-row__status-area">
+        {action && ActionIcon ? (
+          <button
+            type="button"
+            className="download-row__action"
+            aria-label={`${ACTION_LABELS[action]} download`}
+            title={ACTION_LABELS[action]}
+            onClick={(event) => {
+              event.stopPropagation();
+              onAction?.(item, action);
+            }}
+          >
+            <ActionIcon size={15} strokeWidth={2.2} />
+          </button>
+        ) : null}
+
         <button
           type="button"
           className="download-row__menu-button"

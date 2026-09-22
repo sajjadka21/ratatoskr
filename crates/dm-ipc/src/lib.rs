@@ -123,6 +123,11 @@ pub struct DownloadListItemResponse {
     pub created_at: i64,
     pub started_at: Option<i64>,
     pub completed_at: Option<i64>,
+    /// How many attempts this task has used, and when an automatic retry
+    /// becomes due, so the UI can explain a waiting task instead of showing
+    /// an unexplained pause.
+    pub attempts: u32,
+    pub retry_at: Option<i64>,
     pub error_code: Option<String>,
     pub error_message: Option<String>,
 }
@@ -238,6 +243,8 @@ mod tests {
             created_at: 1,
             started_at: None,
             completed_at: None,
+            attempts: 0,
+            retry_at: None,
             error_code: None,
             error_message: None,
         }

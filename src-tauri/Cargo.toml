@@ -29,3 +29,4 @@ dm-common = { version = "0.1.0", path = "../crates/dm-common" }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
 tauri-plugin-clipboard-manager = "2.3.3"
+tokio = { version = "1.53.1", features = ["time"] }

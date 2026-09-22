@@ -21,6 +21,10 @@ use tracing_subscriber::EnvFilter;
 
 const PROGRESS_EVENT_INTERVAL: Duration = Duration::from_millis(100);
 
+/// How often pending retries are checked. Retry delays are measured in
+/// seconds, so a coarse poll costs nothing and keeps the app idle.
+const RETRY_POLL_INTERVAL: Duration = Duration::from_secs(5);
+
 /// Application-level event names. Runner output is published to the whole
 /// window rather than through a per-invoke channel, so work that a command did
 /// not start — a queue resumed during startup, for example — still reaches the
@@ -102,6 +106,19 @@ impl EventPublisher {
             DOWNLOAD_TASK_EVENT,
             DownloadTaskEvent::updated(download_list_item_response(record)),
         );
+    }
+
+    /// Publishes whatever the row says now. Used when a transfer ended in a
+    /// state the caller does not hold, such as a failure that scheduled a
+    /// retry.
+    fn download_refreshed(&self, download_id: &str) {
+        let Some(state) = self.app.try_state::<AppState>() else {
+            return;
+        };
+
+        if let Ok(Some(record)) = state.storage.get_download(download_id) {
+            self.download_updated(record);
+        }
     }
 
     fn queue_event(&self, queue_id: &str, event: QueueRunnerEvent) {
@@ -239,6 +256,8 @@ fn download_list_item_response(record: DownloadRecord) -> DownloadListItemRespon
         created_at: record.created_at,
         started_at: record.started_at,
         completed_at: record.completed_at,
+        attempts: record.attempts,
+        retry_at: record.retry_at,
         error_code: record.error_code,
         error_message: record.error_message,
     }
@@ -458,6 +477,12 @@ fn remove_download(
         }
     }
 
+    // A paused or cancelled task can still own a partial file; removing the
+    // row must not leave it behind.
+    if let Some(temp_path) = record.temp_path.as_deref() {
+        let _ = std::fs::remove_file(temp_path);
+    }
+
     state
         .storage
         .remove_download_record(&id)
@@ -511,43 +536,171 @@ fn start_download(
         .download_dir()
         .map_err(|error| error.to_string())?;
 
-    let service = state.downloads.clone();
-    let storage = Arc::clone(&state.storage);
-    let claimed = service.claim_task(&id).map_err(|error| error.to_string())?;
+    let claimed = state
+        .downloads
+        .claim_task(&id)
+        .map_err(|error| error.to_string())?;
     let response = download_list_item_response(claimed);
-    let task_id = id.clone();
-    let publisher = EventPublisher::new(app);
+
+    info!(download_id = %id, "starting background download");
+
+    spawn_transfer(
+        state.downloads.clone(),
+        EventPublisher::new(app),
+        id,
+        destination_directory,
+    );
+
+    Ok(response)
+}
+
+/// Stops a running transfer and keeps what it has already written.
+#[tauri::command]
+fn pause_download(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<DownloadListItemResponse, String> {
+    info!(download_id = %id, "pausing download");
+
+    state
+        .downloads
+        .pause_task(&id)
+        .map(download_list_item_response)
+        .map_err(|error| error.to_string())
+}
+
+/// Continues a task from whatever it already transferred.
+///
+/// A task that belongs to a queue goes back to its queue so the runner keeps
+/// owning it; anything else starts straight away.
+#[tauri::command]
+fn resume_download(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<DownloadListItemResponse, String> {
+    let record = state
+        .storage
+        .get_download(&id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("download not found: {id}"))?;
+
+    if let Some(queue_id) = record.queue_id.clone() {
+        info!(download_id = %id, "returning download to its queue");
+
+        return state
+            .queues
+            .enqueue_task(&id, &queue_id, Some(record.priority))
+            .map(download_list_item_response)
+            .map_err(|error| error.to_string());
+    }
+
+    start_download(app, state, id)
+}
+
+/// Ends a task and discards its partial transfer.
+#[tauri::command]
+async fn cancel_download(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<DownloadListItemResponse, String> {
+    info!(download_id = %id, "cancelling download");
+
+    state
+        .downloads
+        .cancel_task(&id)
+        .await
+        .map(download_list_item_response)
+        .map_err(|error| error.to_string())
+}
+
+/// Restarts tasks whose retry backoff has elapsed.
+///
+/// Queued work is handed back to its queue so per-queue concurrency still
+/// applies; everything else is started directly.
+async fn run_retry_scheduler(
+    app: AppHandle,
+    downloads: DownloadService,
+    queues: QueueService,
+    publisher: EventPublisher,
+    destination_directory: std::path::PathBuf,
+) {
+    loop {
+        tokio::time::sleep(RETRY_POLL_INTERVAL).await;
+
+        let due = match downloads.due_retries() {
+            Ok(due) => due,
+            Err(error) => {
+                warn!(error = %error, "could not read pending retries");
+                continue;
+            }
+        };
+
+        for task in due {
+            if let Some(queue_id) = task.queue_id.clone() {
+                match queues.enqueue_task(&task.id, &queue_id, Some(task.priority)) {
+                    Ok(record) => publisher.download_updated(record),
+                    Err(error) => {
+                        warn!(download_id = %task.id, error = %error, "could not requeue a retry")
+                    }
+                }
+
+                continue;
+            }
+
+            if let Err(error) = downloads.claim_task(&task.id) {
+                warn!(download_id = %task.id, error = %error, "could not claim a retry");
+                continue;
+            }
+
+            info!(download_id = %task.id, attempt = task.attempts, "retrying download");
+
+            spawn_transfer(
+                downloads.clone(),
+                publisher.clone(),
+                task.id,
+                destination_directory.clone(),
+            );
+        }
+
+        // Nothing else keeps the handle alive; drop out if the app is gone.
+        if app.webview_windows().is_empty() {
+            return;
+        }
+    }
+}
+
+/// Runs one task's transfer in the background and publishes what happens.
+fn spawn_transfer(
+    downloads: DownloadService,
+    publisher: EventPublisher,
+    download_id: String,
+    destination_directory: std::path::PathBuf,
+) {
     let progress_publisher = publisher.clone();
 
-    info!(download_id = %task_id, "starting background download");
-
     tauri::async_runtime::spawn(async move {
-        let result = service
+        let result = downloads
             .execute_claimed_task_with_progress(
-                &task_id,
+                &download_id,
                 &destination_directory,
-                move |download_id, progress| {
-                    progress_publisher.download_progress(download_id, progress);
+                move |id, progress| {
+                    progress_publisher.download_progress(id, progress);
                 },
             )
             .await;
 
         match result {
             Ok(record) => {
-                info!(download_id = %task_id, "background download completed");
+                info!(download_id = %download_id, status = %record.status, "transfer finished");
                 publisher.download_updated(record);
             }
-            Err(_) => {
-                warn!(download_id = %task_id, "background download failed");
-
-                if let Ok(Some(record)) = storage.get_download(&task_id) {
-                    publisher.download_updated(record);
-                }
+            Err(error) => {
+                warn!(download_id = %download_id, error = %error, "transfer failed");
+                publisher.download_refreshed(&download_id);
             }
         }
     });
-
-    Ok(response)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -597,7 +750,7 @@ pub fn run() {
             app.manage(AppState {
                 core: CoreService::new(),
                 storage,
-                downloads,
+                downloads: downloads.clone(),
                 queues: queues.clone(),
             });
 
@@ -614,6 +767,14 @@ pub fn run() {
                 );
             }
 
+            tauri::async_runtime::spawn(run_retry_scheduler(
+                app.handle().clone(),
+                downloads.clone(),
+                queues.clone(),
+                publisher.clone(),
+                destination_directory.clone(),
+            ));
+
             info!("application state initialized");
 
             Ok(())
@@ -627,6 +788,9 @@ pub fn run() {
             remove_download,
             create_download_task,
             start_download,
+            pause_download,
+            resume_download,
+            cancel_download,
             list_queues,
             create_queue,
             enqueue_download_task,

@@ -226,3 +226,106 @@ Phase 2 review in `docs/phase2-review.md` before Phase 3 builds on them.
   without task-level pause would be indistinguishable from stop.
 - A drained running queue still stops itself. Documented as deliberate: work
   added afterwards waits for an explicit Start.
+
+## Phase 3 - Pause / Resume / Recovery
+
+Status: Complete
+
+### Plan
+
+1. Extend the canonical state machine with pause, resume, cancel, retry and
+   restart, and make storage derive every update guard from it.
+2. Schema version 3: persistent attempt count and retry time.
+3. Replace the single-shot downloader with probe + resumable transfer, driven
+   by per-task control handles.
+4. Validate remote identity before reusing partial bytes.
+5. Classify failures and retry only the retryable ones, with bounded
+   exponential backoff and jitter.
+6. Tauri commands, a retry scheduler, and UI controls.
+
+### Implemented
+
+- Canonical transitions now include pause, resume, cancel, retry and restart.
+  `DownloadStatus::sources_of` feeds every storage update guard, so
+  `can_transition_to` is the only place the rules exist; before this it was
+  only exercised by tests while each SQL statement carried its own status list.
+- Direct start, resume and retry share one claim path that refuses `queued`
+  tasks, so queued work still starts only through its queue runner.
+- Schema version 3 adds `attempts` and `retry_at` without touching existing
+  rows. Migration tests are version-agnostic.
+- Probing: HEAD is read when it answers, but range support is only accepted
+  after a `bytes=0-0` request returns `206` with a `Content-Range`. The total
+  size comes from `Content-Range` when ranged, never from the one-byte body.
+- The transfer plan (resolved URL, filename, destination, temp path, size,
+  ETag, Last-Modified, range support) is persisted before any byte is written.
+- Destination and partial file are reserved together by creating the partial
+  file exclusively. This fixed a real race found by the concurrency tests:
+  two transfers with the same filename could previously plan the same path.
+- Resume rules (`resume::plan_resume`): trust the file over the record; refuse
+  to append when ETag or Last-Modified changed, or when the size changed;
+  accept an unchanged size when the server offers no validator; restart when
+  the server cannot serve ranges; finalize directly when every byte is
+  already on disk. A server that answers a ranged request with `200` is
+  detected at transfer time and the file is rewritten from zero.
+- Restarts that throw away bytes record a `restarted` notice explaining why.
+- Pause and cancel reach a running transfer through `TaskControl` and take
+  effect between chunks. Pause keeps the partial file; cancel deletes it.
+- Startup recovery now keeps partial transfers: a queued task returns to its
+  queue and continues from its partial file, a non-queued one becomes paused.
+- A body that ends early never becomes a finished file.
+- Retry classification: 408/425/429/503/5xx, timeouts, connection errors and
+  truncated bodies retry; 401/403/404 and other 4xx, invalid URLs, permission
+  and disk-full errors, and user stops do not. Default budget is five attempts
+  with 2s exponential backoff, capped at five minutes, plus up to 25% jitter.
+- A retry scheduler in the app polls every five seconds; queued retries go
+  back to their queue so its concurrency still applies.
+- Removing a paused or cancelled task also deletes its partial file.
+- UI: one primary control per row (Pause, Resume, Start or Retry), full
+  action lists in the context menu and details panel derived from the same
+  rules, a retry countdown, and attempt count in details.
+
+### Tests added/updated
+
+- Canonical rules: pause/resume, retry from terminal states, completed is
+  final, `sources_of` matches `can_transition_to`.
+- Storage: partial-transfer recovery, pause/resume byte preservation,
+  cancel clears the partial, completed cannot reopen, failed retries keep
+  identity, due retries respect backoff.
+- Engine, against a real local HTTP server (`dm-core/src/testing.rs`):
+  verified range probing, no-range probing, whole transfer, resume from disk,
+  range ignored by the server, interrupted body, pause mid-transfer, pause then
+  finish, already-complete finalize, destination collision.
+- Resume planner: validators, size change, missing partial, record ahead of
+  file, already complete.
+- Retry policy: classification of statuses, IO errors and stops; backoff
+  growth, cap, jitter bounds, bounded budget.
+- Service: pause then resume produces the exact original file, cancel deletes
+  the partial, changed source is re-downloaded rather than appended to, crash
+  recovery resumes from the partial file, 404 fails permanently, 503 schedules
+  a retry, the retry budget ends in failure.
+- Queue tests moved onto the shared test server and now measure real overlap
+  of body transfers.
+
+### Quality gate
+
+- `cargo fmt --all` - passed
+- `cargo test --workspace` - passed (112 tests, up from 60)
+- `cargo check --workspace` - passed
+- `cargo clippy --workspace --all-targets -- -D warnings` - passed
+- `cargo build -p tauri-app` - passed
+- `npm run build` - passed
+- `npm test` - passed (21 tests)
+
+### Known limitations carried forward
+
+- Transfers are still single-stream; segmentation is Phase 4.
+- Queue pause/resume at the queue level is still absent; tasks can now be
+  paused individually.
+- Retry after connectivity returns is time-based only; there is no network
+  change detection.
+- The app was built but not launched against a live server in this phase;
+  runtime behaviour is covered by the engine's local HTTP integration tests.
+
+### Phase boundary
+
+Phase 3 is complete. Phase 4 has not started.

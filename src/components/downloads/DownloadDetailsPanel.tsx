@@ -7,9 +7,12 @@
   FolderOpen,
   Gauge,
   Link2,
+  Pause,
   Play,
+  RotateCcw,
   Timer,
   X,
+  XCircle,
 } from "lucide-react";
 
 import {
@@ -24,8 +27,14 @@ import {
 
 import type {
   DownloadListItem,
+  TaskAction,
   TransferMetrics,
 } from "../../types/download";
+
+import {
+  ACTION_LABELS,
+  availableActions,
+} from "../../utils/taskActions";
 
 import {
   formatBytes,
@@ -40,8 +49,19 @@ type DownloadDetailsPanelProps = {
   metrics?: TransferMetrics;
   queueName?: string;
   onClose: () => void;
-  onStart: (id: string) => void;
+  onAction: (
+    item: DownloadListItem,
+    action: TaskAction,
+  ) => void;
 };
+
+const ACTION_ICONS = {
+  start: Play,
+  resume: Play,
+  pause: Pause,
+  retry: RotateCcw,
+  cancel: XCircle,
+} as const;
 
 type CopiedField =
   | "url"
@@ -79,7 +99,7 @@ export function DownloadDetailsPanel({
   metrics,
   queueName,
   onClose,
-  onStart,
+  onAction,
 }: DownloadDetailsPanelProps) {
   const [copiedField, setCopiedField] =
     useState<CopiedField>(null);
@@ -246,15 +266,20 @@ export function DownloadDetailsPanel({
         </div>
 
         <div className="download-details__actions">
-          {status === "created" ? (
-            <button
-              type="button"
-              onClick={() => onStart(item.id)}
-            >
-              <Play size={14} />
-              Start Download
-            </button>
-          ) : null}
+          {availableActions(item).map((action) => {
+            const ActionIcon = ACTION_ICONS[action];
+
+            return (
+              <button
+                key={action}
+                type="button"
+                onClick={() => onAction(item, action)}
+              >
+                <ActionIcon size={14} />
+                {ACTION_LABELS[action]}
+              </button>
+            );
+          })}
 
           <button
             type="button"
@@ -372,6 +397,13 @@ export function DownloadDetailsPanel({
             <dt>Completed</dt>
             <dd>{formatDate(item.completedAt)}</dd>
           </div>
+
+          {item.attempts > 0 ? (
+            <div>
+              <dt>Attempts</dt>
+              <dd>{item.attempts}</dd>
+            </div>
+          ) : null}
 
           {item.queueId ? (
             <div>

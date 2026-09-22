@@ -7,9 +7,12 @@
   Layers3,
   Link2,
   ListX,
+  Pause,
   Play,
+  RotateCcw,
   SignalHigh,
   Trash2,
+  XCircle,
 } from "lucide-react";
 
 import {
@@ -28,7 +31,13 @@ import type {
   DownloadListItem,
   DownloadPriority,
   DownloadQueue,
+  TaskAction,
 } from "../../types/download";
+
+import {
+  ACTION_LABELS,
+  availableActions,
+} from "../../utils/taskActions";
 
 import "./DownloadContextMenu.css";
 
@@ -39,7 +48,10 @@ type DownloadContextMenuProps = {
   y: number;
   onClose: () => void;
   onShowDetails: (id: string) => void;
-  onStart: (id: string) => void;
+  onAction: (
+    item: DownloadListItem,
+    action: TaskAction,
+  ) => void;
   onAssignQueue: (
     item: DownloadListItem,
     queueId: string,
@@ -55,6 +67,14 @@ type DownloadContextMenuProps = {
     item: DownloadListItem,
   ) => void;
 };
+
+const ACTION_ICONS = {
+  start: Play,
+  resume: Play,
+  pause: Pause,
+  retry: RotateCcw,
+  cancel: XCircle,
+} as const;
 
 /// Which expandable group is open. Only one can be open at a time so the menu
 /// never grows past the window on a small screen.
@@ -77,7 +97,7 @@ export function DownloadContextMenu({
   y,
   onClose,
   onShowDetails,
-  onStart,
+  onAction,
   onAssignQueue,
   onRemoveFromQueue,
   onChangePriority,
@@ -190,7 +210,15 @@ export function DownloadContextMenu({
     "cancelled",
   ].includes(status);
 
-  const canQueue = ["created", "queued"].includes(status);
+  const canQueue = [
+    "created",
+    "queued",
+    "paused",
+    "failed",
+    "cancelled",
+  ].includes(status);
+
+  const actions = availableActions(item);
 
   async function handleOpenFile() {
     if (!destinationPath) return;
@@ -250,19 +278,26 @@ export function DownloadContextMenu({
       }}
       role="menu"
     >
-      {status === "created" ? (
+      {actions.length > 0 ? (
         <>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              onStart(item.id);
-              onClose();
-            }}
-          >
-            <Play size={15} />
-            <span>Start Download</span>
-          </button>
+          {actions.map((action) => {
+            const ActionIcon = ACTION_ICONS[action];
+
+            return (
+              <button
+                key={action}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onAction(item, action);
+                  onClose();
+                }}
+              >
+                <ActionIcon size={15} />
+                <span>{ACTION_LABELS[action]}</span>
+              </button>
+            );
+          })}
 
           <div className="download-context-menu__divider" />
         </>

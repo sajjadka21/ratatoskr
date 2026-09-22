@@ -33,12 +33,25 @@ impl DownloadStatus {
     ];
 
     /// Statuses whose row can be deleted from history. A task that an executor
-    /// may still be writing to is never removable.
+    /// may still be writing to is never removable; a paused one is, because
+    /// its executor has released the file.
     pub const fn is_removable(self) -> bool {
         matches!(
             self,
-            Self::Created | Self::Queued | Self::Completed | Self::Failed | Self::Cancelled
+            Self::Created
+                | Self::Queued
+                | Self::Paused
+                | Self::Completed
+                | Self::Failed
+                | Self::Cancelled
         )
+    }
+
+    /// Whether an executor owns this task right now. Used to decide whether a
+    /// pause or cancel has to reach a running transfer or only has to be
+    /// persisted.
+    pub const fn is_executing(self) -> bool {
+        matches!(self, Self::Probing | Self::Downloading | Self::Finalizing)
     }
 
     pub const fn as_str(self) -> &'static str {
@@ -64,12 +77,18 @@ impl DownloadStatus {
         matches!(self, Self::Probing | Self::Downloading | Self::Finalizing)
     }
 
-    /// The state an orphaned task returns to after a restart. A task that
-    /// belongs to a queue goes back to its queue; anything else goes back to
-    /// the user as a created task.
-    pub const fn restart_recovery_status(has_queue: bool) -> Self {
+    /// The state an orphaned task returns to after a restart.
+    ///
+    /// A task that belongs to a queue goes back to its queue, where its runner
+    /// picks it up and continues from whatever it had already transferred. A
+    /// task with partial bytes on disk becomes paused, so the user resumes it
+    /// rather than losing the transfer. Anything else goes back to the user as
+    /// a created task.
+    pub const fn restart_recovery_status(has_queue: bool, has_partial_transfer: bool) -> Self {
         if has_queue {
             Self::Queued
+        } else if has_partial_transfer {
+            Self::Paused
         } else {
             Self::Created
         }
@@ -78,12 +97,42 @@ impl DownloadStatus {
     pub const fn can_transition_to(self, next: Self) -> bool {
         matches!(
             (self, next),
-            (Self::Created, Self::Probing | Self::Queued)
-                | (Self::Probing, Self::Downloading | Self::Failed)
-                | (Self::Queued, Self::Created | Self::Probing)
-                | (Self::Downloading, Self::Finalizing | Self::Failed)
+            (Self::Created, Self::Probing | Self::Queued | Self::Cancelled)
+                | (
+                    Self::Probing,
+                    Self::Downloading
+                        | Self::Paused
+                        | Self::Retrying
+                        | Self::Failed
+                        | Self::Cancelled
+                )
+                | (Self::Queued, Self::Created | Self::Probing | Self::Cancelled)
+                | (
+                    Self::Downloading,
+                    Self::Finalizing | Self::Paused | Self::Retrying | Self::Failed
+                        | Self::Cancelled
+                )
+                | (Self::Paused, Self::Probing | Self::Queued | Self::Cancelled)
+                | (
+                    Self::Retrying,
+                    Self::Probing | Self::Queued | Self::Failed | Self::Cancelled
+                )
                 | (Self::Finalizing, Self::Completed | Self::Failed)
+                // Retry and restart re-enter the lifecycle from a terminal
+                // state; the task keeps its identity either way.
+                | (Self::Failed, Self::Probing | Self::Queued)
+                | (Self::Cancelled, Self::Probing | Self::Queued)
         )
+    }
+
+    /// Every status that may legally become `next`. Storage builds its update
+    /// guards from this, so the canonical machine is the only place the rules
+    /// exist.
+    pub fn sources_of(next: Self) -> Vec<Self> {
+        Self::ALL
+            .into_iter()
+            .filter(|from| from.can_transition_to(next))
+            .collect()
     }
 }
 
@@ -277,8 +326,30 @@ pub struct DownloadRecord {
     pub created_at: i64,
     pub started_at: Option<i64>,
     pub completed_at: Option<i64>,
+    /// How many times this task has been attempted. Reset when the user
+    /// starts it again by hand, so an automatic retry budget cannot be
+    /// exhausted by history.
+    pub attempts: u32,
+    /// When an automatically retrying task becomes eligible again.
+    pub retry_at: Option<i64>,
     pub error_code: Option<String>,
     pub error_message: Option<String>,
+}
+
+/// Everything probing learned about a source, persisted before any bytes are
+/// written. A restart reads this back to decide whether the partial file on
+/// disk still belongs to the same remote content.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TransferPlan {
+    pub resolved_url: String,
+    pub filename: String,
+    pub destination_path: String,
+    pub temp_path: String,
+    pub mime_type: Option<String>,
+    pub total_bytes: Option<u64>,
+    pub etag: Option<String>,
+    pub last_modified: Option<String>,
+    pub range_supported: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -375,27 +446,80 @@ mod tests {
     fn removable_statuses_never_overlap_executor_owned_statuses() {
         for status in DownloadStatus::ALL {
             assert!(
-                !(status.is_removable() && status.is_orphaned_by_restart()),
-                "{status} cannot be both removable and executor-owned"
+                !(status.is_removable() && status.is_executing()),
+                "{status} cannot be both removable and owned by an executor"
             );
         }
 
         assert!(DownloadStatus::Created.is_removable());
         assert!(DownloadStatus::Queued.is_removable());
+        assert!(
+            DownloadStatus::Paused.is_removable(),
+            "a paused task has released its file"
+        );
         assert!(!DownloadStatus::Downloading.is_removable());
-        assert!(!DownloadStatus::Paused.is_removable());
     }
 
     #[test]
-    fn restart_recovery_returns_queued_tasks_to_their_queue() {
+    fn restart_recovery_keeps_partial_transfers_resumable() {
         assert_eq!(
-            DownloadStatus::restart_recovery_status(true),
+            DownloadStatus::restart_recovery_status(true, false),
             DownloadStatus::Queued
         );
         assert_eq!(
-            DownloadStatus::restart_recovery_status(false),
+            DownloadStatus::restart_recovery_status(true, true),
+            DownloadStatus::Queued,
+            "a queued task resumes through its runner"
+        );
+        assert_eq!(
+            DownloadStatus::restart_recovery_status(false, true),
+            DownloadStatus::Paused,
+            "partial bytes must survive as something the user can resume"
+        );
+        assert_eq!(
+            DownloadStatus::restart_recovery_status(false, false),
             DownloadStatus::Created
         );
+    }
+
+    #[test]
+    fn pause_and_resume_are_legal_in_both_directions() {
+        assert!(DownloadStatus::Downloading.can_transition_to(DownloadStatus::Paused));
+        assert!(DownloadStatus::Paused.can_transition_to(DownloadStatus::Probing));
+        assert!(DownloadStatus::Paused.can_transition_to(DownloadStatus::Queued));
+    }
+
+    #[test]
+    fn terminal_states_can_be_retried_but_never_completed_directly() {
+        assert!(DownloadStatus::Failed.can_transition_to(DownloadStatus::Probing));
+        assert!(DownloadStatus::Cancelled.can_transition_to(DownloadStatus::Probing));
+        assert!(!DownloadStatus::Completed.can_transition_to(DownloadStatus::Probing));
+        assert!(!DownloadStatus::Failed.can_transition_to(DownloadStatus::Completed));
+    }
+
+    #[test]
+    fn a_completed_download_is_final() {
+        for next in DownloadStatus::ALL {
+            assert!(
+                !DownloadStatus::Completed.can_transition_to(next),
+                "completed must never move to {next}"
+            );
+        }
+    }
+
+    #[test]
+    fn transition_sources_match_the_canonical_rules() {
+        for next in DownloadStatus::ALL {
+            let sources = DownloadStatus::sources_of(next);
+
+            for from in DownloadStatus::ALL {
+                assert_eq!(
+                    sources.contains(&from),
+                    from.can_transition_to(next),
+                    "{from} -> {next}"
+                );
+            }
+        }
     }
 
     #[test]

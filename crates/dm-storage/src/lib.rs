@@ -11,7 +11,7 @@ mod downloads;
 mod queues;
 mod settings;
 
-const LATEST_SCHEMA_VERSION: i32 = 2;
+const LATEST_SCHEMA_VERSION: i32 = 3;
 
 const MIGRATION_V1: &str = r#"
 BEGIN IMMEDIATE;
@@ -125,6 +125,22 @@ CREATE INDEX idx_downloads_queue
     ON downloads(queue_id, queue_position);
 
 PRAGMA user_version = 2;
+
+COMMIT;
+"#;
+
+const MIGRATION_V3: &str = r#"
+BEGIN IMMEDIATE;
+
+ALTER TABLE downloads ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0
+    CHECK (attempts >= 0);
+
+ALTER TABLE downloads ADD COLUMN retry_at INTEGER;
+
+CREATE INDEX idx_downloads_retry_at
+    ON downloads(retry_at);
+
+PRAGMA user_version = 3;
 
 COMMIT;
 "#;
@@ -288,12 +304,18 @@ fn run_migrations(connection: &Connection) -> Result<()> {
         connection.execute_batch(MIGRATION_V2)?;
     }
 
+    let version: i32 = connection.query_row("PRAGMA user_version;", [], |row| row.get(0))?;
+
+    if version == 2 {
+        connection.execute_batch(MIGRATION_V3)?;
+    }
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{MIGRATION_V1, Storage};
+    use super::{LATEST_SCHEMA_VERSION, MIGRATION_V1, Storage};
     use rusqlite::Connection;
     use tempfile::tempdir;
 
@@ -304,7 +326,7 @@ mod tests {
 
         let storage = Storage::open(&database_path).unwrap();
 
-        assert_eq!(storage.schema_version().unwrap(), 2);
+        assert_eq!(storage.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
         assert!(storage.table_exists("downloads").unwrap());
         assert!(storage.table_exists("settings").unwrap());
         assert!(storage.table_exists("queues").unwrap());
@@ -318,12 +340,12 @@ mod tests {
 
         {
             let storage = Storage::open(&database_path).unwrap();
-            assert_eq!(storage.schema_version().unwrap(), 2);
+            assert_eq!(storage.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
         }
 
         {
             let storage = Storage::open(&database_path).unwrap();
-            assert_eq!(storage.schema_version().unwrap(), 2);
+            assert_eq!(storage.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
             assert!(storage.health_check().is_ok());
         }
     }
@@ -346,7 +368,7 @@ mod tests {
 
         let storage = Storage::open(&database_path).unwrap();
 
-        assert_eq!(storage.schema_version().unwrap(), 2);
+        assert_eq!(storage.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
         assert_eq!(
             storage
                 .get_download("existing-id")

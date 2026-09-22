@@ -177,12 +177,20 @@ impl Storage {
             [queue_id],
             |row| row.get(0),
         )?;
+        // Anything the canonical machine allows into a queue may be queued:
+        // a created task, one the user paused, and one that failed or was
+        // cancelled and is being sent back for another attempt.
         let changed = transaction.execute(
-            r#"
-            UPDATE downloads
-            SET status = 'queued', queue_id = ?2, priority = ?3, queue_position = ?4
-            WHERE id = ?1 AND status = 'created';
-            "#,
+            &format!(
+                r#"
+                UPDATE downloads
+                SET status = 'queued', queue_id = ?2, priority = ?3, queue_position = ?4
+                WHERE id = ?1 AND status IN ({sources});
+                "#,
+                sources = crate::downloads::status_in_clause(
+                    &dm_common::DownloadStatus::sources_of(dm_common::DownloadStatus::Queued)
+                ),
+            ),
             params![download_id, queue_id, priority.as_str(), position],
         )?;
 

@@ -429,56 +429,135 @@ impl Drop for ActiveRunnerGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::{ServerBehaviour, TestServer};
     use dm_common::{DownloadPriority, DownloadStatus};
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::tempdir;
-    use tokio::{
-        io::{AsyncReadExt, AsyncWriteExt},
-        net::TcpListener,
-        sync::oneshot,
-        time::{Duration, sleep},
-    };
+    use tokio::time::{Duration, sleep};
 
-    #[tokio::test]
-    async fn queue_runner_preserves_ids_and_honors_per_host_limit() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let active = Arc::new(AtomicUsize::new(0));
-        let maximum = Arc::new(AtomicUsize::new(0));
-        let server = spawn_test_server(listener, 2, Arc::clone(&active), Arc::clone(&maximum));
+    /// Long enough that transfers overlap observably, short enough to keep the
+    /// suite quick.
+    fn slow_server() -> ServerBehaviour {
+        ServerBehaviour {
+            chunk_size: 4,
+            chunk_delay: Some(Duration::from_millis(25)),
+            ..ServerBehaviour::default()
+        }
+    }
+
+    struct Harness {
+        _root: tempfile::TempDir,
+        destination: PathBuf,
+        storage: Arc<Storage>,
+        downloads: DownloadService,
+        queues: QueueService,
+    }
+
+    fn harness() -> Harness {
         let root = tempdir().unwrap();
         let storage = Arc::new(Storage::open(root.path().join("downloads.db")).unwrap());
         let downloads = DownloadService::new(Arc::clone(&storage)).unwrap();
         let queues = QueueService::new(Arc::clone(&storage), downloads.clone());
-        let queue = queues
+        let destination = root.path().join("files");
+
+        Harness {
+            _root: root,
+            destination,
+            storage,
+            downloads,
+            queues,
+        }
+    }
+
+    async fn await_status(storage: &Storage, download_id: &str, expected: DownloadStatus) {
+        for _ in 0..400 {
+            if storage.get_download(download_id).unwrap().unwrap().status == expected {
+                return;
+            }
+
+            sleep(Duration::from_millis(10)).await;
+        }
+
+        let actual = storage.get_download(download_id).unwrap().unwrap().status;
+        panic!("{download_id} never reached {expected}; it is {actual}");
+    }
+
+    /// Waits until a queued task has actually been claimed by its runner.
+    async fn await_started(storage: &Storage, download_id: &str) {
+        for _ in 0..400 {
+            if storage.get_download(download_id).unwrap().unwrap().status != DownloadStatus::Queued
+            {
+                return;
+            }
+
+            sleep(Duration::from_millis(10)).await;
+        }
+
+        panic!("{download_id} was never claimed by its queue runner");
+    }
+
+    #[tokio::test]
+    async fn queue_runner_preserves_ids_and_honors_per_host_limit() {
+        let server = TestServer::start(slow_server()).await;
+        let harness = harness();
+        let queue = harness
+            .queues
             .create_queue("Host limited", 2, Some(1), DownloadPriority::Normal)
             .unwrap();
-        let first = downloads
-            .create_task(&format!("http://{address}/first.bin"))
+
+        let first = harness
+            .downloads
+            .create_task(&server.url("first.bin"))
             .unwrap();
-        let second = downloads
-            .create_task(&format!("http://{address}/second.bin"))
+        let second = harness
+            .downloads
+            .create_task(&server.url("second.bin"))
             .unwrap();
-        queues.enqueue_task(&first.id, &queue.id, None).unwrap();
-        queues.enqueue_task(&second.id, &queue.id, None).unwrap();
+
+        harness
+            .queues
+            .enqueue_task(&first.id, &queue.id, None)
+            .unwrap();
+        harness
+            .queues
+            .enqueue_task(&second.id, &queue.id, None)
+            .unwrap();
 
         assert!(
-            storage
+            harness
+                .storage
                 .list_downloads()
                 .unwrap()
                 .iter()
                 .all(|task| task.status == DownloadStatus::Queued)
         );
 
-        let stopped = queues
-            .run_queue(&queue.id, root.path().join("files"), |_| {})
+        assert_eq!(
+            harness
+                .storage
+                .get_queue(&queue.id)
+                .unwrap()
+                .unwrap()
+                .max_concurrent_per_host,
+            Some(1),
+            "the per-host cap must be persisted"
+        );
+
+        let stopped = harness
+            .queues
+            .run_queue(&queue.id, &harness.destination, |_| {})
             .await
             .unwrap();
-        server.await.unwrap();
 
         assert_eq!(stopped.state, QueueState::Stopped);
-        assert_eq!(maximum.load(Ordering::SeqCst), 1);
-        let records = storage.list_downloads().unwrap();
+        assert_eq!(
+            server.peak_concurrent_bodies(),
+            1,
+            "the per-host cap must hold even though the queue allows two (requests: {}, ranged: {})",
+            server.request_count(),
+            server.ranged_request_count()
+        );
+
+        let records = harness.storage.list_downloads().unwrap();
         assert_eq!(records.len(), 2);
         assert!(
             records
@@ -491,71 +570,61 @@ mod tests {
 
     #[tokio::test]
     async fn queue_runner_honors_queue_concurrency() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let active = Arc::new(AtomicUsize::new(0));
-        let maximum = Arc::new(AtomicUsize::new(0));
-        let server = spawn_test_server(listener, 2, Arc::clone(&active), Arc::clone(&maximum));
-        let root = tempdir().unwrap();
-        let storage = Arc::new(Storage::open(root.path().join("downloads.db")).unwrap());
-        let downloads = DownloadService::new(Arc::clone(&storage)).unwrap();
-        let queues = QueueService::new(Arc::clone(&storage), downloads.clone());
-        let queue = queues
+        let server = TestServer::start(slow_server()).await;
+        let harness = harness();
+        let queue = harness
+            .queues
             .create_queue("Serial", 1, None, DownloadPriority::Normal)
             .unwrap();
 
         for path in ["first.bin", "second.bin"] {
-            let task = downloads
-                .create_task(&format!("http://{address}/{path}"))
+            let task = harness.downloads.create_task(&server.url(path)).unwrap();
+            harness
+                .queues
+                .enqueue_task(&task.id, &queue.id, None)
                 .unwrap();
-            queues.enqueue_task(&task.id, &queue.id, None).unwrap();
         }
 
-        queues
-            .run_queue(&queue.id, root.path().join("files"), |_| {})
+        harness
+            .queues
+            .run_queue(&queue.id, &harness.destination, |_| {})
             .await
             .unwrap();
-        server.await.unwrap();
 
-        assert_eq!(maximum.load(Ordering::SeqCst), 1);
+        assert_eq!(server.peak_concurrent_bodies(), 1);
+        assert!(
+            harness
+                .storage
+                .list_downloads()
+                .unwrap()
+                .iter()
+                .all(|task| task.status == DownloadStatus::Completed)
+        );
     }
 
     #[tokio::test]
     async fn stopping_queue_prevents_the_next_task_from_starting() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let (accepted_tx, accepted_rx) = oneshot::channel();
-        let (release_tx, release_rx) = oneshot::channel();
-        let server = tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let mut request = [0_u8; 2048];
-            let _ = socket.read(&mut request).await.unwrap();
-            accepted_tx.send(()).unwrap();
-            release_rx.await.unwrap();
-            socket
-                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\ndone")
-                .await
-                .unwrap();
-            socket.shutdown().await.unwrap();
-        });
-        let root = tempdir().unwrap();
-        let storage = Arc::new(Storage::open(root.path().join("downloads.db")).unwrap());
-        let downloads = DownloadService::new(Arc::clone(&storage)).unwrap();
-        let queues = QueueService::new(Arc::clone(&storage), downloads.clone());
-        let queue = queues
+        let server = TestServer::start(slow_server()).await;
+        let harness = harness();
+        let queue = harness
+            .queues
             .create_queue("Stoppable", 1, None, DownloadPriority::Normal)
             .unwrap();
 
+        let mut ids = Vec::new();
+
         for path in ["first.bin", "second.bin"] {
-            let task = downloads
-                .create_task(&format!("http://{address}/{path}"))
+            let task = harness.downloads.create_task(&server.url(path)).unwrap();
+            harness
+                .queues
+                .enqueue_task(&task.id, &queue.id, None)
                 .unwrap();
-            queues.enqueue_task(&task.id, &queue.id, None).unwrap();
+            ids.push(task.id);
         }
 
-        let runner_service = queues.clone();
+        let runner_service = harness.queues.clone();
         let queue_id = queue.id.clone();
-        let destination = root.path().join("files");
+        let destination = harness.destination.clone();
         let runner = tokio::spawn(async move {
             runner_service
                 .run_queue(&queue_id, destination, |_| {})
@@ -563,45 +632,42 @@ mod tests {
                 .unwrap()
         });
 
-        accepted_rx.await.unwrap();
-        let stopped = queues.stop_queue(&queue.id).unwrap();
+        await_status(&harness.storage, &ids[0], DownloadStatus::Downloading).await;
+
+        let stopped = harness.queues.stop_queue(&queue.id).unwrap();
         assert_eq!(stopped.state, QueueState::Stopped);
-        release_tx.send(()).unwrap();
-        server.await.unwrap();
         assert_eq!(runner.await.unwrap().state, QueueState::Stopped);
 
-        let records = storage.list_downloads().unwrap();
+        let records = harness.storage.list_downloads().unwrap();
+
         assert_eq!(
             records
                 .iter()
                 .filter(|task| task.status == DownloadStatus::Completed)
                 .count(),
-            1
+            1,
+            "the transfer already running is allowed to finish"
         );
         assert_eq!(
             records
                 .iter()
                 .filter(|task| task.status == DownloadStatus::Queued)
                 .count(),
-            1
+            1,
+            "a stopped queue starts nothing new"
         );
     }
 
     #[tokio::test]
     async fn concurrent_queues_share_the_global_download_limit() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let active = Arc::new(AtomicUsize::new(0));
-        let maximum = Arc::new(AtomicUsize::new(0));
-        let server = spawn_test_server(listener, 4, Arc::clone(&active), Arc::clone(&maximum));
-        let root = tempdir().unwrap();
-        let storage = Arc::new(Storage::open(root.path().join("downloads.db")).unwrap());
-        let downloads = DownloadService::new(Arc::clone(&storage)).unwrap();
-        let queues = QueueService::new(Arc::clone(&storage), downloads.clone());
-        let first_queue = queues
+        let server = TestServer::start(slow_server()).await;
+        let harness = harness();
+        let first_queue = harness
+            .queues
             .create_queue("First", 3, None, DownloadPriority::Normal)
             .unwrap();
-        let second_queue = queues
+        let second_queue = harness
+            .queues
             .create_queue("Second", 3, None, DownloadPriority::Normal)
             .unwrap();
 
@@ -614,97 +680,68 @@ mod tests {
         .into_iter()
         .enumerate()
         {
-            let task = downloads
-                .create_task(&format!("http://{address}/{index}.bin"))
+            let task = harness
+                .downloads
+                .create_task(&server.url(&format!("{index}.bin")))
                 .unwrap();
-            queues.enqueue_task(&task.id, queue_id, None).unwrap();
+            harness
+                .queues
+                .enqueue_task(&task.id, queue_id, None)
+                .unwrap();
         }
 
-        let first_runner = queues.clone();
-        let second_runner = queues.clone();
-        let first_destination = root.path().join("first-files");
-        let second_destination = root.path().join("second-files");
+        let first_runner = harness.queues.clone();
+        let second_runner = harness.queues.clone();
+        let first_destination = harness.destination.join("first");
+        let second_destination = harness.destination.join("second");
+
         let (first_result, second_result) = tokio::join!(
             first_runner.run_queue(&first_queue.id, first_destination, |_| {}),
             second_runner.run_queue(&second_queue.id, second_destination, |_| {})
         );
         first_result.unwrap();
         second_result.unwrap();
-        server.await.unwrap();
 
-        assert_eq!(maximum.load(Ordering::SeqCst), 3);
+        assert_eq!(
+            server.peak_concurrent_bodies(),
+            3,
+            "two queues of three must still share the process-wide limit"
+        );
+
+        let records = harness.storage.list_downloads().unwrap();
         assert!(
-            storage
-                .list_downloads()
-                .unwrap()
+            records
                 .iter()
-                .all(|task| task.status == DownloadStatus::Completed)
+                .all(|task| task.status == DownloadStatus::Completed),
+            "not every task completed: {:?}",
+            records
+                .iter()
+                .map(|task| (task.status, task.error_message.clone()))
+                .collect::<Vec<_>>()
         );
     }
 
     #[tokio::test]
     async fn a_running_queue_fills_free_slots_with_newly_added_work() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let active = Arc::new(AtomicUsize::new(0));
-        let maximum = Arc::new(AtomicUsize::new(0));
-        let (accepted_tx, accepted_rx) = oneshot::channel();
-        let (release_tx, release_rx) = oneshot::channel();
-        let listener = Arc::new(listener);
-        let server = {
-            let active = Arc::clone(&active);
-            let maximum = Arc::clone(&maximum);
-            let listener = Arc::clone(&listener);
-
-            tokio::spawn(async move {
-                // The first transfer is held open so the second task is
-                // necessarily added while a slot is still occupied.
-                let (mut first, _) = listener.accept().await.unwrap();
-                let mut request = [0_u8; 2048];
-                let _ = first.read(&mut request).await.unwrap();
-                let current = active.fetch_add(1, Ordering::SeqCst) + 1;
-                maximum.fetch_max(current, Ordering::SeqCst);
-                accepted_tx.send(()).unwrap();
-
-                let second = tokio::spawn({
-                    let active = Arc::clone(&active);
-                    let maximum = Arc::clone(&maximum);
-                    let listener = Arc::clone(&listener);
-
-                    async move {
-                        let (mut socket, _) = listener.accept().await.unwrap();
-                        let mut request = [0_u8; 2048];
-                        let _ = socket.read(&mut request).await.unwrap();
-                        let current = active.fetch_add(1, Ordering::SeqCst) + 1;
-                        maximum.fetch_max(current, Ordering::SeqCst);
-                        write_body(&mut socket).await;
-                        active.fetch_sub(1, Ordering::SeqCst);
-                    }
-                });
-
-                release_rx.await.unwrap();
-                write_body(&mut first).await;
-                active.fetch_sub(1, Ordering::SeqCst);
-                second.await.unwrap();
-            })
-        };
-
-        let root = tempdir().unwrap();
-        let storage = Arc::new(Storage::open(root.path().join("downloads.db")).unwrap());
-        let downloads = DownloadService::new(Arc::clone(&storage)).unwrap();
-        let queues = QueueService::new(Arc::clone(&storage), downloads.clone());
-        let queue = queues
+        let server = TestServer::start(slow_server()).await;
+        let harness = harness();
+        let queue = harness
+            .queues
             .create_queue("Refilled", 2, None, DownloadPriority::Normal)
             .unwrap();
 
-        let first = downloads
-            .create_task(&format!("http://{address}/first.bin"))
+        let first = harness
+            .downloads
+            .create_task(&server.url("first.bin"))
             .unwrap();
-        queues.enqueue_task(&first.id, &queue.id, None).unwrap();
+        harness
+            .queues
+            .enqueue_task(&first.id, &queue.id, None)
+            .unwrap();
 
-        let runner_service = queues.clone();
+        let runner_service = harness.queues.clone();
         let queue_id = queue.id.clone();
-        let destination = root.path().join("files");
+        let destination = harness.destination.clone();
         let runner = tokio::spawn(async move {
             runner_service
                 .run_queue(&queue_id, destination, |_| {})
@@ -712,29 +749,38 @@ mod tests {
                 .unwrap()
         });
 
-        accepted_rx.await.unwrap();
+        await_status(&harness.storage, &first.id, DownloadStatus::Downloading).await;
 
-        let second = downloads
-            .create_task(&format!("http://{address}/second.bin"))
+        let second = harness
+            .downloads
+            .create_task(&server.url("second.bin"))
             .unwrap();
-        queues.enqueue_task(&second.id, &queue.id, None).unwrap();
+        harness
+            .queues
+            .enqueue_task(&second.id, &queue.id, None)
+            .unwrap();
 
         // The runner must pick the new task up while the first one is still
         // being transferred, not after it finishes.
-        await_started(&storage, &second.id).await;
-        assert_eq!(
-            storage.get_download(&first.id).unwrap().unwrap().status,
-            DownloadStatus::Downloading,
+        await_started(&harness.storage, &second.id).await;
+
+        assert_ne!(
+            harness
+                .storage
+                .get_download(&first.id)
+                .unwrap()
+                .unwrap()
+                .status,
+            DownloadStatus::Completed,
             "the second task must start while the first is still transferring"
         );
 
-        release_tx.send(()).unwrap();
-        server.await.unwrap();
         assert_eq!(runner.await.unwrap().state, QueueState::Stopped);
 
-        assert_eq!(maximum.load(Ordering::SeqCst), 2);
+        assert_eq!(server.peak_concurrent_bodies(), 2);
         assert!(
-            storage
+            harness
+                .storage
                 .list_downloads()
                 .unwrap()
                 .iter()
@@ -744,93 +790,40 @@ mod tests {
 
     #[tokio::test]
     async fn a_disabled_queue_neither_starts_nor_schedules() {
-        let root = tempdir().unwrap();
-        let storage = Arc::new(Storage::open(root.path().join("downloads.db")).unwrap());
-        let downloads = DownloadService::new(Arc::clone(&storage)).unwrap();
-        let queues = QueueService::new(Arc::clone(&storage), downloads.clone());
-        let queue = queues
+        let harness = harness();
+        let queue = harness
+            .queues
             .create_queue("Disabled", 2, None, DownloadPriority::Normal)
             .unwrap();
-        let task = downloads
+        let task = harness
+            .downloads
             .create_task("http://127.0.0.1:1/never-requested.bin")
             .unwrap();
-        queues.enqueue_task(&task.id, &queue.id, None).unwrap();
-        queues.set_queue_enabled(&queue.id, false).unwrap();
+        harness
+            .queues
+            .enqueue_task(&task.id, &queue.id, None)
+            .unwrap();
+        harness.queues.set_queue_enabled(&queue.id, false).unwrap();
 
-        let error = queues.start_queue(&queue.id).unwrap_err();
+        let error = harness.queues.start_queue(&queue.id).unwrap_err();
         assert!(matches!(error, QueueServiceError::QueueDisabled(_)));
 
-        let stopped = queues
-            .run_queue(&queue.id, root.path().join("files"), |_| {})
+        let stopped = harness
+            .queues
+            .run_queue(&queue.id, &harness.destination, |_| {})
             .await
             .unwrap();
 
         assert_eq!(stopped.state, QueueState::Stopped);
         assert_eq!(
-            storage.get_download(&task.id).unwrap().unwrap().status,
+            harness
+                .storage
+                .get_download(&task.id)
+                .unwrap()
+                .unwrap()
+                .status,
             DownloadStatus::Queued,
             "a disabled queue must not hand work to its runner"
         );
-    }
-
-    async fn write_body(socket: &mut tokio::net::TcpStream) {
-        let body = b"queue test";
-        let response = format!(
-            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-            body.len()
-        );
-        socket.write_all(response.as_bytes()).await.unwrap();
-        socket.write_all(body).await.unwrap();
-        socket.shutdown().await.unwrap();
-    }
-
-    /// Waits until a queued task has actually been claimed by its runner.
-    async fn await_started(storage: &Storage, download_id: &str) {
-        for _ in 0..200 {
-            let record = storage.get_download(download_id).unwrap().unwrap();
-
-            if record.status != DownloadStatus::Queued {
-                return;
-            }
-
-            sleep(Duration::from_millis(10)).await;
-        }
-
-        panic!("{download_id} was never claimed by its queue runner");
-    }
-
-    fn spawn_test_server(
-        listener: TcpListener,
-        request_count: usize,
-        active: Arc<AtomicUsize>,
-        maximum: Arc<AtomicUsize>,
-    ) -> tokio::task::JoinHandle<()> {
-        tokio::spawn(async move {
-            let mut handlers = Vec::new();
-            for _ in 0..request_count {
-                let (mut socket, _) = listener.accept().await.unwrap();
-                let active = Arc::clone(&active);
-                let maximum = Arc::clone(&maximum);
-                handlers.push(tokio::spawn(async move {
-                    let mut request = [0_u8; 2048];
-                    let _ = socket.read(&mut request).await.unwrap();
-                    let current = active.fetch_add(1, Ordering::SeqCst) + 1;
-                    maximum.fetch_max(current, Ordering::SeqCst);
-                    sleep(Duration::from_millis(75)).await;
-                    let body = b"queue test";
-                    let response = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                        body.len()
-                    );
-                    socket.write_all(response.as_bytes()).await.unwrap();
-                    socket.write_all(body).await.unwrap();
-                    socket.shutdown().await.unwrap();
-                    active.fetch_sub(1, Ordering::SeqCst);
-                }));
-            }
-            for handler in handlers {
-                handler.await.unwrap();
-            }
-        })
     }
 }

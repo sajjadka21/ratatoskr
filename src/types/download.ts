@@ -14,9 +14,20 @@
   createdAt: number;
   startedAt: number | null;
   completedAt: number | null;
+  attempts: number;
+  retryAt: number | null;
   errorCode: string | null;
   errorMessage: string | null;
 };
+
+/// What a task can be asked to do right now. Derived from the same rules the
+/// backend enforces, so the UI never offers an action that would be refused.
+export type TaskAction =
+  | "start"
+  | "pause"
+  | "resume"
+  | "cancel"
+  | "retry";
 
 export type DownloadPriority = DownloadListItem["priority"];
 

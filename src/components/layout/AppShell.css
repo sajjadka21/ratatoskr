@@ -31,10 +31,13 @@
   background:
     radial-gradient(
       circle at 50% -20%,
-      rgba(79, 140, 255, 0.055),
+      rgba(56, 210, 189, 0.06),
       transparent 38%
     ),
+    linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px),
     var(--bg-app);
+  background-size: auto, 32px 32px, 32px 32px, auto;
 }
 
 .app-shell__content-inner {

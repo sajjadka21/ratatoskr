@@ -1,0 +1,86 @@
+import { useEffect, useMemo, useState } from "react";
+import { Check, Copy, Filter, ScanLine, Sparkles } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+
+import type { DownloadQueue } from "../../types/download";
+import type { AddDownloadAction } from "../downloads/AddDownloadModal";
+import "./LinkGrabberPage.css";
+
+type LinkCandidate = { url: string; host: string; extension: string | null };
+
+type Props = {
+  queues: DownloadQueue[];
+  engineReady: boolean;
+  submitting?: boolean;
+  onSubmit: (urls: string[], action: AddDownloadAction) => void;
+};
+
+export function LinkGrabberPage({ queues, engineReady, submitting = false, onSubmit }: Props) {
+  const [input, setInput] = useState("");
+  const [candidates, setCandidates] = useState<LinkCandidate[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
+  const [kind, setKind] = useState("all");
+  const [queueId, setQueueId] = useState(queues[0]?.id ?? "");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!queues.some((queue) => queue.id === queueId)) setQueueId(queues[0]?.id ?? "");
+  }, [queues, queueId]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (!input.trim()) { setCandidates([]); setSelected(new Set()); return; }
+      void invoke<LinkCandidate[]>("inspect_links", { input })
+        .then((items) => { setCandidates(items); setSelected(new Set(items.map((item) => item.url))); setError(null); })
+        .catch((reason) => setError(String(reason)));
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [input]);
+
+  const types = useMemo(() => [...new Set(candidates.map((item) => item.extension ?? "other"))].sort(), [candidates]);
+  const visible = useMemo(() => candidates.filter((item) => {
+    const matchesQuery = !query.trim() || `${item.url} ${item.host}`.toLowerCase().includes(query.trim().toLowerCase());
+    const matchesKind = kind === "all" || (item.extension ?? "other") === kind;
+    return matchesQuery && matchesKind;
+  }), [candidates, query, kind]);
+
+  function toggle(url: string) {
+    setSelected((current) => { const next = new Set(current); if (next.has(url)) next.delete(url); else next.add(url); return next; });
+  }
+
+  function submit(action: AddDownloadAction) {
+    if (!engineReady || submitting || selected.size === 0) return;
+    onSubmit([...selected], action);
+  }
+
+  return <div className="linkgrabber-page">
+    <section className="linkgrabber-page__hero">
+      <div>
+        <span className="eyebrow"><ScanLine size={14} /> Capture desk</span>
+        <h2>Find every downloadable link</h2>
+        <p>Paste a page, a copied list, or raw HTML. The Rust engine will normalize, deduplicate, and classify candidates before anything is created.</p>
+      </div>
+      <div className="linkgrabber-page__hero-mark"><Sparkles size={28} /><span>LOCAL<br />ANALYSIS</span></div>
+    </section>
+
+    <section className="linkgrabber-page__workbench">
+      <textarea value={input} onChange={(event) => setInput(event.target.value)} placeholder="Paste URLs or HTML here…" aria-label="Links to inspect" />
+      <div className="linkgrabber-page__toolbar">
+        <span>{candidates.length} candidates · {selected.size} selected</span>
+        <button type="button" onClick={() => navigator.clipboard?.writeText([...selected].join("\n"))} disabled={!selected.size}><Copy size={14} /> Copy selected</button>
+      </div>
+    </section>
+
+    <section className="linkgrabber-page__results">
+      <div className="linkgrabber-page__results-head">
+        <div><strong>Candidate links</strong><span>Review before sending to the queue</span></div>
+        <div className="linkgrabber-page__filters"><label><Filter size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter hosts" /></label><select value={kind} onChange={(event) => setKind(event.target.value)}><option value="all">All types</option>{types.map((type) => <option key={type} value={type}>{type}</option>)}</select></div>
+      </div>
+      <div className="linkgrabber-page__select-row"><button type="button" onClick={() => setSelected(new Set(visible.map((item) => item.url)))}><Check size={14} /> Select visible</button><button type="button" onClick={() => setSelected(new Set())}>Clear</button></div>
+      {error ? <div className="linkgrabber-page__error">{error}</div> : null}
+      <div className="linkgrabber-page__list">{visible.map((item) => <label key={item.url} className="linkgrabber-page__item"><input type="checkbox" checked={selected.has(item.url)} onChange={() => toggle(item.url)} /><span className="linkgrabber-page__item-main"><strong>{item.host}</strong><span>{item.url}</span></span><code>{item.extension ?? "other"}</code></label>)}{!visible.length ? <div className="linkgrabber-page__empty">Paste links above to begin.</div> : null}</div>
+      <div className="linkgrabber-page__actions"><select value={queueId} onChange={(event) => setQueueId(event.target.value)} aria-label="Target queue"><option value="">No queue</option>{queues.map((queue) => <option key={queue.id} value={queue.id}>{queue.name}</option>)}</select><button type="button" className="secondary" disabled={!engineReady || submitting || !selected.size} onClick={() => submit({ kind: "download-later" })}>Download later</button><button type="button" disabled={!engineReady || submitting || !selected.size} onClick={() => submit({ kind: queueId ? "queue" : "start-now", ...(queueId ? { queueId } : {}) } as AddDownloadAction)}>{queueId ? "Send to queue" : "Start selected"}</button></div>
+    </section>
+  </div>;
+}

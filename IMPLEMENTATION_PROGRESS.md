@@ -656,3 +656,22 @@ Status: In progress
 - `npm test` - passed (23 tests)
 - Working tree contains only the user-provided untracked master specification;
   no generated or temporary project changes remain.
+
+## Product polish slice - LinkGrabber and visual refresh
+
+Status: Implemented in working tree
+
+- Added a dedicated LinkGrabber workspace backed by the Rust `inspect_links`
+  command. It supports pasted text/HTML, de-duplicated candidate review,
+  host/type filtering, selection, clipboard export, and direct queue/start
+  actions through the existing task creation path.
+- Added a Categories workspace that reads the persisted Rust category model and
+  exposes destination, extension, and priority metadata without duplicating
+  task state in React.
+- Refreshed the shell visual system: tighter radius hierarchy, warmer charcoal
+  surfaces, a restrained teal accent, editorial sidebar grouping, grid texture,
+  denser download rows, clearer focus states, and responsive LinkGrabber and
+  Categories layouts.
+- Verification for this slice: `npm.cmd run build` and `npm.cmd test -- --run`
+  pass. The PowerShell `npm` shim on this host points at a missing global npm
+  installation; `npm.cmd` uses the repository-local package manager correctly.

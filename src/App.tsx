@@ -29,6 +29,8 @@ import { DownloadDetailsPanel } from "./components/downloads/DownloadDetailsPane
 import { DownloadRow } from "./components/downloads/DownloadRow";
 import { AppShell } from "./components/layout/AppShell";
 import { QueuePage } from "./components/queues/QueuePage";
+import { LinkGrabberPage } from "./components/linkgrabber/LinkGrabberPage";
+import { CategoriesPage } from "./components/categories/CategoriesPage";
 import { useQueues } from "./hooks/useQueues";
 
 import type {
@@ -121,6 +123,8 @@ function App() {
   const [settingsOpen, setSettingsOpen] =
     useState(false);
   const [queuesOpen, setQueuesOpen] = useState(false);
+  const [linkGrabberOpen, setLinkGrabberOpen] = useState(false);
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
 
   const [
     addDownloadInputMode,
@@ -724,9 +728,10 @@ function App() {
 
   async function createDownloadTasks(
     action: AddDownloadAction,
+    inputValue = url,
   ) {
     const links =
-      extractHttpUrls(url);
+      extractHttpUrls(inputValue);
 
     if (links.length === 0) {
       setError(
@@ -1075,6 +1080,8 @@ function App() {
     setSettingsError(null);
     setSettingsOpen(true);
     setQueuesOpen(false);
+    setLinkGrabberOpen(false);
+    setCategoriesOpen(false);
     setSelectedDownloadId(null);
     setContextMenu(null);
   }
@@ -1083,12 +1090,34 @@ function App() {
   ) {
     setSettingsOpen(false);
     setQueuesOpen(false);
+    setLinkGrabberOpen(false);
+    setCategoriesOpen(false);
     setActiveSection(section);
     setSelectedDownloadId(null);
   }
 
   function openQueues() {
     setQueuesOpen(true);
+    setSettingsOpen(false);
+    setLinkGrabberOpen(false);
+    setCategoriesOpen(false);
+    setSelectedDownloadId(null);
+    setContextMenu(null);
+  }
+
+  function openLinkGrabber() {
+    setLinkGrabberOpen(true);
+    setCategoriesOpen(false);
+    setQueuesOpen(false);
+    setSettingsOpen(false);
+    setSelectedDownloadId(null);
+    setContextMenu(null);
+  }
+
+  function openCategories() {
+    setCategoriesOpen(true);
+    setLinkGrabberOpen(false);
+    setQueuesOpen(false);
     setSettingsOpen(false);
     setSelectedDownloadId(null);
     setContextMenu(null);
@@ -1117,15 +1146,23 @@ function App() {
             ? "Settings"
             : queuesOpen
               ? "Queues"
+              : linkGrabberOpen
+                ? "LinkGrabber"
+                : categoriesOpen
+                  ? "Categories"
               : sectionTitles[activeSection]
         }
         subtitle={`Version ${appInfo?.version ?? "..."} · ${backendLabel}`}
         activeItem={activeSection}
         settingsActive={settingsOpen}
         queuesActive={queuesOpen}
+        linkGrabberActive={linkGrabberOpen}
+        categoriesActive={categoriesOpen}
         counts={counts}
         onOpenSettings={openSettings}
         onOpenQueues={openQueues}
+        onOpenLinkGrabber={openLinkGrabber}
+        onOpenCategories={openCategories}
         searchValue={searchQuery}
         activeCount={throughput.transfers}
         aggregateBytesPerSecond={
@@ -1166,6 +1203,15 @@ function App() {
             onRemove={removeFromQueue}
             onPriority={changePriority}
           />
+        ) : linkGrabberOpen ? (
+          <LinkGrabberPage
+            queues={queues}
+            engineReady={allReady}
+            submitting={creatingTasks}
+            onSubmit={(urls, action) => void createDownloadTasks(action, urls.join("\n"))}
+          />
+        ) : categoriesOpen ? (
+          <CategoriesPage />
         ) : (
           <div className="downloads-workspace">
           <section className="download-library">

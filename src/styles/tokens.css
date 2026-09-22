@@ -1,28 +1,28 @@
 ﻿:root {
-  --bg-app: #090d14;
-  --bg-sidebar: #0b1018;
-  --bg-surface: #111722;
-  --bg-surface-hover: #161e2b;
-  --bg-elevated: #182131;
+  --bg-app: #0b1016;
+  --bg-sidebar: #0d141b;
+  --bg-surface: #121b24;
+  --bg-surface-hover: #182631;
+  --bg-elevated: #1b2a35;
 
-  --border-subtle: #202938;
-  --border-strong: #2c3748;
+  --border-subtle: #22323c;
+  --border-strong: #344954;
 
   --text-primary: #f3f6fa;
   --text-secondary: #98a5b7;
   --text-muted: #677488;
 
-  --accent: #4f8cff;
-  --accent-hover: #6b9eff;
-  --accent-soft: rgba(79, 140, 255, 0.12);
+  --accent: #38d2bd;
+  --accent-hover: #65e0cf;
+  --accent-soft: rgba(56, 210, 189, 0.12);
 
   --success: #40c982;
   --warning: #e5a93d;
   --danger: #f06464;
 
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --radius-lg: 13px;
 
   --sidebar-width: 224px;
   --topbar-height: 72px;
@@ -30,7 +30,8 @@
   --shadow-modal: 0 24px 80px rgba(0, 0, 0, 0.45);
 
   font-family:
-    Inter,
+    "Segoe UI Variable",
+    Aptos,
     ui-sans-serif,
     system-ui,
     -apple-system,

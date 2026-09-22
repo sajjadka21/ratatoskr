@@ -19,6 +19,8 @@ type AppShellProps = {
   activeItem?: DownloadSection;
   settingsActive?: boolean;
   queuesActive?: boolean;
+  linkGrabberActive?: boolean;
+  categoriesActive?: boolean;
 
   counts?: SidebarCounts;
 
@@ -37,6 +39,8 @@ type AppShellProps = {
 
   onOpenSettings?: () => void;
   onOpenQueues?: () => void;
+  onOpenLinkGrabber?: () => void;
+  onOpenCategories?: () => void;
   onAddDownload?: () => void;
 };
 
@@ -47,6 +51,8 @@ export function AppShell({
   activeItem = "all",
   settingsActive = false,
   queuesActive = false,
+  linkGrabberActive = false,
+  categoriesActive = false,
   counts,
   searchValue,
   activeCount,
@@ -55,6 +61,8 @@ export function AppShell({
   onSectionChange,
   onOpenSettings,
   onOpenQueues,
+  onOpenLinkGrabber,
+  onOpenCategories,
   onAddDownload,
 }: AppShellProps) {
   return (
@@ -63,12 +71,16 @@ export function AppShell({
         activeItem={activeItem}
         settingsActive={settingsActive}
         queuesActive={queuesActive}
+        linkGrabberActive={linkGrabberActive}
+        categoriesActive={categoriesActive}
         counts={counts}
         onSelect={onSectionChange}
         onOpenSettings={
           onOpenSettings
         }
         onOpenQueues={onOpenQueues}
+        onOpenLinkGrabber={onOpenLinkGrabber}
+        onOpenCategories={onOpenCategories}
       />
 
       <div className="app-shell__workspace">

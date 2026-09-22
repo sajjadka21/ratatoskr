@@ -7,6 +7,8 @@
   Layers3,
   Settings,
   Zap,
+  ScanLine,
+  FolderOpen,
 } from "lucide-react";
 
 import "./Sidebar.css";
@@ -31,6 +33,10 @@ type SidebarProps = {
   ) => void;
   onOpenSettings?: () => void;
   onOpenQueues?: () => void;
+  linkGrabberActive?: boolean;
+  categoriesActive?: boolean;
+  onOpenLinkGrabber?: () => void;
+  onOpenCategories?: () => void;
 };
 
 const items: Array<{
@@ -73,6 +79,10 @@ export function Sidebar({
   onSelect,
   onOpenSettings,
   onOpenQueues,
+  linkGrabberActive = false,
+  categoriesActive = false,
+  onOpenLinkGrabber,
+  onOpenCategories,
 }: SidebarProps) {
   return (
     <aside className="sidebar">
@@ -115,6 +125,8 @@ export function Sidebar({
                 className={`sidebar__item ${
                   !settingsActive &&
                   !queuesActive &&
+                  !linkGrabberActive &&
+                  !categoriesActive &&
                   activeItem === id
                     ? "sidebar__item--active"
                     : ""
@@ -144,6 +156,23 @@ export function Sidebar({
       </nav>
 
       <div className="sidebar__secondary">
+        <div className="sidebar__section-label">Workspace</div>
+        <button
+          className={`sidebar__item ${linkGrabberActive ? "sidebar__item--active" : ""}`}
+          type="button"
+          onClick={onOpenLinkGrabber}
+        >
+          <ScanLine size={17} strokeWidth={1.9} />
+          <span>LinkGrabber</span>
+        </button>
+        <button
+          className={`sidebar__item ${categoriesActive ? "sidebar__item--active" : ""}`}
+          type="button"
+          onClick={onOpenCategories}
+        >
+          <FolderOpen size={17} strokeWidth={1.9} />
+          <span>Categories</span>
+        </button>
         <button
           className={`sidebar__item ${
             queuesActive ? "sidebar__item--active" : ""

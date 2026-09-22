@@ -329,3 +329,34 @@ Status: Complete
 ### Phase boundary
 
 Phase 3 is complete. Phase 4 has not started.
+
+## Phase 4 - Segmented Engine
+
+Status: In progress
+
+Phase 3 was verified from the current repository state before this phase began:
+schema version 3, task controls, partial-file resume, validator checks,
+orphan recovery, bounded retry policy, and the documented 112-test quality gate
+are present in the current history and source.
+
+### Plan
+
+1. Add canonical segment/range models and an additive schema v4 persistent
+   segment map.
+2. Add strict ranged HTTP transfer primitives that require `206` and a
+   matching `Content-Range` for every segment.
+3. Add a deterministic gap-free planner and bounded worker pool with dynamic
+   pending-segment assignment.
+4. Persist segment offsets/status, reuse only source-compatible segment files,
+   assemble in order into the existing safe temporary-file finalization path,
+   and clean segment files after success.
+5. Fall back to the existing single-stream engine when the source cannot
+   provide validated ranges; keep pause/cancel and retry behavior intact.
+6. Run focused local HTTP/storage tests, the full quality gate, review the
+   complete diff, and create focused Phase 4 commits.
+
+### Scope boundary
+
+Phase 4 will not add adaptive connection scaling, host learning, speed
+profiles, or explainability UI; those remain Phase 5. The segmented engine
+will use a conservative bounded worker count and real byte progress only.

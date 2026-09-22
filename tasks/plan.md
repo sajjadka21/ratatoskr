@@ -1,4 +1,4 @@
-# Implementation Plan: Download Manager Phases 0-2
+# Implementation Plan: Download Manager Phases 0-4
 
 ## Overview
 
@@ -70,3 +70,39 @@ Preserve the checkpoint architecture while separating persistent task creation f
 - [ ] Queued tasks start only through a running queue and retain stable IDs.
 - [ ] Queue order, priority, queue concurrency, and host concurrency are tested.
 - [ ] Full repository quality gate passes.
+
+### Phase 3: Pause / Resume / Recovery
+
+- [x] Extend canonical lifecycle rules and add task control handles.
+- [x] Persist attempts/retry time and recover orphaned tasks at startup.
+- [x] Probe validators, preserve partial files, and classify bounded retries.
+- [x] Add pause/resume/cancel/retry IPC and UI behavior.
+- [x] Run the Phase 3 quality gate and document the boundary.
+
+### Phase 4: Segmented Engine
+
+- [ ] Add a schema v4 persistent segment map without changing existing task identity.
+- [ ] Add deterministic, gap-free segment planning with conservative connection limits.
+- [ ] Add ranged segment transfer with strict `206` and `Content-Range` validation.
+- [ ] Persist segment progress and resume completed/partial segments safely after restart.
+- [ ] Assemble verified segments in order, atomically finalize, and remove segment files.
+- [ ] Fall back to the existing single-stream engine when range capability is absent or invalid.
+- [ ] Run focused local HTTP tests, the full quality gate, review, document, and commit.
+
+## Phase 4 Risks and Mitigations
+
+| Risk | Impact | Mitigation |
+| --- | --- | --- |
+| A server advertises ranges but returns `200` | Corrupt or duplicated bytes | Require `206` and matching `Content-Range` for every segment; discard the segment set and use single stream. |
+| Crash leaves inconsistent segment rows/files | Unsafe resume | Persist each segment's offset, compare file length, truncate to the persisted offset, and revalidate source identity before reuse. |
+| Segment completion order differs from byte order | Corrupt final file | Assemble only by ordered segment index into one synced temporary file, then rename atomically. |
+| Too many connections hurt reliability | Server overload or throttling | Use a bounded segment worker pool and leave adaptive scaling to Phase 5. |
+| Legacy databases fail to open | Data loss | Additive v4 migration and reopen tests from v3 with existing task history. |
+
+## Phase 4 Checkpoint
+
+- [ ] Existing single-stream and resume behavior remains green.
+- [ ] Segmented transfers produce byte-identical files under a range-capable server.
+- [ ] Interrupted segment maps resume without duplicate or overlapping bytes.
+- [ ] No-range and invalid-range responses safely use single-stream fallback.
+- [ ] Full repository quality gate passes and the phase is committed.

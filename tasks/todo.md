@@ -423,7 +423,7 @@
 
 - [x] HTTP(S)-only handoff validates and rejects URL credentials.
 - [x] Referrer, UA, and filename hints are bounded and not persisted.
-- [ ] Native Messaging host and browser extensions are packaged.
+- [x] Native Messaging host and Chrome/Edge MV3 browser extensions are packaged.
 
 # Phase 10 Tasks: Resource / Media
 
@@ -451,5 +451,6 @@
 **Acceptance criteria:**
 
 - [x] Security boundary tests cover browser, media, link, and archive inputs.
-- [ ] Large-history/crash benchmarks, installer metadata, and release build
-  are complete.
+- [x] Installer metadata and x64 release artifacts are produced.
+- [ ] Large-history/crash benchmarks and final installer security review are
+  complete.

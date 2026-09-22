@@ -194,7 +194,8 @@ Preserve the checkpoint architecture while separating persistent task creation f
 ### Phase 9: Browser Integration
 
 - [x] Add validated browser handoff contract with credential rejection.
-- [ ] Add extension/native-messaging host, takeover settings, and popup.
+- [x] Add Chrome/Edge MV3 extension, Native Messaging host, takeover settings,
+  exclusions, threshold, context menu, and popup.
 
 ### Phase 10: Resource / Media
 
@@ -209,4 +210,5 @@ Preserve the checkpoint architecture while separating persistent task creation f
 ### Phase 12: Hardening / Benchmark / Release
 
 - [x] Add security boundary tests for intake and archive paths.
-- [ ] Run large-history/crash benchmarks, security review, and release build.
+- [x] Produce x64 portable, NSIS, MSI, and extension release artifacts.
+- [ ] Run large-history/crash benchmarks and final installer security review.

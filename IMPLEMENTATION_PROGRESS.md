@@ -638,9 +638,18 @@ Status: In progress
   link intake, and archive traversal.
 - Full Rust and frontend quality gates continue to pass after each slice.
 
+## Release packaging update
+
+- Product metadata is now `Download Manager` version `1.0.0`.
+- `npm run tauri -- build` produced the x64 NSIS installer, MSI installer, and
+  portable release executable under `target/release/bundle/`.
+- Added the MV3 browser extension source, options/popup UI, context-menu and
+  takeover flow, Native Messaging manifest, and `dm-native-host` release
+  binary. Takeover is opt-in and exclusions remain local to the browser.
+
 ## Current verification
 
-- `cargo test --workspace` - passed (158 Rust tests)
+- `cargo test --workspace` - passed (160 Rust tests)
 - `cargo check --workspace` - passed
 - `cargo clippy --workspace --all-targets -- -D warnings` - passed
 - `npm run build` - passed

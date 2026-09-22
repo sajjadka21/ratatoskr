@@ -1004,6 +1004,47 @@ fn parse_hls_manifest(base_url: String, content: String) -> Vec<MediaVariantResp
         .collect()
 }
 
+fn start_browser_handoff(app: &AppHandle, state: &AppState, url: &str) -> Result<(), String> {
+    let task = state
+        .downloads
+        .create_task(url)
+        .map_err(|error| error.to_string())?;
+    let decision = state
+        .downloads
+        .rule_decision_for_url(url)
+        .map_err(|error| error.to_string())?;
+    if let Some(decision) = decision {
+        if let Some(priority) = decision.priority {
+            state
+                .queues
+                .set_task_priority(&task.id, priority)
+                .map_err(|error| error.to_string())?;
+        }
+        if let Some(queue_id) = decision.queue_id {
+            state
+                .queues
+                .enqueue_task(&task.id, &queue_id, decision.priority)
+                .map_err(|error| error.to_string())?;
+            return Ok(());
+        }
+    }
+    state
+        .downloads
+        .claim_task(&task.id)
+        .map_err(|error| error.to_string())?;
+    let destination_directory = app
+        .path()
+        .download_dir()
+        .map_err(|error| error.to_string())?;
+    spawn_transfer(
+        state.downloads.clone(),
+        EventPublisher::new(app.clone()),
+        task.id,
+        destination_directory,
+    );
+    Ok(())
+}
+
 /// Runs one task's transfer in the background and publishes what happens.
 fn spawn_transfer(
     downloads: DownloadService,
@@ -1041,12 +1082,18 @@ fn spawn_transfer(
 pub fn run() {
     init_logging();
 
+    let browser_handoff = std::env::args()
+        .collect::<Vec<_>>()
+        .windows(2)
+        .find(|args| args[0] == "--browser-handoff")
+        .map(|args| args[1].clone());
+
     info!("starting Download Manager");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .setup(|app| {
+        .setup(move |app| {
             let app_data_dir = app.path().app_data_dir()?;
             let database_path = app_data_dir.join("downloads.db");
 
@@ -1087,6 +1134,13 @@ pub fn run() {
                 downloads: downloads.clone(),
                 queues: queues.clone(),
             });
+
+            if let Some(url) = browser_handoff.as_deref() {
+                let state = app.state::<AppState>();
+                if let Err(error) = start_browser_handoff(app.handle(), &state, url) {
+                    warn!(error = %error, "browser handoff could not start");
+                }
+            }
 
             let publisher = EventPublisher::new(app.handle().clone());
 

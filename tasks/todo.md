@@ -361,9 +361,9 @@
 
 **Acceptance criteria:**
 
-- [ ] Schema v6 adds built-ins without resetting existing history.
-- [ ] Custom categories and ordered rules persist with typed validation.
-- [ ] Rule actions never store secrets or unvalidated paths.
+- [x] Schema v6 adds built-ins without resetting existing history.
+- [x] Custom categories and ordered rules persist with typed validation.
+- [x] Rule actions never store secrets or unvalidated paths.
 
 **Dependencies:** Phase 6.
 
@@ -371,9 +371,9 @@
 
 **Acceptance criteria:**
 
-- [ ] Explicit rule -> MIME -> extension -> host -> Other precedence is tested.
+- [x] Explicit rule -> MIME -> extension -> host -> Other precedence is tested.
 - [ ] Matching explanations remain available to details/diagnostics.
-- [ ] Queue, priority, destination, and connection actions are backend-owned.
+- [x] Queue, priority, destination, and connection actions are backend-owned.
 
 **Dependencies:** Task 29.
 

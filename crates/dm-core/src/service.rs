@@ -4,6 +4,7 @@ use crate::{
     control::{StopReason, TaskControl},
     resume::{ResumePlan, StoredTransfer, plan_resume},
     retry::{FailureClass, RetryPolicy, classify_failure},
+    rules::{RuleDecision, evaluate_rules},
     segment_planner::{SegmentPlanError, plan_segments},
     throughput::ThroughputMeter,
     validate_source_url,
@@ -120,6 +121,16 @@ impl DownloadService {
         self.storage
             .create_download(source_url, unix_timestamp_seconds()?)
             .map_err(DownloadServiceError::Storage)
+    }
+
+    /// Evaluates the persisted intake rules using URL-only facts available
+    /// before probing. MIME and size matches are applied later by the probe;
+    /// this method keeps the decision backend-owned for Tauri/queue callers.
+    pub fn rule_decision_for_url(&self, source_url: &str) -> Result<Option<RuleDecision>> {
+        validate_source_url(source_url)?;
+        let rules = self.storage.list_rules()?;
+        let categories = self.storage.list_categories()?;
+        Ok(evaluate_rules(source_url, None, None, &rules, &categories))
     }
 
     pub fn claim_task(&self, download_id: &str) -> Result<DownloadRecord> {
@@ -1069,7 +1080,7 @@ fn normalized_host(source_url: &str) -> Result<String> {
 mod tests {
     use super::*;
     use crate::testing::{DEFAULT_BODY, ServerBehaviour, TestServer};
-    use dm_common::DownloadStatus;
+    use dm_common::{DownloadPriority, DownloadRule, DownloadStatus};
     use tempfile::tempdir;
     use tokio::time::sleep;
 
@@ -1268,6 +1279,43 @@ mod tests {
             invalid,
             DownloadServiceError::Download(DownloadError::UnsupportedScheme(_))
         ));
+    }
+
+    #[test]
+    fn intake_rule_decision_is_backend_owned_and_explainable() {
+        let harness = harness();
+        harness
+            .storage
+            .create_rule(&DownloadRule {
+                id: String::new(),
+                name: "Prefer media queue".to_owned(),
+                enabled: true,
+                sort_order: 0,
+                domain: Some("media.example.com".to_owned()),
+                url_pattern: None,
+                extension: None,
+                mime_pattern: None,
+                min_size: None,
+                max_size: None,
+                category_id: None,
+                destination_directory: None,
+                queue_id: Some("default".to_owned()),
+                priority: Some(DownloadPriority::High),
+                max_connections: Some(4),
+                max_host_concurrency: None,
+                speed_cap: None,
+                browser_takeover_allowed: None,
+            })
+            .unwrap();
+
+        let decision = harness
+            .service
+            .rule_decision_for_url("https://media.example.com/movie.mp4")
+            .unwrap()
+            .unwrap();
+        assert_eq!(decision.priority, Some(DownloadPriority::High));
+        assert_eq!(decision.queue_id.as_deref(), Some("default"));
+        assert!(decision.explanation.contains("Prefer media queue"));
     }
 
     #[tokio::test]

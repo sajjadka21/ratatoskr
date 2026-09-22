@@ -524,11 +524,38 @@ fn create_download_task(
     state: State<'_, AppState>,
     url: String,
 ) -> Result<DownloadListItemResponse, String> {
-    state
+    let task = state
         .downloads
         .create_task(&url)
+        .map_err(|error| error.to_string())?;
+
+    let decision = state
+        .downloads
+        .rule_decision_for_url(&url)
+        .map_err(|error| error.to_string())?;
+
+    if let Some(decision) = decision {
+        if let Some(priority) = decision.priority {
+            state
+                .queues
+                .set_task_priority(&task.id, priority)
+                .map_err(|error| error.to_string())?;
+        }
+        if let Some(queue_id) = decision.queue_id {
+            return state
+                .queues
+                .enqueue_task(&task.id, &queue_id, decision.priority)
+                .map(download_list_item_response)
+                .map_err(|error| error.to_string());
+        }
+    }
+
+    state
+        .storage
+        .get_download(&task.id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("download not found: {}", task.id))
         .map(download_list_item_response)
-        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

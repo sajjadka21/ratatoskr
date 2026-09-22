@@ -162,8 +162,8 @@ Preserve the checkpoint architecture while separating persistent task creation f
 
 ### Phase 7: Categories / Rules / Scheduler
 
-- [ ] Add schema v6 category/rule persistence and built-in categories.
-- [ ] Evaluate ordered rules during task intake and explain matches.
+- [x] Add schema v6 category/rule persistence and built-in categories.
+- [x] Evaluate ordered rules during task intake and explain matches.
 - [ ] Add persistent queue schedules and manual Start Now override.
 - [ ] Add Categories/Rules/Scheduler UI and completion-action safeguards.
 - [ ] Run focused tests, the full gate, review, document, and commit.

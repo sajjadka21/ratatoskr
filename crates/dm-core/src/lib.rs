@@ -3,6 +3,7 @@ pub mod control;
 pub mod queue;
 pub mod resume;
 pub mod retry;
+pub mod rules;
 pub mod segment_planner;
 pub mod service;
 #[cfg(test)]

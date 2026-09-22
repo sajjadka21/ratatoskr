@@ -548,7 +548,10 @@ Status: In progress
 - `dm-common` now owns serializable category and rule models; `dm-storage`
   persists custom category lists and rule match/action fields with validation.
 - Migration, built-in category, custom category, and custom rule persistence
-  tests pass. Rule evaluation and scheduler remain the next slices.
+  tests pass.
+- Added backend rule evaluation with ordered explicit matches, MIME/extension/
+  host/Other category precedence, human-readable match explanations, and
+  intake application for queue and priority actions. Scheduler remains next.
 
 ### Scope boundary
 

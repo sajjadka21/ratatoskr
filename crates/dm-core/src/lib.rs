@@ -1,3 +1,4 @@
+pub mod adaptive;
 pub mod control;
 pub mod queue;
 pub mod resume;

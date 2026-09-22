@@ -139,10 +139,10 @@ Preserve the checkpoint architecture while separating persistent task creation f
 
 ### Phase 6: Main UX Completion
 
-- [ ] Add backend-authoritative restart-from-zero and refresh/properties actions.
-- [ ] Add Ctrl/Shift multi-select and a contextual bulk action bar.
-- [ ] Complete task actions, details, speed/ETA, shortcuts, and notifications.
-- [ ] Run focused UI/backend tests, the full quality gate, review, document,
+- [x] Add backend-authoritative restart-from-zero and refresh/properties actions.
+- [x] Add Ctrl/Shift multi-select and a contextual bulk action bar.
+- [x] Complete task actions, details, speed/ETA, shortcuts, and notifications.
+- [x] Run focused UI/backend tests, the full quality gate, review, document,
   and commit.
 
 ## Phase 6 Risks and Mitigations
@@ -155,7 +155,7 @@ Preserve the checkpoint architecture while separating persistent task creation f
 
 ## Phase 6 Checkpoint
 
-- [ ] Restart preserves identity and starts from zero safely.
-- [ ] Ctrl/Shift multi-select and bulk actions are keyboard accessible.
-- [ ] Details/context actions expose the complete valid task surface.
-- [ ] Full repository quality gate passes and the phase is committed.
+- [x] Restart preserves identity and starts from zero safely.
+- [x] Ctrl/Shift multi-select and bulk actions are keyboard accessible.
+- [x] Details/context actions expose the complete valid task surface.
+- [x] Full repository quality gate passes and the phase is committed.

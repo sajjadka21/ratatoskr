@@ -468,7 +468,7 @@ extraction, or post-processing work was added.
 
 ## Phase 6 - Main UX Completion
 
-Status: In progress
+Status: Complete
 
 ### Plan
 
@@ -480,6 +480,46 @@ Status: In progress
    copy/open/reveal, and measured speed/ETA without duplicating state in React.
 4. Add focused lifecycle, IPC, frontend interaction, and accessibility tests;
    run the full quality gate and commit the phase.
+
+### Implemented
+
+- Added backend-authoritative restart-from-zero for reusable tasks, preserving
+  stable IDs while clearing partial transfer state and segment maps.
+- Added validated source URL refresh for failed/paused/queued tasks without
+  exposing URLs in logs or bypassing lifecycle guards.
+- Added IPC/UI metadata for range support, ETag, and Last-Modified alongside
+  existing measured speed, ETA, connection counts, and adaptive explanations.
+- Added Ctrl/Shift multi-selection, Ctrl+A/Escape selection shortcuts, and a
+  contextual bulk action bar for start, pause, resume, retry, cancel, remove,
+  queue assignment, and priority changes. Every mutation delegates to Rust.
+- Added Ctrl+N/Ctrl+F shortcuts and accessible in-app completion/failure
+  notifications driven by authoritative task events.
+
+### Tests added/updated
+
+- Canonical lifecycle, storage, and service tests cover restart reset,
+  stable identity, source refresh validation, and metadata clearing.
+- IPC/frontend tests cover expanded task metadata, restart action availability,
+  and primary row action behavior. The frontend build validates bulk UI
+  contracts and keyboard-safe rendering.
+
+### Phase 6 quality gate
+
+- `cargo fmt --all` - passed
+- `cargo test --workspace` - passed (143 tests)
+- `cargo check --workspace` - passed
+- `cargo clippy --workspace --all-targets -- -D warnings` - passed
+- `npm run build` - passed (with `npm_config_prefix` pointed at the installed
+  Node.js npm prefix because the default user npm shim targets a missing path)
+- `npm test` - passed (23 tests)
+- Code review - approved across correctness, readability, architecture,
+  security, and performance; no unresolved required findings.
+
+### Phase boundary
+
+Phase 6 is complete and committed. Categories, rules, scheduler, LinkGrabber,
+browser integration, media extraction, post-processing, and release hardening
+remain for later master-spec phases.
 
 ### Scope boundary
 

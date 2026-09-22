@@ -329,9 +329,9 @@
 
 **Acceptance criteria:**
 
-- [ ] Restart from zero keeps the task ID and clears partial/segment state.
-- [ ] Rust validates the operation against the canonical lifecycle.
-- [ ] Details/context actions expose restart, refresh source, and properties.
+- [x] Restart from zero keeps the task ID and clears partial/segment state.
+- [x] Rust validates the operation against the canonical lifecycle.
+- [x] Details/context actions expose restart, refresh source, and properties.
 
 **Dependencies:** Phase 5.
 
@@ -339,9 +339,9 @@
 
 **Acceptance criteria:**
 
-- [ ] Ctrl/Shift selection and select-all are keyboard accessible.
-- [ ] Bulk start/pause/resume/retry/cancel/remove use Rust commands and refresh.
-- [ ] Queue and priority bulk actions preserve existing queue constraints.
+- [x] Ctrl/Shift selection and select-all are keyboard accessible.
+- [x] Bulk start/pause/resume/retry/cancel/remove use Rust commands and refresh.
+- [x] Queue and priority bulk actions preserve existing queue constraints.
 
 **Dependencies:** Task 26.
 
@@ -349,8 +349,8 @@
 
 **Acceptance criteria:**
 
-- [ ] Details/list rows expose measured speed, ETA, status, and valid actions.
-- [ ] Keyboard shortcuts and notification feedback are covered by tests.
-- [ ] All five required commands pass and Phase 6 is committed.
+- [x] Details/list rows expose measured speed, ETA, status, and valid actions.
+- [x] Keyboard shortcuts and notification feedback are covered by tests.
+- [x] All five required commands pass and Phase 6 is committed.
 
 **Dependencies:** Task 27.

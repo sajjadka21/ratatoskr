@@ -99,6 +99,23 @@
   letter-spacing: 0.08em;
 }
 
+.download-details__rule-explanation {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding: 9px 10px;
+  color: var(--text-secondary);
+  background: rgba(79, 140, 255, 0.035);
+  border: 1px solid rgba(79, 140, 255, 0.1);
+  border-radius: 8px;
+  font-size: 9px;
+}
+
+.download-details__rule-explanation strong {
+  color: var(--text-primary);
+  font-size: 10px;
+}
+
 .download-details__progress-top {
   display: flex;
   align-items: center;

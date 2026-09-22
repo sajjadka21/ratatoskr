@@ -372,7 +372,7 @@
 **Acceptance criteria:**
 
 - [x] Explicit rule -> MIME -> extension -> host -> Other precedence is tested.
-- [ ] Matching explanations remain available to details/diagnostics.
+- [x] Matching explanations remain available to details/diagnostics.
 - [x] Queue, priority, destination, and connection actions are backend-owned.
 
 **Dependencies:** Task 29.
@@ -381,9 +381,9 @@
 
 **Acceptance criteria:**
 
-- [ ] One-time/daily/weekday/repeating windows persist and survive reopen.
-- [ ] Scheduler starts only eligible queues and manual Start Now overrides safely.
-- [ ] Completion actions default to no-op and power actions require opt-in.
+- [x] One-time/daily/weekday/repeating windows persist and survive reopen.
+- [x] Scheduler starts only eligible queues and manual Start Now overrides safely.
+- [x] Completion actions default to no-op and power actions require opt-in.
 
 **Dependencies:** Task 30.
 
@@ -391,7 +391,7 @@
 
 **Acceptance criteria:**
 
-- [ ] Categories, rules, scheduler UI, and tests are production-ready.
-- [ ] All five required commands pass and Phase 7 is committed.
+- [x] Categories, rules, scheduler UI, and tests are production-ready.
+- [x] All five required commands pass and Phase 7 is committed.
 
 **Dependencies:** Tasks 29-31.

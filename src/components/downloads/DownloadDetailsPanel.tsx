@@ -20,6 +20,7 @@ import {
   openPath,
   revealItemInDir,
 } from "@tauri-apps/plugin-opener";
+import { invoke } from "@tauri-apps/api/core";
 
 import {
   useEffect,
@@ -110,10 +111,18 @@ export function DownloadDetailsPanel({
 
   const [actionError, setActionError] =
     useState<string | null>(null);
+  const [ruleExplanation, setRuleExplanation] =
+    useState<string | null>(null);
 
   useEffect(() => {
     setCopiedField(null);
     setActionError(null);
+    setRuleExplanation(null);
+    if (item) {
+      void invoke<string | null>("get_download_rule_explanation", { id: item.id })
+        .then(setRuleExplanation)
+        .catch(() => setRuleExplanation(null));
+    }
   }, [item?.id]);
 
   if (!item) {
@@ -229,6 +238,13 @@ export function DownloadDetailsPanel({
         <div className="download-details__section-title">
           Details
         </div>
+
+        {ruleExplanation ? (
+          <div className="download-details__rule-explanation">
+            <strong>Intake decision</strong>
+            <span>{ruleExplanation}</span>
+          </div>
+        ) : null}
 
         <div className="download-details__progress">
           <div className="download-details__progress-top">

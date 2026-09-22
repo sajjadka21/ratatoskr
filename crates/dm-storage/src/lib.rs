@@ -11,10 +11,11 @@ mod categories;
 mod downloads;
 mod host_profiles;
 mod queues;
+mod schedules;
 mod segments;
 mod settings;
 
-const LATEST_SCHEMA_VERSION: i32 = 6;
+const LATEST_SCHEMA_VERSION: i32 = 7;
 
 const MIGRATION_V1: &str = r#"
 BEGIN IMMEDIATE;
@@ -257,6 +258,28 @@ PRAGMA user_version = 6;
 COMMIT;
 "#;
 
+const MIGRATION_V7: &str = r#"
+BEGIN IMMEDIATE;
+
+CREATE TABLE queue_schedules (
+    queue_id TEXT PRIMARY KEY NOT NULL REFERENCES queues(id) ON DELETE CASCADE,
+    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+    kind TEXT NOT NULL CHECK (kind IN ('once', 'daily', 'weekdays', 'repeating')),
+    start_at INTEGER NOT NULL,
+    stop_at INTEGER,
+    weekdays_mask INTEGER NOT NULL DEFAULT 0 CHECK (weekdays_mask >= 0 AND weekdays_mask <= 127),
+    interval_seconds INTEGER CHECK (interval_seconds IS NULL OR interval_seconds > 0),
+    completion_action TEXT NOT NULL DEFAULT 'none'
+        CHECK (completion_action IN ('none', 'notify', 'exit_app', 'sleep', 'hibernate', 'shutdown')),
+    prevent_sleep INTEGER NOT NULL DEFAULT 0 CHECK (prevent_sleep IN (0, 1)),
+    updated_at INTEGER NOT NULL
+);
+
+PRAGMA user_version = 7;
+
+COMMIT;
+"#;
+
 #[derive(Debug, Error)]
 pub enum StorageError {
     #[error("failed to create database directory: {0}")]
@@ -307,6 +330,9 @@ pub enum StorageError {
 
     #[error("invalid rule configuration: {0}")]
     InvalidRuleConfiguration(String),
+
+    #[error("invalid schedule configuration: {0}")]
+    InvalidScheduleConfiguration(String),
 
     #[error("queue order does not contain exactly the queued tasks for queue {0}")]
     QueueOrderMismatch(String),
@@ -458,6 +484,12 @@ fn run_migrations(connection: &Connection) -> Result<()> {
         connection.execute_batch(MIGRATION_V6)?;
     }
 
+    let version: i32 = connection.query_row("PRAGMA user_version;", [], |row| row.get(0))?;
+
+    if version == 6 {
+        connection.execute_batch(MIGRATION_V7)?;
+    }
+
     Ok(())
 }
 
@@ -482,6 +514,7 @@ mod tests {
         assert!(storage.table_exists("host_profiles").unwrap());
         assert!(storage.table_exists("categories").unwrap());
         assert!(storage.table_exists("download_rules").unwrap());
+        assert!(storage.table_exists("queue_schedules").unwrap());
         assert!(storage.health_check().is_ok());
     }
 

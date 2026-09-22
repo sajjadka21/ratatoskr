@@ -60,3 +60,54 @@ export type DownloadQueue = {
   createdAt: number;
   updatedAt: number;
 };
+
+export type QueueSchedule = {
+  queueId: string;
+  enabled: boolean;
+  kind: "once" | "daily" | "weekdays" | "repeating";
+  startAt: number;
+  stopAt: number | null;
+  weekdaysMask: number;
+  intervalSeconds: number | null;
+  completionAction:
+    | "none"
+    | "notify"
+    | "exit_app"
+    | "sleep"
+    | "hibernate"
+    | "shutdown";
+  preventSleep: boolean;
+  updatedAt: number;
+};
+
+export type DownloadCategory = {
+  id: string;
+  name: string;
+  extensions: string[];
+  mimePatterns: string[];
+  defaultDirectory: string | null;
+  hostPatterns: string[];
+  priority: DownloadPriority;
+  queueId: string | null;
+};
+
+export type DownloadRule = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  sortOrder: number;
+  domain: string | null;
+  urlPattern: string | null;
+  extension: string | null;
+  mimePattern: string | null;
+  minSize: number | null;
+  maxSize: number | null;
+  categoryId: string | null;
+  destinationDirectory: string | null;
+  queueId: string | null;
+  priority: DownloadPriority | null;
+  maxConnections: number | null;
+  maxHostConcurrency: number | null;
+  speedCap: number | null;
+  browserTakeoverAllowed: boolean | null;
+};

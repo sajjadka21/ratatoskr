@@ -1151,6 +1151,7 @@ function App() {
                 mode,
               )
             }
+            queues={queues}
           />
         ) : queuesOpen ? (
           <QueuePage

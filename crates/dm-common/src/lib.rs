@@ -450,6 +450,124 @@ pub struct DownloadRule {
     pub browser_takeover_allowed: Option<bool>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScheduleKind {
+    Once,
+    Daily,
+    Weekdays,
+    Repeating,
+}
+
+impl ScheduleKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Once => "once",
+            Self::Daily => "daily",
+            Self::Weekdays => "weekdays",
+            Self::Repeating => "repeating",
+        }
+    }
+}
+
+impl FromStr for ScheduleKind {
+    type Err = ();
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "once" => Ok(Self::Once),
+            "daily" => Ok(Self::Daily),
+            "weekdays" => Ok(Self::Weekdays),
+            "repeating" => Ok(Self::Repeating),
+            _ => Err(()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompletionAction {
+    None,
+    Notify,
+    ExitApp,
+    Sleep,
+    Hibernate,
+    Shutdown,
+}
+
+impl CompletionAction {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Notify => "notify",
+            Self::ExitApp => "exit_app",
+            Self::Sleep => "sleep",
+            Self::Hibernate => "hibernate",
+            Self::Shutdown => "shutdown",
+        }
+    }
+}
+
+impl FromStr for CompletionAction {
+    type Err = ();
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "none" => Ok(Self::None),
+            "notify" => Ok(Self::Notify),
+            "exit_app" => Ok(Self::ExitApp),
+            "sleep" => Ok(Self::Sleep),
+            "hibernate" => Ok(Self::Hibernate),
+            "shutdown" => Ok(Self::Shutdown),
+            _ => Err(()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QueueSchedule {
+    pub queue_id: String,
+    pub enabled: bool,
+    pub kind: ScheduleKind,
+    pub start_at: i64,
+    pub stop_at: Option<i64>,
+    pub weekdays_mask: u8,
+    pub interval_seconds: Option<u64>,
+    pub completion_action: CompletionAction,
+    pub prevent_sleep: bool,
+    pub updated_at: i64,
+}
+
+impl QueueSchedule {
+    pub fn is_active_at(&self, timestamp: i64) -> bool {
+        if !self.enabled
+            || timestamp < self.start_at
+            || self.stop_at.is_some_and(|stop| timestamp >= stop)
+        {
+            return false;
+        }
+        match self.kind {
+            ScheduleKind::Once => true,
+            ScheduleKind::Daily => {
+                (timestamp - self.start_at).rem_euclid(86_400) < self.remaining_window()
+            }
+            ScheduleKind::Weekdays => {
+                let day = (timestamp.div_euclid(86_400) + 4).rem_euclid(7) as u8;
+                self.weekdays_mask & (1 << day) != 0
+            }
+            ScheduleKind::Repeating => self.interval_seconds.is_some_and(|interval| {
+                interval > 0
+                    && i64::try_from(interval).ok().is_some_and(|interval| {
+                        (timestamp - self.start_at).rem_euclid(interval) < 60
+                    })
+            }),
+        }
+    }
+
+    fn remaining_window(&self) -> i64 {
+        self.stop_at
+            .map_or(86_400, |stop| (stop - self.start_at).max(1))
+    }
+}
+
 /// Everything probing learned about a source, persisted before any bytes are
 /// written. A restart reads this back to decide whether the partial file on
 /// disk still belongs to the same remote content.
@@ -490,7 +608,10 @@ pub struct DownloadCompletion {
 
 #[cfg(test)]
 mod tests {
-    use super::{DownloadPriority, DownloadSegment, DownloadStatus, QueueState, SegmentStatus};
+    use super::{
+        CompletionAction, DownloadPriority, DownloadSegment, DownloadStatus, QueueSchedule,
+        QueueState, ScheduleKind, SegmentStatus,
+    };
     use std::str::FromStr;
 
     #[test]
@@ -634,6 +755,52 @@ mod tests {
         }
 
         assert!(!DownloadStatus::Downloading.can_transition_to(DownloadStatus::Created));
+    }
+
+    #[test]
+    fn schedule_windows_are_deterministic_and_disabled_by_default() {
+        let schedule = QueueSchedule {
+            queue_id: "default".to_owned(),
+            enabled: true,
+            kind: ScheduleKind::Daily,
+            start_at: 86_400,
+            stop_at: Some(90_000),
+            weekdays_mask: 0,
+            interval_seconds: None,
+            completion_action: CompletionAction::None,
+            prevent_sleep: false,
+            updated_at: 0,
+        };
+        assert!(!schedule.is_active_at(86_399));
+        assert!(schedule.is_active_at(86_500));
+        assert!(!schedule.is_active_at(90_000));
+        assert!(
+            !QueueSchedule {
+                enabled: false,
+                ..schedule
+            }
+            .is_active_at(86_500)
+        );
+    }
+
+    #[test]
+    fn repeating_schedule_uses_a_poll_window_instead_of_an_exact_second() {
+        let schedule = QueueSchedule {
+            queue_id: "default".to_owned(),
+            enabled: true,
+            kind: ScheduleKind::Repeating,
+            start_at: 100,
+            stop_at: None,
+            weekdays_mask: 0,
+            interval_seconds: Some(300),
+            completion_action: CompletionAction::None,
+            prevent_sleep: false,
+            updated_at: 0,
+        };
+        assert!(schedule.is_active_at(101));
+        assert!(schedule.is_active_at(159));
+        assert!(!schedule.is_active_at(160));
+        assert!(schedule.is_active_at(400));
     }
 
     #[test]

@@ -162,6 +162,57 @@ pub struct QueueResponse {
     pub updated_at: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueScheduleResponse {
+    pub queue_id: String,
+    pub enabled: bool,
+    pub kind: String,
+    pub start_at: i64,
+    pub stop_at: Option<i64>,
+    pub weekdays_mask: u8,
+    pub interval_seconds: Option<u64>,
+    pub completion_action: String,
+    pub prevent_sleep: bool,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryResponse {
+    pub id: String,
+    pub name: String,
+    pub extensions: Vec<String>,
+    pub mime_patterns: Vec<String>,
+    pub default_directory: Option<String>,
+    pub host_patterns: Vec<String>,
+    pub priority: String,
+    pub queue_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadRuleResponse {
+    pub id: String,
+    pub name: String,
+    pub enabled: bool,
+    pub sort_order: i64,
+    pub domain: Option<String>,
+    pub url_pattern: Option<String>,
+    pub extension: Option<String>,
+    pub mime_pattern: Option<String>,
+    pub min_size: Option<u64>,
+    pub max_size: Option<u64>,
+    pub category_id: Option<String>,
+    pub destination_directory: Option<String>,
+    pub queue_id: Option<String>,
+    pub priority: Option<String>,
+    pub max_connections: Option<u32>,
+    pub max_host_concurrency: Option<u32>,
+    pub speed_cap: Option<u64>,
+    pub browser_takeover_allowed: Option<bool>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum QueueRunnerEventKind {

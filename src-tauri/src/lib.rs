@@ -1,12 +1,16 @@
-use dm_common::{DownloadPriority, DownloadRecord, QueueRecord, QueueState};
+use dm_common::{
+    CategoryRecord, CompletionAction, DownloadPriority, DownloadRecord, DownloadRule, QueueRecord,
+    QueueSchedule, QueueState, ScheduleKind,
+};
 use dm_core::{
     queue::{QueueRunnerEvent, QueueService},
     service::DownloadService,
     CoreService, TransferProgress,
 };
 use dm_ipc::{
-    AppInfoResponse, ComponentHealth, DownloadListItemResponse, DownloadTaskEvent,
-    HealthCheckResponse, QueueResponse, QueueRunnerEventResponse, TransferProgressResponse,
+    AppInfoResponse, CategoryResponse, ComponentHealth, DownloadListItemResponse,
+    DownloadRuleResponse, DownloadTaskEvent, HealthCheckResponse, QueueResponse,
+    QueueRunnerEventResponse, QueueScheduleResponse, TransferProgressResponse,
 };
 use dm_storage::Storage;
 use std::{
@@ -24,6 +28,7 @@ const PROGRESS_EVENT_INTERVAL: Duration = Duration::from_millis(100);
 /// How often pending retries are checked. Retry delays are measured in
 /// seconds, so a coarse poll costs nothing and keeps the app idle.
 const RETRY_POLL_INTERVAL: Duration = Duration::from_secs(5);
+const SCHEDULE_POLL_INTERVAL: Duration = Duration::from_secs(15);
 
 /// Application-level event names. Runner output is published to the whole
 /// window rather than through a per-invoke channel, so work that a command did
@@ -441,6 +446,90 @@ fn set_queue_enabled(
         .map(queue_response)
         .map_err(|error| error.to_string())
 }
+
+#[tauri::command]
+fn list_queue_schedules(state: State<'_, AppState>) -> Result<Vec<QueueScheduleResponse>, String> {
+    state
+        .storage
+        .list_queue_schedules()
+        .map(|schedules| schedules.into_iter().map(queue_schedule_response).collect())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+fn set_queue_schedule(
+    state: State<'_, AppState>,
+    queue_id: String,
+    enabled: bool,
+    kind: String,
+    start_at: i64,
+    stop_at: Option<i64>,
+    weekdays_mask: u8,
+    interval_seconds: Option<u64>,
+    completion_action: String,
+    prevent_sleep: bool,
+    updated_at: i64,
+) -> Result<QueueScheduleResponse, String> {
+    let kind = kind
+        .parse::<ScheduleKind>()
+        .map_err(|_| "unknown schedule kind".to_owned())?;
+    let completion_action = completion_action
+        .parse::<CompletionAction>()
+        .map_err(|_| "unknown completion action".to_owned())?;
+    state
+        .storage
+        .upsert_queue_schedule(&QueueSchedule {
+            queue_id,
+            enabled,
+            kind,
+            start_at,
+            stop_at,
+            weekdays_mask,
+            interval_seconds,
+            completion_action,
+            prevent_sleep,
+            updated_at,
+        })
+        .map(queue_schedule_response)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn list_categories(state: State<'_, AppState>) -> Result<Vec<CategoryResponse>, String> {
+    state
+        .storage
+        .list_categories()
+        .map(|categories| categories.into_iter().map(category_response).collect())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn list_download_rules(state: State<'_, AppState>) -> Result<Vec<DownloadRuleResponse>, String> {
+    state
+        .storage
+        .list_rules()
+        .map(|rules| rules.into_iter().map(rule_response).collect())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_download_rule_explanation(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Option<String>, String> {
+    let record = state
+        .storage
+        .get_download(&id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("download not found: {id}"))?;
+    state
+        .downloads
+        .rule_decision_for_url(&record.source_url)
+        .map(|decision| decision.map(|value| value.explanation))
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 fn remove_download(
     state: State<'_, AppState>,
@@ -746,6 +835,112 @@ async fn run_retry_scheduler(
     }
 }
 
+/// Starts queues whose persisted schedule is currently active. Queues started
+/// manually are never stopped by this loop; only runners started here are
+/// stopped when their window closes.
+async fn run_queue_scheduler(
+    app: AppHandle,
+    storage: Arc<Storage>,
+    queues: QueueService,
+    publisher: EventPublisher,
+    destination_directory: std::path::PathBuf,
+) {
+    let mut scheduler_owned = std::collections::HashSet::new();
+    loop {
+        tokio::time::sleep(SCHEDULE_POLL_INTERVAL).await;
+        let now = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+            Ok(duration) => i64::try_from(duration.as_secs()).unwrap_or(i64::MAX),
+            Err(_) => continue,
+        };
+        let schedules = match storage.list_queue_schedules() {
+            Ok(schedules) => schedules,
+            Err(error) => {
+                warn!(error = %error, "could not read queue schedules");
+                continue;
+            }
+        };
+        for schedule in schedules {
+            if schedule.is_active_at(now) {
+                let already_running = queues.is_running(&schedule.queue_id).unwrap_or(false);
+                if !already_running {
+                    match queues.start_queue(&schedule.queue_id) {
+                        Ok(_) => {
+                            scheduler_owned.insert(schedule.queue_id.clone());
+                            spawn_queue_runner(
+                                queues.clone(),
+                                publisher.clone(),
+                                schedule.queue_id.clone(),
+                                destination_directory.clone(),
+                            );
+                        }
+                        Err(error) => {
+                            warn!(queue_id = %schedule.queue_id, error = %error, "scheduled queue could not start")
+                        }
+                    }
+                }
+            } else if scheduler_owned.remove(&schedule.queue_id) {
+                if let Err(error) = queues.stop_queue(&schedule.queue_id) {
+                    warn!(queue_id = %schedule.queue_id, error = %error, "scheduled queue could not stop");
+                }
+            }
+        }
+        if app.webview_windows().is_empty() {
+            return;
+        }
+    }
+}
+
+fn queue_schedule_response(schedule: QueueSchedule) -> QueueScheduleResponse {
+    QueueScheduleResponse {
+        queue_id: schedule.queue_id,
+        enabled: schedule.enabled,
+        kind: schedule.kind.as_str().to_owned(),
+        start_at: schedule.start_at,
+        stop_at: schedule.stop_at,
+        weekdays_mask: schedule.weekdays_mask,
+        interval_seconds: schedule.interval_seconds,
+        completion_action: schedule.completion_action.as_str().to_owned(),
+        prevent_sleep: schedule.prevent_sleep,
+        updated_at: schedule.updated_at,
+    }
+}
+
+fn category_response(category: CategoryRecord) -> CategoryResponse {
+    CategoryResponse {
+        id: category.id,
+        name: category.name,
+        extensions: category.extensions,
+        mime_patterns: category.mime_patterns,
+        default_directory: category.default_directory,
+        host_patterns: category.host_patterns,
+        priority: category.priority.to_string(),
+        queue_id: category.queue_id,
+    }
+}
+
+fn rule_response(rule: DownloadRule) -> DownloadRuleResponse {
+    DownloadRuleResponse {
+        id: rule.id,
+        name: rule.name,
+        enabled: rule.enabled,
+        sort_order: rule.sort_order,
+        domain: rule.domain,
+        url_pattern: rule.url_pattern,
+        extension: rule.extension,
+        mime_pattern: rule.mime_pattern,
+        min_size: rule.min_size,
+        max_size: rule.max_size,
+        category_id: rule.category_id,
+        destination_directory: rule.destination_directory,
+        queue_id: rule.queue_id,
+        priority: rule.priority.map(|value| value.to_string()),
+        max_connections: rule.max_connections,
+        max_host_concurrency: rule.max_host_concurrency,
+        speed_cap: rule.speed_cap,
+        browser_takeover_allowed: rule.browser_takeover_allowed,
+    }
+}
+
 /// Runs one task's transfer in the background and publishes what happens.
 fn spawn_transfer(
     downloads: DownloadService,
@@ -825,7 +1020,7 @@ pub fn run() {
 
             app.manage(AppState {
                 core: CoreService::new(),
-                storage,
+                storage: Arc::clone(&storage),
                 downloads: downloads.clone(),
                 queues: queues.clone(),
             });
@@ -846,6 +1041,14 @@ pub fn run() {
             tauri::async_runtime::spawn(run_retry_scheduler(
                 app.handle().clone(),
                 downloads.clone(),
+                queues.clone(),
+                publisher.clone(),
+                destination_directory.clone(),
+            ));
+
+            tauri::async_runtime::spawn(run_queue_scheduler(
+                app.handle().clone(),
+                Arc::clone(&storage),
                 queues.clone(),
                 publisher.clone(),
                 destination_directory.clone(),
@@ -878,7 +1081,12 @@ pub fn run() {
             reorder_queue_downloads,
             start_queue,
             stop_queue,
-            set_queue_enabled
+            set_queue_enabled,
+            list_queue_schedules,
+            set_queue_schedule,
+            list_categories,
+            list_download_rules,
+            get_download_rule_explanation
         ])
         .run(tauri::generate_context!())
         .expect("error while running Download Manager");

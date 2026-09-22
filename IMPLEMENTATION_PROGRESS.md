@@ -528,7 +528,7 @@ integration, media extraction, post-processing, or system power actions.
 
 ## Phase 7 - Categories / Rules / Scheduler
 
-Status: In progress
+Status: Complete
 
 ### Plan
 
@@ -551,7 +551,27 @@ Status: In progress
   tests pass.
 - Added backend rule evaluation with ordered explicit matches, MIME/extension/
   host/Other category precedence, human-readable match explanations, and
-  intake application for queue and priority actions. Scheduler remains next.
+  intake application for queue and priority actions.
+- Added schema v7 queue schedules, typed schedule windows, persistence and
+  validation, and a restart-safe scheduler loop that only stops runners it
+  started itself. Manual queue starts remain independent.
+- Added typed schedule/category/rule IPC responses and Settings UI controls;
+  queue schedule toggles remain backend-owned and default to no completion
+  action. Download details now display the backend rule explanation.
+
+### Phase 7 quality gate
+
+- `cargo fmt --all` - passed
+- `cargo test --workspace` - passed (150 tests)
+- `cargo check --workspace` - passed
+- `cargo clippy --workspace --all-targets -- -D warnings` - passed
+- `npm run build` - passed (with `npm_config_prefix` pointed at the installed
+  Node.js npm prefix because the default user npm shim targets a missing path)
+
+### Phase boundary
+
+Phase 7 is complete and committed. LinkGrabber, browser integration, media
+extraction, post-processing, and release hardening remain for later phases.
 
 ### Scope boundary
 

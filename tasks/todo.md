@@ -434,3 +434,22 @@
 - [x] Direct, HLS, DASH, and protected sources are classified in Rust.
 - [x] Protected media is reported unsupported without DRM bypass.
 - [ ] Manifest parsing, variants, and FFmpeg finalization are implemented.
+
+# Phase 11 Tasks: Post-processing / System / CLI
+
+## Task 37: Safe post-processing boundaries
+
+**Acceptance criteria:**
+
+- [x] Archive member paths reject traversal and absolute destinations.
+- [ ] Extraction, power actions, tray/startup, CLI, and import/export ship.
+
+# Phase 12 Tasks: Hardening / Benchmark / Release
+
+## Task 38: Release hardening
+
+**Acceptance criteria:**
+
+- [x] Security boundary tests cover browser, media, link, and archive inputs.
+- [ ] Large-history/crash benchmarks, installer metadata, and release build
+  are complete.

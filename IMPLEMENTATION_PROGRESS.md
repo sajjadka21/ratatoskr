@@ -616,3 +616,22 @@ release hardening remain out of scope until their dedicated phases.
 Phase 5 will not add categories, rules, schedulers, browser integration, media
 extraction, or post-processing. Speed controls remain conservative and local;
 no cookies, credentials, or authorization data are persisted in host profiles.
+
+## Phase 11 - Post-processing / System / CLI
+
+Status: In progress
+
+### Implemented so far
+
+- Added a reusable archive-member path guard that rejects absolute paths and
+  traversal components before any future extractor writes to disk.
+
+## Phase 12 - Hardening / Benchmark / Release
+
+Status: In progress
+
+### Implemented so far
+
+- Added focused security tests for browser credentials, media protection,
+  link intake, and archive traversal.
+- Full Rust and frontend quality gates continue to pass after each slice.

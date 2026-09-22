@@ -200,3 +200,13 @@ Preserve the checkpoint architecture while separating persistent task creation f
 
 - [x] Add safe direct/HLS/DASH/protected-source classification.
 - [ ] Add manifest parsing, variant selection, and optional FFmpeg finalize.
+
+### Phase 11: Post-processing / System / CLI
+
+- [x] Add archive-member traversal guard.
+- [ ] Add archive extraction, power actions, tray/startup, CLI, and export.
+
+### Phase 12: Hardening / Benchmark / Release
+
+- [x] Add security boundary tests for intake and archive paths.
+- [ ] Run large-history/crash benchmarks, security review, and release build.

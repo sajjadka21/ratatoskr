@@ -3,6 +3,7 @@ pub mod browser;
 pub mod control;
 pub mod linkgrabber;
 pub mod media;
+pub mod postprocess;
 pub mod queue;
 pub mod resume;
 pub mod retry;

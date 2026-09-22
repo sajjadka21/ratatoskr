@@ -218,7 +218,6 @@ export function DownloadContextMenu({
     "created",
     "queued",
     "paused",
-    "retrying",
     "failed",
     "cancelled",
   ].includes(status);

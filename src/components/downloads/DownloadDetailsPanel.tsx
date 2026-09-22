@@ -328,7 +328,7 @@ export function DownloadDetailsPanel({
 
           <button
             type="button"
-            disabled={!['created', 'queued', 'paused', 'retrying', 'failed', 'cancelled'].includes(status)}
+            disabled={!["created", "queued", "paused", "failed", "cancelled"].includes(status)}
             onClick={() => onRefreshSource(item)}
           >
             <RefreshCw size={14} />

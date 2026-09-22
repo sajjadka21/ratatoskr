@@ -227,6 +227,15 @@ pub struct MediaClassificationResponse {
     pub kind: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaVariantResponse {
+    pub uri: String,
+    pub bandwidth: Option<u64>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum QueueRunnerEventKind {

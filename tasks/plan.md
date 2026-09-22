@@ -199,7 +199,7 @@ Preserve the checkpoint architecture while separating persistent task creation f
 ### Phase 10: Resource / Media
 
 - [x] Add safe direct/HLS/DASH/protected-source classification.
-- [ ] Add manifest parsing, variant selection, and optional FFmpeg finalize.
+- [x] Add safe HLS master manifest parsing; optional FFmpeg finalize remains.
 
 ### Phase 11: Post-processing / System / CLI
 

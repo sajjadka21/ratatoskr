@@ -605,6 +605,8 @@ Status: In progress
 - Added backend media-source classification for direct resources, HLS, DASH,
   and explicitly unsupported protected entry points. No DRM bypass is
   attempted; classification is exposed through typed IPC.
+- Added metadata-only HLS master-playlist variant parsing with absolute URL
+  resolution; segment/key fetching remains in the normal guarded engine.
 
 ### Scope boundary
 

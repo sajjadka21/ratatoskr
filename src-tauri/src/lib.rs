@@ -10,8 +10,8 @@ use dm_core::{
 use dm_ipc::{
     AppInfoResponse, CategoryResponse, ComponentHealth, DownloadListItemResponse,
     DownloadRuleResponse, DownloadTaskEvent, HealthCheckResponse, LinkCandidateResponse,
-    MediaClassificationResponse, QueueResponse, QueueRunnerEventResponse, QueueScheduleResponse,
-    TransferProgressResponse,
+    MediaClassificationResponse, MediaVariantResponse, QueueResponse, QueueRunnerEventResponse,
+    QueueScheduleResponse, TransferProgressResponse,
 };
 use dm_storage::Storage;
 use std::{
@@ -991,6 +991,19 @@ fn classify_media_source(
     })
 }
 
+#[tauri::command]
+fn parse_hls_manifest(base_url: String, content: String) -> Vec<MediaVariantResponse> {
+    dm_core::media::parse_hls_master_playlist(&base_url, &content)
+        .into_iter()
+        .map(|variant| MediaVariantResponse {
+            uri: variant.uri,
+            bandwidth: variant.bandwidth,
+            width: variant.width,
+            height: variant.height,
+        })
+        .collect()
+}
+
 /// Runs one task's transfer in the background and publishes what happens.
 fn spawn_transfer(
     downloads: DownloadService,
@@ -1139,7 +1152,8 @@ pub fn run() {
             list_download_rules,
             get_download_rule_explanation,
             inspect_links,
-            classify_media_source
+            classify_media_source,
+            parse_hls_manifest
         ])
         .run(tauri::generate_context!())
         .expect("error while running Download Manager");

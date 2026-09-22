@@ -14,6 +14,10 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* The IPC contract test reads the Rust command surface from disk, so the
+       Node APIs and the Vitest globals have to be visible to the compiler. */
+    "types": ["node", "vitest/globals"],
+
     /* Linting */
     "strict": true,
     "noUnusedLocals": true,

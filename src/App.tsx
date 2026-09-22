@@ -171,6 +171,8 @@ function App() {
 
   const [error, setError] =
     useState<string | null>(null);
+  const [notification, setNotification] =
+    useState<string | null>(null);
 
   const [creatingTasks, setCreatingTasks] =
     useState(false);
@@ -318,6 +320,16 @@ function App() {
       DOWNLOAD_TASK_EVENT,
       ({ payload }) => {
         if (payload.kind === "updated" && payload.download) {
+          const status = payload.download.status.toLowerCase();
+          if (status === "completed" || status === "failed") {
+            const label = payload.download.filename ?? "Download";
+            setNotification(
+              status === "completed"
+                ? `${label} completed`
+                : `${label} failed`,
+            );
+            window.setTimeout(() => setNotification(null), 4_000);
+          }
           clearLiveMetrics(payload.downloadId);
           upsertDownloads([payload.download]);
           return;
@@ -581,6 +593,26 @@ function App() {
     window.addEventListener("keydown", handleSelectionShortcut);
     return () => window.removeEventListener("keydown", handleSelectionShortcut);
   }, [filteredDownloads, selectedDownloadIds.size]);
+
+  useEffect(() => {
+    function handleGlobalShortcut(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        openAddDownload();
+      } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        document.querySelector<HTMLInputElement>('input[type="search"]')?.focus();
+      }
+    }
+
+    window.addEventListener("keydown", handleGlobalShortcut);
+    return () => window.removeEventListener("keydown", handleGlobalShortcut);
+  });
 
   async function runBulkAction(action: BulkAction) {
     const targets = [...selectedDownloads];
@@ -1279,6 +1311,12 @@ function App() {
           void confirmRemoveFromHistory(deleteFile)
         }
       />
+
+      {notification ? (
+        <div className="app-notification" role="status" aria-live="polite">
+          {notification}
+        </div>
+      ) : null}
 
       <AddDownloadModal
         open={modalOpen}

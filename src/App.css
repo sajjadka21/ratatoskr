@@ -109,3 +109,15 @@
   min-width: 0;
   flex: 1;
 }
+.app-notification {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 20;
+  padding: 10px 14px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 12px;
+  box-shadow: var(--shadow-modal);
+}

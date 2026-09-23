@@ -2,6 +2,7 @@ use crate::{
     DownloadError, Downloader, SegmentTransferRequest, TransferProgress, TransferRequest,
     adaptive::{AdaptiveController, ThroughputSample},
     control::{StopReason, TaskControl},
+    ratelimit::RateLimiter,
     resume::{ResumePlan, StoredTransfer, plan_resume},
     retry::{FailureClass, RetryPolicy, classify_failure},
     rules::{RuleDecision, evaluate_rules},
@@ -9,7 +10,10 @@ use crate::{
     throughput::ThroughputMeter,
     validate_source_url,
 };
-use dm_common::{DownloadCompletion, DownloadRecord, DownloadSegment, SegmentStatus, TransferPlan};
+use dm_common::{
+    DownloadCompletion, DownloadRecord, DownloadSegment, RequestContext, SegmentStatus,
+    TransferPlan,
+};
 use dm_storage::{Storage, StorageError};
 use std::{
     collections::HashMap,
@@ -44,6 +48,9 @@ const RESTARTED_NOTICE_CODE: &str = "restarted";
 
 #[derive(Debug, Error)]
 pub enum DownloadServiceError {
+    #[error("the download folder must be an absolute path")]
+    RelativeDirectory,
+
     #[error("download engine error: {0}")]
     Download(#[from] DownloadError),
 
@@ -74,6 +81,18 @@ pub enum DownloadServiceError {
 
 pub type Result<T> = std::result::Result<T, DownloadServiceError>;
 
+/// Setting keys owned by the engine.
+pub const SETTING_DEFAULT_DIRECTORY: &str = "default_download_directory";
+pub const SETTING_GLOBAL_SPEED_LIMIT: &str = "global_speed_limit";
+
+/// What the intake rules decided for one running transfer, after probing
+/// told the engine the file's type and size.
+#[derive(Clone)]
+struct TaskOverrides {
+    limiter: Option<Arc<RateLimiter>>,
+    max_connections: Option<usize>,
+}
+
 #[derive(Clone)]
 pub struct DownloadService {
     downloader: Downloader,
@@ -85,10 +104,19 @@ pub struct DownloadService {
     retry_policy: RetryPolicy,
     segment_connections: usize,
     segmented_threshold: u64,
+    /// The application-wide bandwidth limit every transfer draws from.
+    global_limiter: Arc<RateLimiter>,
+    /// Rule-derived limits of transfers running now, by task id.
+    overrides: Arc<Mutex<HashMap<String, TaskOverrides>>>,
 }
 
 impl DownloadService {
     pub fn new(storage: Arc<Storage>) -> Result<Self> {
+        let global_limit = storage
+            .get_setting(SETTING_GLOBAL_SPEED_LIMIT)?
+            .and_then(|value| value.parse::<u64>().ok())
+            .filter(|limit| *limit > 0);
+
         Ok(Self {
             downloader: Downloader::new()?,
             storage,
@@ -97,7 +125,84 @@ impl DownloadService {
             retry_policy: RetryPolicy::default(),
             segment_connections: DEFAULT_SEGMENT_CONNECTIONS,
             segmented_threshold: DEFAULT_SEGMENTED_THRESHOLD,
+            global_limiter: Arc::new(RateLimiter::new(global_limit)),
+            overrides: Arc::new(Mutex::new(HashMap::new())),
         })
+    }
+
+    /// True while any transfer is moving bytes in this process.
+    pub fn has_running_transfers(&self) -> bool {
+        self.controls
+            .lock()
+            .map(|controls| !controls.is_empty())
+            .unwrap_or(false)
+    }
+
+    /// The application-wide bandwidth limit in bytes per second, if any.
+    pub fn global_speed_limit(&self) -> Option<u64> {
+        self.global_limiter.limit()
+    }
+
+    /// Persists and applies the application-wide limit. Transfers already
+    /// running slow down or speed up immediately.
+    pub fn set_global_speed_limit(&self, limit: Option<u64>) -> Result<()> {
+        let limit = limit.filter(|value| *value > 0);
+        self.storage
+            .set_setting(SETTING_GLOBAL_SPEED_LIMIT, &limit.unwrap_or(0).to_string())?;
+        self.global_limiter.set_limit(limit);
+        Ok(())
+    }
+
+    /// The folder new downloads go to when no rule or category names one.
+    pub fn default_directory(&self) -> Result<Option<PathBuf>> {
+        Ok(self
+            .storage
+            .get_setting(SETTING_DEFAULT_DIRECTORY)?
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute()))
+    }
+
+    /// Sets the default folder; `None` returns to the system Downloads folder.
+    pub fn set_default_directory(&self, directory: Option<&Path>) -> Result<()> {
+        match directory {
+            Some(directory) if directory.is_absolute() => self
+                .storage
+                .set_setting(SETTING_DEFAULT_DIRECTORY, &directory.to_string_lossy())?,
+            Some(_) => return Err(DownloadServiceError::RelativeDirectory),
+            None => self.storage.set_setting(SETTING_DEFAULT_DIRECTORY, "")?,
+        }
+        Ok(())
+    }
+
+    /// Picks the folder for a task: a matching rule's folder, then its
+    /// category's folder, then the configured default, then `fallback`
+    /// (the system Downloads folder). Relative paths are never used.
+    fn resolve_destination(&self, decision: Option<&RuleDecision>, fallback: &Path) -> PathBuf {
+        let absolute = |value: &str| {
+            let path = PathBuf::from(value.trim());
+            (!value.trim().is_empty() && path.is_absolute()).then_some(path)
+        };
+
+        let rule_directory = decision
+            .and_then(|decision| decision.destination_directory.as_deref())
+            .and_then(absolute);
+        let category_directory = || {
+            let category_id = decision?.category_id.as_deref()?;
+            let category = self.storage.get_category(category_id).ok()??;
+            absolute(category.default_directory.as_deref()?)
+        };
+
+        rule_directory
+            .or_else(category_directory)
+            .or_else(|| self.default_directory().ok().flatten())
+            .unwrap_or_else(|| fallback.to_path_buf())
+    }
+
+    fn task_overrides(&self, download_id: &str) -> Option<TaskOverrides> {
+        self.overrides
+            .lock()
+            .ok()
+            .and_then(|overrides| overrides.get(download_id).cloned())
     }
 
     pub fn with_retry_policy(mut self, retry_policy: RetryPolicy) -> Self {
@@ -113,6 +218,37 @@ impl DownloadService {
     pub fn with_segmented_threshold(mut self, threshold: u64) -> Self {
         self.segmented_threshold = threshold;
         self
+    }
+
+    /// Creates a task together with the browser context it arrived with.
+    /// The context is stored only when the task itself was created.
+    pub fn create_task_with_context(
+        &self,
+        source_url: &str,
+        context: &RequestContext,
+    ) -> Result<DownloadRecord> {
+        let task = self.create_task(source_url)?;
+        self.storage.set_request_context(&task.id, context)?;
+        Ok(task)
+    }
+
+    /// The shared downloader carrying this task's stored browser context and
+    /// every bandwidth limit that applies to it.
+    fn downloader_for(&self, download_id: &str) -> Result<Downloader> {
+        let context = self.storage.get_request_context(download_id)?;
+        let mut downloader = self
+            .downloader
+            .with_context(&context)
+            .with_limiter(Arc::clone(&self.global_limiter));
+
+        if let Some(limiter) = self
+            .task_overrides(download_id)
+            .and_then(|overrides| overrides.limiter)
+        {
+            downloader = downloader.with_limiter(limiter);
+        }
+
+        Ok(downloader)
     }
 
     pub fn create_task(&self, source_url: &str) -> Result<DownloadRecord> {
@@ -273,6 +409,7 @@ impl DownloadService {
         let control = self.register_control(download_id)?;
         let _guard = ControlGuard {
             controls: Arc::clone(&self.controls),
+            overrides: Arc::clone(&self.overrides),
             download_id: download_id.to_owned(),
         };
 
@@ -312,7 +449,8 @@ impl DownloadService {
     where
         F: FnMut(&str, TransferProgress) + Send,
     {
-        let probe = match self.downloader.probe(&task.source_url).await {
+        let downloader = self.downloader_for(&task.id)?;
+        let probe = match downloader.probe(&task.source_url).await {
             Ok(probe) => probe,
             Err(error) => {
                 if let DownloadError::Http(http_error) = &error
@@ -331,13 +469,40 @@ impl DownloadService {
             }
         };
 
+        // Probing told us the type and size, so the full rule set can decide
+        // the folder and any per-task limits now.
+        let decision = evaluate_rules(
+            &task.source_url,
+            probe.content_type.as_deref(),
+            probe.total_bytes,
+            &self.storage.list_rules()?,
+            &self.storage.list_categories()?,
+        );
+        if let Ok(mut overrides) = self.overrides.lock() {
+            overrides.insert(
+                task.id.clone(),
+                TaskOverrides {
+                    limiter: decision
+                        .as_ref()
+                        .and_then(|decision| decision.speed_cap)
+                        .filter(|cap| *cap > 0)
+                        .map(|cap| Arc::new(RateLimiter::new(Some(cap)))),
+                    max_connections: decision
+                        .as_ref()
+                        .and_then(|decision| decision.max_connections)
+                        .map(|value| value.max(1) as usize),
+                },
+            );
+        }
+
         // Paths are reserved once and then kept, so a resumed task writes to
         // the same partial file rather than starting a second one.
         let (destination_path, temp_path) = match (&task.destination_path, &task.temp_path) {
             (Some(destination), Some(temp)) => (PathBuf::from(destination), PathBuf::from(temp)),
             _ => {
+                let directory = self.resolve_destination(decision.as_ref(), destination_directory);
                 self.downloader
-                    .plan_paths(destination_directory, &probe.filename)
+                    .plan_paths(&directory, &probe.filename)
                     .await?
             }
         };
@@ -444,7 +609,7 @@ impl DownloadService {
         let mut meter = ThroughputMeter::new(Instant::now(), start_offset);
 
         let outcome = self
-            .downloader
+            .downloader_for(&request.task.id)?
             .transfer(
                 TransferRequest {
                     source_url: &request.task.source_url,
@@ -527,7 +692,12 @@ impl DownloadService {
             .get_host_profile(&host)?
             .map(|profile| profile.preferred_max_connections as usize)
             .unwrap_or(self.segment_connections)
-            .clamp(1, self.segment_connections);
+            .clamp(1, self.segment_connections)
+            .min(
+                self.task_overrides(&task.id)
+                    .and_then(|overrides| overrides.max_connections)
+                    .unwrap_or(usize::MAX),
+            );
         let planned = plan_segments(&task.id, temp_path, total_bytes, connection_limit)?;
         let existing = self.storage.list_download_segments(&task.id)?;
         let source_changed = (task.total_bytes.is_some() && task.total_bytes != probe.total_bytes)
@@ -595,7 +765,7 @@ impl DownloadService {
         let mut adaptive = AdaptiveController::new(connection_limit);
         let mut target_connections = adaptive.target_connections();
         let pool_context = SegmentPoolContext {
-            downloader: self.downloader.clone(),
+            downloader: self.downloader_for(&task.id)?,
             storage: Arc::clone(&self.storage),
             control: Arc::clone(&control),
             source_url: probe.final_url.clone(),
@@ -861,6 +1031,7 @@ impl DownloadService {
 /// Unregisters the control handle when a transfer ends, however it ends.
 struct ControlGuard {
     controls: Arc<Mutex<HashMap<String, Arc<TaskControl>>>>,
+    overrides: Arc<Mutex<HashMap<String, TaskOverrides>>>,
     download_id: String,
 }
 
@@ -868,6 +1039,9 @@ impl Drop for ControlGuard {
     fn drop(&mut self) {
         if let Ok(mut controls) = self.controls.lock() {
             controls.remove(&self.download_id);
+        }
+        if let Ok(mut overrides) = self.overrides.lock() {
+            overrides.remove(&self.download_id);
         }
     }
 }
@@ -1281,6 +1455,175 @@ mod tests {
         ));
     }
 
+    fn size_rule(name: &str) -> DownloadRule {
+        DownloadRule {
+            id: String::new(),
+            name: name.to_owned(),
+            enabled: true,
+            sort_order: 0,
+            domain: None,
+            url_pattern: None,
+            extension: None,
+            mime_pattern: None,
+            min_size: Some(1),
+            max_size: None,
+            category_id: None,
+            destination_directory: None,
+            queue_id: None,
+            priority: None,
+            max_connections: None,
+            max_host_concurrency: None,
+            speed_cap: None,
+            browser_takeover_allowed: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn files_go_to_rule_then_category_then_default_folder() {
+        let server = TestServer::start(ServerBehaviour::default()).await;
+        let harness = harness();
+        let root = harness.destination.parent().unwrap().to_path_buf();
+
+        // 1. Configured default folder.
+        let default_folder = root.join("default");
+        harness
+            .service
+            .set_default_directory(Some(&default_folder))
+            .unwrap();
+        let task = harness.service.create_task(&server.url("a.bin")).unwrap();
+        let record = harness
+            .service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+        assert!(
+            Path::new(record.destination_path.as_deref().unwrap()).starts_with(&default_folder)
+        );
+
+        // 2. The matched category's folder beats the default. The test
+        //    server answers application/octet-stream, which is Applications.
+        let category_folder = root.join("apps");
+        harness
+            .storage
+            .set_category_directory("applications", Some(&category_folder.to_string_lossy()))
+            .unwrap();
+        let task = harness.service.create_task(&server.url("b.bin")).unwrap();
+        let record = harness
+            .service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+        assert!(
+            Path::new(record.destination_path.as_deref().unwrap()).starts_with(&category_folder)
+        );
+
+        // 3. A matching rule's folder beats both.
+        let rule_folder = root.join("rule");
+        let mut rule = size_rule("Everything with a size");
+        rule.destination_directory = Some(rule_folder.to_string_lossy().into_owned());
+        harness.storage.create_rule(&rule).unwrap();
+        let task = harness.service.create_task(&server.url("c.bin")).unwrap();
+        let record = harness
+            .service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+        assert!(Path::new(record.destination_path.as_deref().unwrap()).starts_with(&rule_folder));
+    }
+
+    #[test]
+    fn relative_default_folders_are_refused() {
+        let harness = harness();
+        assert!(matches!(
+            harness
+                .service
+                .set_default_directory(Some(Path::new("relative/folder"))),
+            Err(DownloadServiceError::RelativeDirectory)
+        ));
+    }
+
+    #[tokio::test]
+    async fn global_speed_limit_slows_the_transfer_and_persists() {
+        let body = vec![7_u8; 60_000];
+        let server = TestServer::start(ServerBehaviour {
+            body: body.clone(),
+            chunk_size: 4_096,
+            supports_range: false,
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+        harness
+            .service
+            .set_global_speed_limit(Some(60_000))
+            .unwrap();
+
+        // Burst 16 KiB, the remaining ~44 KB at 60 KB/s take ~0.7 s.
+        let task = harness
+            .service
+            .create_task(&server.url("slow.bin"))
+            .unwrap();
+        let started = std::time::Instant::now();
+        let record = harness
+            .service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+        assert_eq!(record.status, DownloadStatus::Completed);
+        assert!(
+            started.elapsed() >= Duration::from_millis(500),
+            "{:?}",
+            started.elapsed()
+        );
+
+        let reopened = DownloadService::new(Arc::clone(&harness.storage)).unwrap();
+        assert_eq!(reopened.global_speed_limit(), Some(60_000));
+        reopened.set_global_speed_limit(None).unwrap();
+        assert_eq!(reopened.global_speed_limit(), None);
+    }
+
+    #[tokio::test]
+    async fn a_rule_speed_cap_limits_only_matching_tasks() {
+        let body = vec![7_u8; 60_000];
+        let server = TestServer::start(ServerBehaviour {
+            body,
+            chunk_size: 4_096,
+            supports_range: false,
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+        let mut rule = size_rule("Slow capped");
+        rule.min_size = None;
+        rule.url_pattern = Some("*capped*".to_owned());
+        rule.speed_cap = Some(60_000);
+        harness.storage.create_rule(&rule).unwrap();
+
+        let fast = harness
+            .service
+            .create_task(&server.url("free.bin"))
+            .unwrap();
+        let started = std::time::Instant::now();
+        harness
+            .service
+            .start_task(&fast.id, &harness.destination)
+            .await
+            .unwrap();
+        assert!(started.elapsed() < Duration::from_millis(400));
+
+        let slow = harness
+            .service
+            .create_task(&server.url("capped.bin"))
+            .unwrap();
+        let started = std::time::Instant::now();
+        harness
+            .service
+            .start_task(&slow.id, &harness.destination)
+            .await
+            .unwrap();
+        assert!(started.elapsed() >= Duration::from_millis(500));
+    }
+
     #[test]
     fn intake_rule_decision_is_backend_owned_and_explainable() {
         let harness = harness();
@@ -1384,6 +1727,39 @@ mod tests {
         assert_eq!(record.status, DownloadStatus::Completed);
         assert!(saw_multiple_connections);
         assert!(saw_explanation);
+    }
+
+    #[tokio::test]
+    async fn browser_context_is_sent_to_hotlink_protected_servers() {
+        let server = TestServer::start(ServerBehaviour {
+            required_header: Some("referer: https://example.com/page".to_owned()),
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let directory = tempdir().unwrap();
+        let storage = Arc::new(Storage::open(directory.path().join("downloads.db")).unwrap());
+        let service = DownloadService::new(Arc::clone(&storage)).unwrap();
+
+        let without = service.create_task(&server.url("file.bin")).unwrap();
+        let failed = service
+            .start_task(&without.id, directory.path().join("out"))
+            .await;
+        assert!(failed.is_err() || failed.unwrap().status == DownloadStatus::Failed);
+
+        let with = service
+            .create_task_with_context(
+                &server.url("file.bin"),
+                &RequestContext {
+                    referrer: Some("https://example.com/page".to_owned()),
+                    user_agent: Some("Mozilla/5.0 Test".to_owned()),
+                },
+            )
+            .unwrap();
+        let record = service
+            .start_task(&with.id, directory.path().join("out"))
+            .await
+            .unwrap();
+        assert_eq!(record.status, DownloadStatus::Completed);
     }
 
     #[tokio::test]

@@ -71,6 +71,85 @@ impl Storage {
             ))
     }
 
+    /// Changes where a category's files go. `None` (or a blank path) sends
+    /// them to the default folder again.
+    pub fn set_category_directory(
+        &self,
+        id: &str,
+        directory: Option<&str>,
+    ) -> Result<CategoryRecord> {
+        let directory = directory.map(str::trim).filter(|value| !value.is_empty());
+        let connection = self.connection()?;
+        let changed = connection.execute(
+            "UPDATE categories SET default_directory = ?2 WHERE id = ?1;",
+            params![id, directory],
+        )?;
+        drop(connection);
+        if changed == 0 {
+            return Err(StorageError::InvalidCategoryConfiguration(format!(
+                "category not found: {id}"
+            )));
+        }
+        self.get_category(id)?
+            .ok_or(StorageError::InvalidCategoryConfiguration(format!(
+                "category not found: {id}"
+            )))
+    }
+
+    /// Replaces every field of an existing rule.
+    pub fn update_rule(&self, rule: &DownloadRule) -> Result<DownloadRule> {
+        validate_rule(rule)?;
+        let connection = self.connection()?;
+        let changed = connection.execute(
+            "UPDATE download_rules SET
+                name = ?2, enabled = ?3, sort_order = ?4, domain = ?5, url_pattern = ?6,
+                extension = ?7, mime_pattern = ?8, min_size = ?9, max_size = ?10,
+                category_id = ?11, destination_directory = ?12, queue_id = ?13,
+                priority = ?14, max_connections = ?15, max_host_concurrency = ?16,
+                speed_cap = ?17, browser_takeover_allowed = ?18
+             WHERE id = ?1;",
+            params![
+                rule.id,
+                rule.name.trim(),
+                rule.enabled,
+                rule.sort_order,
+                blank_to_none(rule.domain.as_deref()),
+                blank_to_none(rule.url_pattern.as_deref()),
+                blank_to_none(rule.extension.as_deref()),
+                blank_to_none(rule.mime_pattern.as_deref()),
+                rule.min_size.map(|value| value as i64),
+                rule.max_size.map(|value| value as i64),
+                rule.category_id,
+                blank_to_none(rule.destination_directory.as_deref()),
+                rule.queue_id,
+                rule.priority.map(|value| value.as_str()),
+                rule.max_connections.map(i64::from),
+                rule.max_host_concurrency.map(i64::from),
+                rule.speed_cap.map(|value| value as i64),
+                rule.browser_takeover_allowed,
+            ],
+        )?;
+        drop(connection);
+        if changed == 0 {
+            return Err(StorageError::InvalidRuleConfiguration(format!(
+                "rule not found: {}",
+                rule.id
+            )));
+        }
+        self.list_rules()?
+            .into_iter()
+            .find(|candidate| candidate.id == rule.id)
+            .ok_or(StorageError::InvalidRuleConfiguration(
+                "updated rule could not be read back".to_owned(),
+            ))
+    }
+
+    pub fn delete_rule(&self, id: &str) -> Result<()> {
+        let connection = self.connection()?;
+        connection.execute("DELETE FROM download_rules WHERE id = ?1;", params![id])?;
+        Ok(())
+    }
+
     pub fn list_rules(&self) -> Result<Vec<DownloadRule>> {
         let connection = self.connection()?;
         let mut statement = connection.prepare(
@@ -85,20 +164,7 @@ impl Storage {
     }
 
     pub fn create_rule(&self, rule: &DownloadRule) -> Result<DownloadRule> {
-        if rule.name.trim().is_empty() {
-            return Err(StorageError::InvalidRuleConfiguration(
-                "rule name must not be empty".to_owned(),
-            ));
-        }
-        if rule
-            .min_size
-            .zip(rule.max_size)
-            .is_some_and(|(min, max)| min > max)
-        {
-            return Err(StorageError::InvalidRuleConfiguration(
-                "minimum size cannot exceed maximum size".to_owned(),
-            ));
-        }
+        validate_rule(rule)?;
         let id = if rule.id.trim().is_empty() {
             Uuid::new_v4().to_string()
         } else {
@@ -116,14 +182,14 @@ impl Storage {
                 rule.name.trim(),
                 rule.enabled,
                 rule.sort_order,
-                rule.domain,
-                rule.url_pattern,
-                rule.extension,
-                rule.mime_pattern,
+                blank_to_none(rule.domain.as_deref()),
+                blank_to_none(rule.url_pattern.as_deref()),
+                blank_to_none(rule.extension.as_deref()),
+                blank_to_none(rule.mime_pattern.as_deref()),
                 rule.min_size.map(|value| value as i64),
                 rule.max_size.map(|value| value as i64),
                 rule.category_id,
-                rule.destination_directory,
+                blank_to_none(rule.destination_directory.as_deref()),
                 rule.queue_id,
                 rule.priority.map(|value| value.as_str()),
                 rule.max_connections.map(i64::from),
@@ -264,6 +330,43 @@ impl RuleRow {
     }
 }
 
+fn validate_rule(rule: &DownloadRule) -> Result<()> {
+    if rule.name.trim().is_empty() {
+        return Err(StorageError::InvalidRuleConfiguration(
+            "rule name must not be empty".to_owned(),
+        ));
+    }
+    if rule
+        .min_size
+        .zip(rule.max_size)
+        .is_some_and(|(min, max)| min > max)
+    {
+        return Err(StorageError::InvalidRuleConfiguration(
+            "minimum size cannot exceed maximum size".to_owned(),
+        ));
+    }
+    let has_condition = [
+        rule.domain.as_deref(),
+        rule.url_pattern.as_deref(),
+        rule.extension.as_deref(),
+        rule.mime_pattern.as_deref(),
+    ]
+    .into_iter()
+    .any(|value| blank_to_none(value).is_some())
+        || rule.min_size.is_some()
+        || rule.max_size.is_some();
+    if !has_condition {
+        return Err(StorageError::InvalidRuleConfiguration(
+            "a rule needs at least one condition".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn blank_to_none(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -314,5 +417,71 @@ mod tests {
         };
         let created = storage.create_rule(&rule).unwrap();
         assert_eq!(storage.list_rules().unwrap(), vec![created]);
+    }
+
+    fn domain_rule(name: &str) -> DownloadRule {
+        DownloadRule {
+            id: String::new(),
+            name: name.to_owned(),
+            enabled: true,
+            sort_order: 0,
+            domain: Some("example.com".to_owned()),
+            url_pattern: None,
+            extension: None,
+            mime_pattern: None,
+            min_size: None,
+            max_size: None,
+            category_id: None,
+            destination_directory: None,
+            queue_id: None,
+            priority: None,
+            max_connections: None,
+            max_host_concurrency: None,
+            speed_cap: None,
+            browser_takeover_allowed: None,
+        }
+    }
+
+    #[test]
+    fn category_directory_can_be_set_and_cleared() {
+        let root = tempdir().unwrap();
+        let storage = Storage::open(root.path().join("downloads.db")).unwrap();
+
+        let video = storage
+            .set_category_directory("video", Some("D:\\Videos"))
+            .unwrap();
+        assert_eq!(video.default_directory.as_deref(), Some("D:\\Videos"));
+
+        let video = storage.set_category_directory("video", Some("  ")).unwrap();
+        assert_eq!(video.default_directory, None);
+
+        assert!(storage.set_category_directory("missing", None).is_err());
+    }
+
+    #[test]
+    fn rules_can_be_updated_and_deleted() {
+        let root = tempdir().unwrap();
+        let storage = Storage::open(root.path().join("downloads.db")).unwrap();
+        let mut rule = storage.create_rule(&domain_rule("Example")).unwrap();
+
+        rule.enabled = false;
+        rule.speed_cap = Some(50_000);
+        rule.destination_directory = Some(" ".to_owned());
+        let updated = storage.update_rule(&rule).unwrap();
+        assert!(!updated.enabled);
+        assert_eq!(updated.speed_cap, Some(50_000));
+        assert_eq!(updated.destination_directory, None);
+
+        storage.delete_rule(&rule.id).unwrap();
+        assert!(storage.list_rules().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_rule_without_any_condition_is_refused() {
+        let root = tempdir().unwrap();
+        let storage = Storage::open(root.path().join("downloads.db")).unwrap();
+        let mut rule = domain_rule("Matches everything");
+        rule.domain = Some("   ".to_owned());
+        assert!(storage.create_rule(&rule).is_err());
     }
 }

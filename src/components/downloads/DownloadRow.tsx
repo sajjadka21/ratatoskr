@@ -1,4 +1,4 @@
-﻿import {
+import {
   Archive,
   File,
   Image,
@@ -16,7 +16,7 @@ import type {
   TaskAction,
   TransferMetrics,
 } from "../../types/download";
-import type { SyntheticEvent } from "react";
+import { memo, type SyntheticEvent } from "react";
 
 import {
   ACTION_LABELS,
@@ -40,11 +40,18 @@ type DownloadRowProps = {
   /// countdown ticks without every row owning a timer.
   nowSeconds?: number;
   selected?: boolean;
+  /// Position in the visible list, handed back on selection so the parent
+  /// can pass one stable handler to every row.
+  index: number;
   onAction?: (
     item: DownloadListItem,
     action: TaskAction,
   ) => void;
-  onSelect?: (event: SyntheticEvent) => void;
+  onSelect?: (
+    item: DownloadListItem,
+    index: number,
+    event: SyntheticEvent,
+  ) => void;
   onContextMenu?: (
     item: DownloadListItem,
     x: number,
@@ -112,12 +119,15 @@ const ACTION_ICONS = {
   restart: RefreshCw,
 } as const;
 
-export function DownloadRow({
+/// Memoised: a progress event replaces only the row that moved, so the rest
+/// of a long list skips rendering as long as the parent's handlers are stable.
+export const DownloadRow = memo(function DownloadRow({
   item,
   metrics,
   queueName,
   nowSeconds,
   selected = false,
+  index,
   onAction,
   onSelect,
   onContextMenu,
@@ -174,7 +184,7 @@ export function DownloadRow({
       }`}
       role="button"
       tabIndex={0}
-      onClick={onSelect}
+      onClick={(event) => onSelect?.(item, index, event)}
       onContextMenu={(event) => {
         event.preventDefault();
 
@@ -190,7 +200,7 @@ export function DownloadRow({
           event.key === " "
         ) {
           event.preventDefault();
-          onSelect?.(event);
+          onSelect?.(item, index, event);
         }
       }}
     >
@@ -322,9 +332,4 @@ export function DownloadRow({
       </div>
     </article>
   );
-}
-
-
-
-
-
+});

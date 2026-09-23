@@ -23,9 +23,25 @@ function extensionExcluded(filename, value) {
     .filter(Boolean).includes(extension);
 }
 
+// The host answers `accepted: true` only after the task is saved in the
+// application's database, so the browser's copy is cancelled only then.
 async function handoff(message) {
-  const response = await chrome.runtime.sendNativeMessage(NATIVE_HOST, message);
-  return response?.accepted === true;
+  try {
+    const response = await chrome.runtime.sendNativeMessage(NATIVE_HOST, message);
+    return response ?? { accepted: false, error: "no response" };
+  } catch (error) {
+    return { accepted: false, error: String(error?.message ?? error) };
+  }
+}
+
+function sendLink(url, referrer) {
+  return handoff({
+    type: "download",
+    url,
+    filenameHint: null,
+    referrer: referrer || null,
+    userAgent: navigator.userAgent
+  });
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -34,24 +50,36 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.contextMenus.onClicked.addListener(async (info) => {
-  const value = info.linkUrl || info.selectionText || "";
-  if (!value) return;
-  try { await handoff({ type: "inspect", text: value }); } catch { /* browser flow remains unaffected */ }
+  if (info.menuItemId === "download-manager-link" && info.linkUrl) {
+    await sendLink(info.linkUrl, info.pageUrl);
+  } else if (info.selectionText) {
+    await handoff({ type: "inspect", text: info.selectionText });
+  }
 });
 
 chrome.downloads.onCreated.addListener(async (download) => {
   const options = await settings();
-  if (!options.takeoverEnabled || !/^https?:\/\//i.test(download.url || "")) return;
-  if (download.fileSize && download.fileSize < Number(options.minimumBytes)) return;
-  if (hostExcluded(download.url, options.excludedHosts) || extensionExcluded(download.filename, options.excludedExtensions)) return;
-  try {
-    const accepted = await handoff({
-      type: "download",
-      url: download.url,
-      filenameHint: download.filename || null,
-      referrer: download.referrer || null,
-      userAgent: null
-    });
-    if (accepted) await chrome.downloads.cancel(download.id);
-  } catch { /* native host absence must never break browser downloads */ }
+  const url = download.finalUrl || download.url || "";
+  if (!options.takeoverEnabled || !/^https?:\/\//i.test(url)) return;
+  if (download.fileSize > 0 && download.fileSize < Number(options.minimumBytes)) return;
+  if (hostExcluded(url, options.excludedHosts) || extensionExcluded(download.filename, options.excludedExtensions)) return;
+
+  // Hold the browser's transfer while the application saves the task, and
+  // let it continue untouched if anything goes wrong.
+  await chrome.downloads.pause(download.id).catch(() => {});
+  const response = await sendLink(url, download.referrer);
+  if (response.accepted) {
+    await chrome.downloads.cancel(download.id).catch(() => {});
+    await chrome.downloads.erase({ id: download.id }).catch(() => {});
+  } else {
+    await chrome.downloads.resume(download.id).catch(() => {});
+  }
+});
+
+chrome.runtime.onMessage.addListener((message, _sender, reply) => {
+  if (message?.type === "status") {
+    handoff({ type: "ping" }).then(reply);
+    return true;
+  }
+  return false;
 });

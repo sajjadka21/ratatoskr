@@ -1,3 +1,4 @@
+use dm_common::RequestContext;
 use reqwest::Url;
 use thiserror::Error;
 
@@ -50,6 +51,24 @@ impl BrowserHandoff {
             ..self
         })
     }
+
+    /// The part of the handoff the engine replays on every request for this
+    /// task. A referrer is kept only when it is itself an HTTP(S) page without
+    /// embedded credentials; anything else is dropped rather than sent.
+    pub fn request_context(&self) -> RequestContext {
+        let referrer = self.referrer.as_deref().and_then(|value| {
+            let parsed = Url::parse(value).ok()?;
+            let safe = matches!(parsed.scheme(), "http" | "https")
+                && parsed.username().is_empty()
+                && parsed.password().is_none();
+            safe.then(|| parsed.to_string())
+        });
+
+        RequestContext {
+            referrer,
+            user_agent: self.user_agent.clone(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -65,6 +84,27 @@ mod tests {
             user_agent: None,
         };
         assert!(request.validate().is_ok());
+    }
+
+    #[test]
+    fn request_context_keeps_only_safe_referrers() {
+        let mut request = BrowserHandoff {
+            url: "https://example.com/file.zip".to_owned(),
+            filename_hint: None,
+            referrer: Some("https://example.com/page".to_owned()),
+            user_agent: Some("Mozilla/5.0".to_owned()),
+        };
+        let context = request.request_context();
+        assert_eq!(
+            context.referrer.as_deref(),
+            Some("https://example.com/page")
+        );
+        assert_eq!(context.user_agent.as_deref(), Some("Mozilla/5.0"));
+
+        request.referrer = Some("https://user:secret@example.com/".to_owned());
+        assert_eq!(request.request_context().referrer, None);
+        request.referrer = Some("chrome-extension://abc/page".to_owned());
+        assert_eq!(request.request_context().referrer, None);
     }
 
     #[test]

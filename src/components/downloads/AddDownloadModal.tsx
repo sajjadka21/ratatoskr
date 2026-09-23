@@ -31,6 +31,9 @@ type AddDownloadModalProps = {
   error: string | null;
   linkCount: number;
   queues: DownloadQueue[];
+  /// Folder used when no category or rule names one; null is the system
+  /// Downloads folder.
+  defaultDirectory?: string | null;
   onUrlChange: (value: string) => void;
   onClose: () => void;
   onSubmit: (action: AddDownloadAction) => void;
@@ -44,6 +47,7 @@ export function AddDownloadModal({
   error,
   linkCount,
   queues,
+  defaultDirectory = null,
   onUrlChange,
   onClose,
   onSubmit,
@@ -247,7 +251,10 @@ export function AddDownloadModal({
 
           <div className="add-download-modal__destination">
             <span>Destination</span>
-            <strong>System Downloads folder</strong>
+            <strong title={defaultDirectory ?? undefined}>
+              {defaultDirectory ?? "System Downloads folder"}
+            </strong>
+            <small>Categories and rules can choose another folder.</small>
           </div>
 
           {error ? (

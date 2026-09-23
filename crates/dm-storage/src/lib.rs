@@ -11,11 +11,12 @@ mod categories;
 mod downloads;
 mod host_profiles;
 mod queues;
+mod request_context;
 mod schedules;
 mod segments;
 mod settings;
 
-const LATEST_SCHEMA_VERSION: i32 = 7;
+const LATEST_SCHEMA_VERSION: i32 = 9;
 
 const MIGRATION_V1: &str = r#"
 BEGIN IMMEDIATE;
@@ -280,6 +281,40 @@ PRAGMA user_version = 7;
 COMMIT;
 "#;
 
+/// Browser-supplied request context that a server may require before it will
+/// serve a file (for example a Referer check or a User-Agent allowlist). Kept
+/// out of `downloads` so history rows stay unchanged, and removed with its
+/// task. Cookies and credentials are never stored here.
+const MIGRATION_V8: &str = r#"
+BEGIN IMMEDIATE;
+
+CREATE TABLE download_request_context (
+    download_id TEXT PRIMARY KEY NOT NULL REFERENCES downloads(id) ON DELETE CASCADE,
+    referrer TEXT,
+    user_agent TEXT
+);
+
+PRAGMA user_version = 8;
+
+COMMIT;
+"#;
+
+/// Daily and weekday schedules become wall-clock windows ("02:00 to 07:00")
+/// in minutes after local midnight. Existing rows keep working: without a
+/// window the old start/stop times of day are used.
+const MIGRATION_V9: &str = r#"
+BEGIN IMMEDIATE;
+
+ALTER TABLE queue_schedules ADD COLUMN window_start_minute INTEGER
+    CHECK (window_start_minute IS NULL OR (window_start_minute >= 0 AND window_start_minute < 1440));
+ALTER TABLE queue_schedules ADD COLUMN window_end_minute INTEGER
+    CHECK (window_end_minute IS NULL OR (window_end_minute >= 0 AND window_end_minute < 1440));
+
+PRAGMA user_version = 9;
+
+COMMIT;
+"#;
+
 #[derive(Debug, Error)]
 pub enum StorageError {
     #[error("failed to create database directory: {0}")]
@@ -437,6 +472,11 @@ fn configure_connection(connection: &Connection) -> Result<()> {
         "#,
     )?;
 
+    // WAL lets the browser native host insert a task while the application
+    // holds the same database open, without either side seeing SQLITE_BUSY
+    // for ordinary reads.
+    let _mode: String = connection.query_row("PRAGMA journal_mode = WAL;", [], |row| row.get(0))?;
+
     Ok(())
 }
 
@@ -488,6 +528,18 @@ fn run_migrations(connection: &Connection) -> Result<()> {
 
     if version == 6 {
         connection.execute_batch(MIGRATION_V7)?;
+    }
+
+    let version: i32 = connection.query_row("PRAGMA user_version;", [], |row| row.get(0))?;
+
+    if version == 7 {
+        connection.execute_batch(MIGRATION_V8)?;
+    }
+
+    let version: i32 = connection.query_row("PRAGMA user_version;", [], |row| row.get(0))?;
+
+    if version == 8 {
+        connection.execute_batch(MIGRATION_V9)?;
     }
 
     Ok(())

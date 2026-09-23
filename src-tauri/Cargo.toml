@@ -29,4 +29,9 @@ dm-common = { version = "0.1.0", path = "../crates/dm-common" }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
 tauri-plugin-clipboard-manager = "2.3.3"
+tauri-plugin-single-instance = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
+dm-system = { version = "0.1.0", path = "../crates/dm-system" }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 tokio = { version = "1.53.1", features = ["time"] }

@@ -1,4 +1,4 @@
-﻿import {
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -25,6 +25,11 @@ import {
   type BulkAction,
 } from "./components/downloads/BulkActionBar";
 import { RemoveHistoryDialog } from "./components/downloads/RemoveHistoryDialog";
+import {
+  Toasts,
+  type Toast,
+  type ToastKind,
+} from "./components/feedback/Toasts";
 import { DownloadDetailsPanel } from "./components/downloads/DownloadDetailsPanel";
 import { DownloadRow } from "./components/downloads/DownloadRow";
 import { AppShell } from "./components/layout/AppShell";
@@ -39,11 +44,14 @@ import type {
 } from "./components/layout/Sidebar";
 
 import type {
+  CompletionActionEvent,
   DownloadListItem,
   DownloadPriority,
+  DownloadSettings,
   TaskAction,
   TransferMetricsMap,
 } from "./types/download";
+import { CompletionBanner } from "./components/feedback/CompletionBanner";
 
 import {
   SettingsPage,
@@ -86,6 +94,25 @@ type DownloadTaskEvent = {
 };
 
 const DOWNLOAD_TASK_EVENT = "download-task-event";
+const LINK_INTAKE_EVENT = "link-intake";
+const COMPLETION_ACTION_EVENT = "completion-action";
+
+/// Statuses a late progress event may move to "downloading". A progress
+/// event that arrives after a pause, cancel or completion must not revive
+/// the row.
+const PROGRESS_ACCEPTING_STATUSES = new Set([
+  "created",
+  "probing",
+  "queued",
+  "retrying",
+  "downloading",
+]);
+
+const TOAST_DURATION_MS: Record<ToastKind, number> = {
+  success: 4_000,
+  info: 5_000,
+  error: 9_000,
+};
 
 const sectionTitles: Record<
   DownloadSection,
@@ -175,8 +202,14 @@ function App() {
 
   const [error, setError] =
     useState<string | null>(null);
-  const [notification, setNotification] =
-    useState<string | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [downloadSettings, setDownloadSettings] =
+    useState<DownloadSettings | null>(null);
+  const [completionAction, setCompletionAction] =
+    useState<CompletionActionEvent | null>(null);
+  const nextToastId = useRef(1);
+  const [linkIntake, setLinkIntake] =
+    useState<{ id: number; urls: string[] } | null>(null);
 
   const [creatingTasks, setCreatingTasks] =
     useState(false);
@@ -188,6 +221,57 @@ function App() {
   /// nothing.
   const [nowSeconds, setNowSeconds] = useState(() =>
     Math.floor(Date.now() / 1000),
+  );
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
+  }, []);
+
+  /// Shows feedback that does not belong to an open dialog. Identical
+  /// messages collapse into one so a failing bulk action cannot flood the
+  /// screen.
+  const notify = useCallback(
+    (kind: ToastKind, message: string) => {
+      const id = nextToastId.current++;
+      setToasts((current) => [
+        ...current.filter((toast) => toast.message !== message).slice(-3),
+        { id, kind, message },
+      ]);
+      window.setTimeout(() => dismissToast(id), TOAST_DURATION_MS[kind]);
+    },
+    [dismissToast],
+  );
+
+  // Row handlers read the latest render's functions through a ref, so the
+  // handlers themselves never change identity and memoised rows stay put.
+  const rowHandlers = useRef({
+    select: (_item: DownloadListItem, _index: number, _event: SyntheticEvent) => {},
+    action: (_item: DownloadListItem, _action: TaskAction) => {},
+    contextMenu: (_item: DownloadListItem, _x: number, _y: number) => {},
+  });
+  const handleRowSelect = useCallback(
+    (item: DownloadListItem, index: number, event: SyntheticEvent) =>
+      rowHandlers.current.select(item, index, event),
+    [],
+  );
+  const handleRowAction = useCallback(
+    (item: DownloadListItem, action: TaskAction) =>
+      rowHandlers.current.action(item, action),
+    [],
+  );
+  const handleRowContextMenu = useCallback(
+    (item: DownloadListItem, x: number, y: number) =>
+      rowHandlers.current.contextMenu(item, x, y),
+    [],
+  );
+
+  const reportError = useCallback(
+    (message: string) => notify("error", message),
+    [notify],
+  );
+  const reportSaved = useCallback(
+    (message: string) => notify("success", message),
+    [notify],
   );
 
   const startingTaskIds = useRef(new Set<string>());
@@ -246,18 +330,28 @@ function App() {
       maxConnections: number | null = null,
       adaptiveReason: string | null = null,
     ) => {
-      setDownloads((current) =>
-        current.map((item) =>
-          item.id === downloadId
-            ? {
-                ...item,
-                downloadedBytes,
-                totalBytes: totalBytes ?? item.totalBytes,
-                status: "downloading",
-              }
-            : item,
-        ),
-      );
+      setDownloads((current) => {
+        const index = current.findIndex((item) => item.id === downloadId);
+        if (index < 0) {
+          return current;
+        }
+
+        const item = current[index];
+        if (!PROGRESS_ACCEPTING_STATUSES.has(item.status.toLowerCase())) {
+          return current;
+        }
+
+        // Replace only the row that moved, so every other row keeps its
+        // identity and memoised rows skip rendering.
+        const next = current.slice();
+        next[index] = {
+          ...item,
+          downloadedBytes,
+          totalBytes: totalBytes ?? item.totalBytes,
+          status: "downloading",
+        };
+        return next;
+      });
 
       setLiveMetrics((current) => ({
         ...current,
@@ -312,9 +406,79 @@ function App() {
       refreshInputMode(),
       refreshQueues(),
     ]).catch((reason) => {
-      setError(String(reason));
+      notify("error", `Could not load downloads: ${String(reason)}`);
     });
-  }, [refreshHealth, refreshDownloads, refreshInputMode, refreshQueues]);
+  }, [refreshHealth, refreshDownloads, refreshInputMode, refreshQueues, notify]);
+
+  useEffect(() => {
+    void invoke<DownloadSettings>("get_download_settings")
+      .then(setDownloadSettings)
+      .catch((reason) =>
+        console.warn("Could not load download settings:", reason),
+      );
+  }, []);
+
+  // A finished queue can schedule sleep, shutdown or closing the app. The
+  // banner shows the countdown and the only way to stop it.
+  useEffect(() => {
+    const subscription = listen<CompletionActionEvent>(
+      COMPLETION_ACTION_EVENT,
+      ({ payload }) => {
+        if (payload.state === "pending") {
+          setCompletionAction(payload);
+          return;
+        }
+        setCompletionAction((current) =>
+          current && current.id === payload.id ? null : current,
+        );
+        if (payload.state === "skipped" && payload.message) {
+          notify("info", payload.message);
+        } else if (payload.state === "cancelled") {
+          notify("info", "Cancelled — the computer stays on.");
+        }
+      },
+    );
+    return () => {
+      void subscription.then((unlisten) => unlisten());
+    };
+  }, [notify]);
+
+  async function cancelCompletionAction() {
+    try {
+      await invoke<boolean>("cancel_completion_action");
+    } catch (reason) {
+      notify("error", `Could not cancel: ${String(reason)}`);
+    } finally {
+      setCompletionAction(null);
+    }
+  }
+
+  // Links sent from the browser's "Send selected links" menu open in
+  // LinkGrabber. Links that arrived while the window was loading are waiting
+  // in the backend, so they are collected once on mount as well.
+  useEffect(() => {
+    async function collectIntake() {
+      try {
+        const urls = await invoke<string[]>("take_pending_link_intake");
+        if (urls.length === 0) {
+          return;
+        }
+        setLinkIntake((current) => ({ id: (current?.id ?? 0) + 1, urls }));
+        setLinkGrabberOpen(true);
+        setCategoriesOpen(false);
+        setQueuesOpen(false);
+        setSettingsOpen(false);
+      } catch (reason) {
+        console.warn("Could not collect browser links:", reason);
+      }
+    }
+
+    void collectIntake();
+    const subscription = listen(LINK_INTAKE_EVENT, () => void collectIntake());
+    return () => {
+      void subscription.then((unlisten) => unlisten());
+    };
+  }, []);
 
   // Engine events are published to the window rather than to the invoke that
   // started the work, so a transfer that this session did not start - a queue
@@ -327,12 +491,18 @@ function App() {
           const status = payload.download.status.toLowerCase();
           if (status === "completed" || status === "failed") {
             const label = payload.download.filename ?? "Download";
-            setNotification(
-              status === "completed"
-                ? `${label} completed`
-                : `${label} failed`,
-            );
-            window.setTimeout(() => setNotification(null), 4_000);
+            if (status === "completed") {
+              notify("success", `${label} completed`);
+            } else {
+              notify(
+                "error",
+                `${label} failed${
+                  payload.download.errorMessage
+                    ? `: ${payload.download.errorMessage}`
+                    : ""
+                }`,
+              );
+            }
           }
           clearLiveMetrics(payload.downloadId);
           upsertDownloads([payload.download]);
@@ -355,7 +525,7 @@ function App() {
     return () => {
       void subscription.then((unlisten) => unlisten());
     };
-  }, [upsertDownloads, updateDownloadProgress, clearLiveMetrics]);
+  }, [upsertDownloads, updateDownloadProgress, clearLiveMetrics, notify]);
 
   const hasPendingRetry = useMemo(
     () =>
@@ -642,7 +812,7 @@ function App() {
             break;
         }
       } catch (reason) {
-        setError(`Bulk ${action} failed: ${String(reason)}`);
+        notify("error", `Bulk ${action} failed: ${String(reason)}`);
       }
     }
 
@@ -663,7 +833,7 @@ function App() {
           });
         }
       } catch (reason) {
-        setError(`Bulk queue change failed: ${String(reason)}`);
+        notify("error", `Bulk queue change failed: ${String(reason)}`);
       }
     }
     await refreshDownloads();
@@ -675,7 +845,7 @@ function App() {
       try {
         await changePriority(item.id, priority);
       } catch (reason) {
-        setError(`Bulk priority change failed: ${String(reason)}`);
+        notify("error", `Bulk priority change failed: ${String(reason)}`);
       }
     }
     await refreshDownloads();
@@ -719,6 +889,7 @@ function App() {
         `Could not start task ${id}:`,
         reason,
       );
+      notify("error", `Could not start download: ${String(reason)}`);
 
       await refreshDownloads();
     } finally {
@@ -730,18 +901,22 @@ function App() {
     action: AddDownloadAction,
     inputValue = url,
   ) {
+    // LinkGrabber submits without the dialog, so its errors need a toast.
+    const reportError = modalOpen
+      ? setError
+      : (message: string) => notify("error", message);
     const links =
       extractHttpUrls(inputValue);
 
     if (links.length === 0) {
-      setError(
+      reportError(
         "Enter at least one valid HTTP or HTTPS download link.",
       );
       return;
     }
 
     if (!allReady) {
-      setError(
+      reportError(
         "The download engine is not ready yet.",
       );
       return;
@@ -789,7 +964,7 @@ function App() {
             });
           } catch (reason) {
             console.error("Queue assignment failed:", reason);
-            setError(
+            reportError(
               "A task was created but could not be assigned to the selected queue.",
             );
           }
@@ -809,7 +984,7 @@ function App() {
           failedLinks.join("\n"),
         );
 
-        setError(
+        reportError(
           `${failedLinks.length} of ${links.length} tasks could not be created.`,
         );
       }
@@ -820,7 +995,7 @@ function App() {
         }
       }
     } catch (reason) {
-      setError(String(reason));
+      reportError(String(reason));
     } finally {
       setCreatingTasks(false);
     }
@@ -920,7 +1095,7 @@ function App() {
       }
     } catch (reason) {
       console.error(`Could not ${action} task ${item.id}:`, reason);
-      setError(String(reason));
+      notify("error", `Could not ${action} ${item.filename ?? "download"}: ${String(reason)}`);
       await refreshDownloads();
     }
   }
@@ -942,7 +1117,7 @@ function App() {
       );
       upsertDownloads([record]);
     } catch (reason) {
-      setError(`Could not refresh source: ${String(reason)}`);
+      notify("error", `Could not refresh source: ${String(reason)}`);
       await refreshDownloads();
     }
   }
@@ -955,7 +1130,7 @@ function App() {
       await action();
     } catch (reason) {
       console.error("Queue action failed:", reason);
-      setError(String(reason));
+      notify("error", `Queue change failed: ${String(reason)}`);
       await refreshDownloads();
     }
   }
@@ -1123,6 +1298,12 @@ function App() {
     setContextMenu(null);
   }
 
+  rowHandlers.current = {
+    select: selectDownload,
+    action: (item, action) => void runTaskAction(item, action),
+    contextMenu: openContextMenu,
+  };
+
   const backendLabel = allReady
     ? "Engine ready"
     : health
@@ -1189,6 +1370,10 @@ function App() {
               )
             }
             queues={queues}
+            downloadSettings={downloadSettings}
+            onDownloadSettingsChange={setDownloadSettings}
+            onError={reportError}
+            onSaved={reportSaved}
           />
         ) : queuesOpen ? (
           <QueuePage
@@ -1209,9 +1394,10 @@ function App() {
             engineReady={allReady}
             submitting={creatingTasks}
             onSubmit={(urls, action) => void createDownloadTasks(action, urls.join("\n"))}
+            intake={linkIntake}
           />
         ) : categoriesOpen ? (
-          <CategoriesPage />
+          <CategoriesPage onError={reportError} />
         ) : (
           <div className="downloads-workspace">
           <section className="download-library">
@@ -1227,7 +1413,7 @@ function App() {
               </div>
             </div>
 
-            {selectedDownloadIds.size > 0 ? (
+            {selectedDownloadIds.size > 1 ? (
               <BulkActionBar
                 count={selectedDownloadIds.size}
                 queues={queues}
@@ -1244,11 +1430,14 @@ function App() {
                   <DownloadRow
                     key={item.id}
                     item={item}
+                    index={index}
                     metrics={liveMetrics[item.id]}
-                    nowSeconds={nowSeconds}
-                    onAction={(target, action) =>
-                      void runTaskAction(target, action)
+                    nowSeconds={
+                      item.status.toLowerCase() === "retrying"
+                        ? nowSeconds
+                        : undefined
                     }
+                    onAction={handleRowAction}
                     queueName={
                       item.queueId
                         ? queueNames.get(item.queueId)
@@ -1257,12 +1446,8 @@ function App() {
                     selected={
                       selectedDownloadIds.has(item.id)
                     }
-                    onSelect={(event) =>
-                      selectDownload(item, index, event)
-                    }
-                    onContextMenu={
-                      openContextMenu
-                    }
+                    onSelect={handleRowSelect}
+                    onContextMenu={handleRowContextMenu}
                   />
                 ))}
               </div>
@@ -1347,6 +1532,7 @@ function App() {
           requestRemoveFromHistory
         }
         onRefreshSource={(target) => void refreshSource(target)}
+        onError={(message) => notify("error", message)}
       />
 
       <RemoveHistoryDialog
@@ -1359,10 +1545,13 @@ function App() {
         }
       />
 
-      {notification ? (
-        <div className="app-notification" role="status" aria-live="polite">
-          {notification}
-        </div>
+      <Toasts toasts={toasts} onDismiss={dismissToast} />
+
+      {completionAction ? (
+        <CompletionBanner
+          event={completionAction}
+          onCancel={() => void cancelCompletionAction()}
+        />
       ) : null}
 
       <AddDownloadModal
@@ -1375,6 +1564,7 @@ function App() {
           parsedDownloadUrls.length
         }
         queues={queues}
+        defaultDirectory={downloadSettings?.defaultDirectory ?? null}
         onUrlChange={setUrl}
         onClose={closeAddDownload}
         onSubmit={(action) =>
@@ -1386,44 +1576,3 @@ function App() {
 }
 
 export default App;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

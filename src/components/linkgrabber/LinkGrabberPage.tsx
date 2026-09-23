@@ -13,10 +13,19 @@ type Props = {
   engineReady: boolean;
   submitting?: boolean;
   onSubmit: (urls: string[], action: AddDownloadAction) => void;
+  /// Links sent from the browser. Each new value is appended to the input.
+  intake?: { id: number; urls: string[] } | null;
 };
 
-export function LinkGrabberPage({ queues, engineReady, submitting = false, onSubmit }: Props) {
-  const [input, setInput] = useState("");
+export function LinkGrabberPage({ queues, engineReady, submitting = false, onSubmit, intake = null }: Props) {
+  const [input, setInput] = useState(() => intake?.urls.join("\n") ?? "");
+  const [appliedIntake, setAppliedIntake] = useState(intake?.id ?? 0);
+
+  useEffect(() => {
+    if (!intake || intake.id === appliedIntake) return;
+    setAppliedIntake(intake.id);
+    setInput((current) => [current.trim(), ...intake.urls].filter(Boolean).join("\n"));
+  }, [intake, appliedIntake]);
   const [candidates, setCandidates] = useState<LinkCandidate[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");

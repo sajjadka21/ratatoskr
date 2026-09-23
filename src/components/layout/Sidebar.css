@@ -1,4 +1,4 @@
-﻿.sidebar {
+.sidebar {
   width: var(--sidebar-width);
   min-width: var(--sidebar-width);
   height: 100vh;
@@ -137,6 +137,7 @@
 .sidebar__item-label {
   min-width: 0;
   flex: 1;
+  text-align: start;
 }
 
 .sidebar__count {

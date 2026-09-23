@@ -38,6 +38,10 @@ pub struct ServerBehaviour {
     /// Stop after this many body bytes and close the connection, simulating a
     /// transfer that is cut off.
     pub truncate_after: Option<usize>,
+    /// A header line the request must carry (for example `referer: https://a/`),
+    /// matched case-insensitively. Requests without it get `403 Forbidden`,
+    /// the way hotlink-protected servers behave.
+    pub required_header: Option<String>,
 }
 
 impl Default for ServerBehaviour {
@@ -52,6 +56,7 @@ impl Default for ServerBehaviour {
             chunk_delay: None,
             chunk_size: 8,
             truncate_after: None,
+            required_header: None,
         }
     }
 }
@@ -164,7 +169,18 @@ async fn serve(
 
     let behaviour = behaviour.lock().unwrap().clone();
 
-    if let Some((code, reason)) = behaviour.status {
+    let forbidden = behaviour.required_header.as_ref().is_some_and(|required| {
+        !request
+            .lines()
+            .any(|line| line.trim().eq_ignore_ascii_case(required.trim()))
+    });
+    let status = if forbidden {
+        Some((403, "Forbidden"))
+    } else {
+        behaviour.status
+    };
+
+    if let Some((code, reason)) = status {
         let response =
             format!("HTTP/1.1 {code} {reason}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
         socket.write_all(response.as_bytes()).await?;

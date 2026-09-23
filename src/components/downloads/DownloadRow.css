@@ -1,10 +1,10 @@
-﻿.download-row {
+.download-row {
   width: 100%;
   min-height: 92px;
   padding: 16px;
 
   display: grid;
-  grid-template-columns: 46px minmax(0, 1fr) 118px;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
   align-items: center;
   gap: 14px;
 

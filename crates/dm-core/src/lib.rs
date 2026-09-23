@@ -5,6 +5,7 @@ pub mod linkgrabber;
 pub mod media;
 pub mod postprocess;
 pub mod queue;
+pub mod ratelimit;
 pub mod resume;
 pub mod retry;
 pub mod rules;
@@ -15,17 +16,19 @@ pub mod testing;
 pub mod throughput;
 
 use crate::control::{StopReason, TaskControl};
-use dm_common::DownloadSegment;
+use crate::ratelimit::RateLimiter;
+use dm_common::{DownloadSegment, RequestContext};
 use percent_encoding::percent_decode_str;
 use reqwest::{
-    Client, StatusCode, Url,
+    Client, RequestBuilder, StatusCode, Url,
     header::{
         ACCEPT_ENCODING, CONTENT_DISPOSITION, CONTENT_RANGE, CONTENT_TYPE, ETAG, HeaderMap,
-        LAST_MODIFIED, RANGE,
+        HeaderValue, LAST_MODIFIED, RANGE, REFERER, USER_AGENT,
     },
 };
 use std::{
     path::{Path, PathBuf},
+    sync::Arc,
     time::Duration,
 };
 use thiserror::Error;
@@ -192,23 +195,90 @@ pub struct TransferOutcome {
     pub downloaded_bytes: u64,
 }
 
+/// Sent when a task carries no browser User-Agent. Many CDNs refuse or
+/// throttle clients that do not look like a browser, so the default matches
+/// a current desktop browser and still names this application.
+pub const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
+     (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 DownloadManager/1.0";
+
 #[derive(Debug, Clone)]
 pub struct Downloader {
     client: Client,
+    referrer: Option<HeaderValue>,
+    user_agent: HeaderValue,
+    /// Every limiter a transfer must satisfy: the application-wide limit,
+    /// plus a per-task one when a rule caps the task.
+    limiters: Vec<Arc<RateLimiter>>,
 }
 
 impl Downloader {
     pub fn new() -> Result<Self> {
         let client = Client::builder()
             .connect_timeout(Duration::from_secs(20))
-            .user_agent("DownloadManager/0.1")
             .no_gzip()
             .no_brotli()
             .no_deflate()
             .no_zstd()
             .build()?;
 
-        Ok(Self { client })
+        Ok(Self {
+            client,
+            referrer: None,
+            user_agent: HeaderValue::from_static(DEFAULT_USER_AGENT),
+            limiters: Vec::new(),
+        })
+    }
+
+    /// The same downloader, additionally bound by `limiter`. Limiters stack:
+    /// a transfer moves at the slowest of them.
+    pub fn with_limiter(&self, limiter: Arc<RateLimiter>) -> Self {
+        let mut downloader = self.clone();
+        downloader.limiters.push(limiter);
+        downloader
+    }
+
+    /// Waits until the bytes just written fit every bandwidth limit. A pause
+    /// or cancel ends the wait immediately.
+    async fn throttle(&self, bytes: usize, control: &TaskControl) -> Result<()> {
+        for limiter in &self.limiters {
+            tokio::select! {
+                biased;
+                reason = control.stopped() => return Err(DownloadError::Stopped(reason)),
+                () = limiter.acquire(bytes) => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// A downloader that sends the browser context of one task. The HTTP
+    /// client and its connection pool are shared; only the headers differ.
+    /// Values that are not valid header text are ignored rather than sent.
+    pub fn with_context(&self, context: &RequestContext) -> Self {
+        let valid = |value: &Option<String>| {
+            value
+                .as_deref()
+                .and_then(|text| HeaderValue::from_str(text).ok())
+        };
+
+        Self {
+            client: self.client.clone(),
+            referrer: valid(&context.referrer),
+            user_agent: valid(&context.user_agent).unwrap_or_else(|| self.user_agent.clone()),
+            limiters: self.limiters.clone(),
+        }
+    }
+
+    fn request(&self, method: reqwest::Method, url: Url) -> RequestBuilder {
+        let builder = self
+            .client
+            .request(method, url)
+            .header(USER_AGENT, self.user_agent.clone())
+            .header(ACCEPT_ENCODING, "identity");
+
+        match &self.referrer {
+            Some(referrer) => builder.header(REFERER, referrer.clone()),
+            None => builder,
+        }
     }
 
     /// Asks the source what it can do before committing to a transfer.
@@ -222,9 +292,7 @@ impl Downloader {
         let url = validate_source_url(source_url)?;
 
         let head_headers = match self
-            .client
-            .head(url.clone())
-            .header(ACCEPT_ENCODING, "identity")
+            .request(reqwest::Method::HEAD, url.clone())
             .send()
             .await
         {
@@ -233,9 +301,7 @@ impl Downloader {
         };
 
         let response = self
-            .client
-            .get(url)
-            .header(ACCEPT_ENCODING, "identity")
+            .request(reqwest::Method::GET, url)
             .header(RANGE, "bytes=0-0")
             .send()
             .await?
@@ -375,6 +441,12 @@ impl Downloader {
                 downloaded_bytes,
                 total_bytes: request.total_bytes,
             })?;
+
+            if let Err(error) = self.throttle(chunk.len(), control).await {
+                file.flush().await?;
+                file.sync_all().await?;
+                return Err(error);
+            }
         }
 
         file.flush().await?;
@@ -443,9 +515,7 @@ impl Downloader {
         }
 
         let response = self
-            .client
-            .get(url)
-            .header(ACCEPT_ENCODING, "identity")
+            .request(reqwest::Method::GET, url)
             .header(
                 RANGE,
                 format!("bytes={absolute_start}-{}", request.end_byte),
@@ -522,6 +592,12 @@ impl Downloader {
                 downloaded_bytes,
                 total_bytes: Some(expected_bytes),
             })?;
+
+            if let Err(error) = self.throttle(chunk.len(), control).await {
+                file.flush().await?;
+                file.sync_all().await?;
+                return Err(error);
+            }
         }
 
         file.flush().await?;
@@ -617,10 +693,7 @@ impl Downloader {
     /// Issues the body request, retrying without a range when the server
     /// rejects the one we asked for.
     async fn request_body(&self, url: &Url, start_offset: u64) -> Result<reqwest::Response> {
-        let mut builder = self
-            .client
-            .get(url.clone())
-            .header(ACCEPT_ENCODING, "identity");
+        let mut builder = self.request(reqwest::Method::GET, url.clone());
 
         if start_offset > 0 {
             builder = builder.header(RANGE, format!("bytes={start_offset}-"));
@@ -632,9 +705,7 @@ impl Downloader {
         // than failing a transfer that can simply begin again.
         if response.status() == StatusCode::RANGE_NOT_SATISFIABLE && start_offset > 0 {
             return Ok(self
-                .client
-                .get(url.clone())
-                .header(ACCEPT_ENCODING, "identity")
+                .request(reqwest::Method::GET, url.clone())
                 .send()
                 .await?
                 .error_for_status()?);

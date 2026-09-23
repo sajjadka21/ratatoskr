@@ -1,4 +1,4 @@
-﻿export type DownloadListItem = {
+export type DownloadListItem = {
   id: string;
   sourceUrl: string;
   resolvedUrl: string | null;
@@ -78,6 +78,30 @@ export type QueueSchedule = {
     | "shutdown";
   preventSleep: boolean;
   updatedAt: number;
+  /// Local wall-clock window in minutes after midnight (daily/weekdays).
+  windowStartMinute: number | null;
+  windowEndMinute: number | null;
+};
+
+export type CompletionAction = QueueSchedule["completionAction"];
+
+/// Engine-wide preferences shown in Settings.
+export type DownloadSettings = {
+  defaultDirectory: string | null;
+  systemDirectory: string | null;
+  /// Bytes per second for all downloads together; null is unlimited.
+  globalSpeedLimit: number | null;
+  preventSleep: boolean;
+};
+
+/// A power or exit action a finished queue scheduled, with its cancel window.
+export type CompletionActionEvent = {
+  id: number;
+  queueName: string;
+  action: string;
+  dueAt: number;
+  state: "pending" | "cancelled" | "skipped" | "running";
+  message: string | null;
 };
 
 export type DownloadCategory = {

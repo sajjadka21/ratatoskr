@@ -675,3 +675,183 @@ Status: Implemented in working tree
 - Verification for this slice: `npm.cmd run build` and `npm.cmd test -- --run`
   pass. The PowerShell `npm` shim on this host points at a missing global npm
   installation; `npm.cmd` uses the repository-local package manager correctly.
+
+## Review follow-up - Step 1: Critical defects
+
+Status: Implemented in working tree (not committed)
+
+Source: full product review of 2026-09-23 (browser handoff, error visibility,
+list performance, window setup).
+
+### Fixed
+
+- **Single instance.** `tauri-plugin-single-instance` is registered first. A
+  second launch (every browser handoff used to start one) now forwards its
+  arguments to the running process and exits, so there is never a second
+  window or a second engine on the same database.
+- **Browser handoff is accepted only after the task is persisted.** The
+  native host now writes the task into the application's database itself
+  (`dm_common::APP_IDENTIFIER` locates the Tauri data directory; override with
+  `DOWNLOAD_MANAGER_DATA_DIR`) and answers `accepted: true` only after that
+  write. The extension pauses the browser's download while it waits, cancels
+  and erases it only on acceptance, and resumes it otherwise. The application
+  receives `--handoff-task <id>` and starts or queues the task with the same
+  intake rules as Add Download.
+- **Selected links open in LinkGrabber** in one launch (`--grab-links`),
+  bounded to 500 links / 24 000 characters, instead of starting one process
+  and one download per link. Links that arrive while the window is loading
+  wait in `take_pending_link_intake`.
+- **Referer and User-Agent reach the server.** Schema v8 adds
+  `download_request_context`; the engine replays a task's browser Referer and
+  User-Agent on every probe, ranged and single-stream request. Values with
+  control characters are dropped (no header injection), cookies are never
+  stored. The default User-Agent is now browser-compatible instead of
+  `DownloadManager/0.1`, which many CDNs reject.
+- **SQLite WAL mode**, so the native host and the application can use the
+  database at the same time.
+- **Errors are always visible.** A toast system reports failures of task,
+  bulk, queue and LinkGrabber actions; previously the message was only
+  rendered inside the Add Download dialog and was lost when it was closed.
+- **List performance.** Progress events replace only the row that moved;
+  `DownloadRow` is memoised with stable handlers; the retry clock re-renders
+  only retrying rows. A late progress event can no longer flip a paused,
+  cancelled or completed row back to "downloading".
+- **Window and security setup.** Default window 1280x820 with a 960x600
+  minimum (was 800x600, where the header overlapped), a real CSP (was
+  `null`), and a real page title (was the Vite template's).
+- **Small UI defects.** Row action button no longer overlaps the progress
+  bar; sidebar labels align consistently; the adaptive explanation in the
+  details panel is styled; the bulk action bar appears only for two or more
+  selected rows.
+- **Archive path guard** now treats `\` separators and drive prefixes the same
+  on every platform (its test failed on non-Windows hosts).
+
+### Tests added
+
+- Storage: request context round trip, cascade on task removal, header
+  injection rejection.
+- Engine: a hotlink-protected server refuses a task without the browser
+  Referer and serves one with it.
+- Browser handoff: only HTTP(S) referrers without credentials are kept.
+- Native host: acceptance only after persistence, refusal when the database
+  cannot be opened, selected text in one LinkGrabber launch, identifier kept
+  in sync with `tauri.conf.json`.
+- Application: launch argument parsing.
+
+### Verification
+
+- `cargo fmt --all` - clean
+- `cargo clippy --workspace --all-targets -- -D warnings` - passed
+- `cargo test --workspace` - passed (170 Rust tests)
+- `npx tsc --noEmit`, `npm test` (23 tests), `vite build` - passed
+- Verified on Linux; a Windows `npm run tauri -- build` is still required.
+
+### Known limitations carried forward
+
+- Cookies are still not handed over, so downloads that need a browser login
+  can still fail with 401/403 in the application (the browser copy is then
+  already cancelled). Needs an in-memory channel between the native host and
+  the running application; planned with the refresh-link flow.
+- `opener` is still scoped to `$DOWNLOAD`; widen it when category
+  destinations are applied (Step 2).
+
+## Review follow-up - Step 2: Stored settings now take effect
+
+Status: Implemented in working tree (not committed)
+
+Several features were persisted and exposed over IPC but never read by the
+engine. They now change behaviour, and each has a UI to configure it.
+
+### Implemented
+
+- **Destination folders.** After probing, the engine evaluates the full rule
+  set with the real MIME type and size and picks the folder in this order:
+  matching rule folder, the category's folder, the default folder from
+  Settings, the system Downloads folder. Only absolute paths are used.
+  Settings has a folder picker (`tauri-plugin-dialog`) and a reset; every
+  category card has Choose/Change folder and reset.
+- **Bandwidth limits.** New `dm_core::ratelimit::RateLimiter`: a shared token
+  bucket that may go into debt, so many connections together respect one
+  rate. One application-wide limiter (setting `global_speed_limit`, applied
+  live, even to running transfers) plus a per-task limiter when a rule sets
+  `speed_cap`. A pause or cancel interrupts a throttling wait immediately.
+  A rule's `max_connections` now also caps segmented connections.
+- **Schedules use local wall-clock windows.** Schema v9 adds
+  `window_start_minute` / `window_end_minute`. Daily and weekday schedules
+  are evaluated in local time (`chrono::Local`, re-read every check), windows
+  may cross midnight, and a weekday window belongs to the day it opens.
+  Previously times were compared in UTC (3.5 hours off in Tehran), a daily
+  window with a stop time only ever ran on its first day, and weekday
+  schedules had no time window at all. Old rows keep working.
+- **Completion actions run.** When a queue runner that processed work drains
+  its queue, the schedule's action runs: Notify shows a Windows notification;
+  Close app / Sleep / Hibernate / Shut down show a 60-second countdown banner
+  with Cancel and a notification, and are skipped if any other download is
+  still running. Stopping a queue by hand never triggers the action.
+- **Keep awake.** New `dm-system` crate owns a dedicated thread that holds
+  `SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)` while
+  transfers run (global setting, default on) or while a running queue's
+  schedule asks for it. Power actions use `SetSuspendState` and
+  `shutdown /s`. Non-Windows builds compile to no-ops.
+- **Rules editor.** Settings lists rules with enable switches, a readable
+  summary ("from example.com → save to D:\Lectures, limit to 2048 KB/s"),
+  delete, and an editor for domain / extension / URL pattern / minimum size
+  conditions and folder / queue / priority / connections / speed actions.
+  A rule without any condition is refused by storage.
+- **Opening files goes through the backend.** `open_download_file` and
+  `reveal_download_file` only open files of completed downloads, so the
+  frontend no longer needs an opener scope; files in any destination folder
+  now open (the old scope only allowed `$DOWNLOAD`).
+- Add Download shows the real default folder.
+
+### Tests added
+
+- Rate limiter: unlimited, debt repayment, shared budget across callers,
+  live limit changes, real elapsed time.
+- Engine: rule folder beats category folder beats default folder; relative
+  default folders refused; global limit slows a transfer and persists; a
+  rule speed cap limits only matching tasks.
+- Storage: category folder set/clear, rule update/delete, empty rules
+  refused, schedule window validation, weekday schedules need a day.
+- Schedules: local-time daily windows (Tehran offset), every day not only
+  the first, overnight weekday windows.
+- `dm-system`: power action names, keep-awake thread lifecycle.
+- Frontend: schedule time and speed unit conversions; the IPC contract test
+  now reads every Rust module of the desktop host.
+
+### Verification
+
+- `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace` (186 Rust tests) - passed
+- `tsc --noEmit`, `npm test` (27 tests), `vite build` - passed
+- The Windows-only code in `dm-system` was type-checked against
+  `windows-sys` 0.61 on Linux; it still needs a Windows build and a manual
+  sleep / shutdown test.
+
+## Review follow-up - Windows verification of Steps 1 and 2
+
+Status: Verified on Windows 11 (2026-09-23)
+
+Steps 1 and 2 were written and verified on Linux, where the `cfg(windows)`
+code in `dm-system` is compiled out and therefore never built or linted. The
+full gate was rerun on Windows so that code is now actually compiled.
+
+- `cargo fmt --all --check` - clean
+- `cargo test --workspace` - passed (186 Rust tests, 0 failed)
+- `cargo clippy --workspace --all-targets -- -D warnings` - passed, which now
+  includes the Windows keep-awake and power-action paths
+- `cargo check --workspace` and `cargo build -p tauri-app` - passed
+- `tsc --noEmit`, `npm test` (27 tests), `npm run build` - passed
+
+One environment fix was needed: `@tauri-apps/plugin-dialog` was declared in
+`package.json` and the lockfile but not installed on this host, so the
+frontend type check failed until `npm install` ran. No source change.
+
+### Still not verified
+
+- The Windows `npm run tauri -- build` release bundle was not produced here.
+- Sleep, hibernate and shutdown were deliberately not triggered: running
+  them would suspend or power off this machine. They need a manual test on a
+  machine where that is acceptable.
+- The single-instance forwarding and browser handoff were not exercised
+  end to end against a real browser in this pass.

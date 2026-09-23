@@ -175,6 +175,37 @@ pub struct QueueScheduleResponse {
     pub completion_action: String,
     pub prevent_sleep: bool,
     pub updated_at: i64,
+    pub window_start_minute: Option<u16>,
+    pub window_end_minute: Option<u16>,
+}
+
+/// Engine-wide download preferences shown in Settings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadSettingsResponse {
+    /// The folder the user chose, if any.
+    pub default_directory: Option<String>,
+    /// The system Downloads folder used when nothing else is chosen.
+    pub system_directory: Option<String>,
+    /// Application-wide limit in bytes per second; `None` is unlimited.
+    pub global_speed_limit: Option<u64>,
+    pub prevent_sleep: bool,
+}
+
+/// A power or exit action waiting out its cancel period after a queue
+/// finished.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletionActionEvent {
+    pub id: u64,
+    pub queue_name: String,
+    /// `exit_app`, `sleep`, `hibernate` or `shutdown`.
+    pub action: String,
+    /// Unix time at which the action runs unless cancelled.
+    pub due_at: i64,
+    /// `pending`, `cancelled`, `skipped` or `running`.
+    pub state: String,
+    pub message: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

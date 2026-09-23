@@ -1,4 +1,4 @@
-﻿.download-details {
+.download-details {
   width: 340px;
   min-width: 340px;
   height: fit-content;
@@ -396,4 +396,17 @@
 
 .download-details__failure--notice strong {
   color: var(--warning);
+}
+
+/* The engine's one-line explanation of its current connection decision. */
+.download-details__live-reason {
+  margin-top: 8px;
+  padding: 7px 10px;
+
+  color: var(--text-secondary);
+  background: var(--accent-soft);
+  border-radius: var(--radius-sm);
+
+  font-size: 11px;
+  line-height: 1.5;
 }

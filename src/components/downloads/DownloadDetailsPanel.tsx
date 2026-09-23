@@ -1,4 +1,4 @@
-﻿import {
+import {
   Check,
   Clock3,
   Copy,
@@ -16,10 +16,6 @@
   XCircle,
 } from "lucide-react";
 
-import {
-  openPath,
-  revealItemInDir,
-} from "@tauri-apps/plugin-opener";
 import { invoke } from "@tauri-apps/api/core";
 
 import {
@@ -184,7 +180,7 @@ export function DownloadDetailsPanel({
 
     try {
       setActionError(null);
-      await openPath(destinationPath);
+      await invoke("open_download_file", { id: item!.id });
     } catch (reason) {
       setActionError(
         `Could not open file: ${String(reason)}`,
@@ -197,9 +193,7 @@ export function DownloadDetailsPanel({
 
     try {
       setActionError(null);
-      await revealItemInDir(
-        destinationPath,
-      );
+      await invoke("reveal_download_file", { id: item!.id });
     } catch (reason) {
       setActionError(
         `Could not show file in folder: ${String(reason)}`,

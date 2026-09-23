@@ -1,4 +1,12 @@
 use serde::{Deserialize, Serialize};
+
+/// The desktop application's bundle identifier. The application's data
+/// directory is named after it, and the browser native host uses it to find
+/// the same database. Must match `identifier` in `src-tauri/tauri.conf.json`.
+pub const APP_IDENTIFIER: &str = "com.downloadmanager.desktop";
+
+/// File name of the task database inside the application data directory.
+pub const DATABASE_FILE_NAME: &str = "downloads.db";
 use std::{fmt, str::FromStr};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -534,37 +542,83 @@ pub struct QueueSchedule {
     pub completion_action: CompletionAction,
     pub prevent_sleep: bool,
     pub updated_at: i64,
+    /// Local time of day the daily/weekday window opens, in minutes after
+    /// midnight (0..1440). `None` on schedules saved before windows existed.
+    pub window_start_minute: Option<u16>,
+    /// Local time of day the window closes. Earlier than the start means the
+    /// window runs past midnight (23:00 to 07:00).
+    pub window_end_minute: Option<u16>,
 }
 
+const MINUTES_PER_DAY: i64 = 24 * 60;
+
 impl QueueSchedule {
-    pub fn is_active_at(&self, timestamp: i64) -> bool {
-        if !self.enabled
-            || timestamp < self.start_at
-            || self.stop_at.is_some_and(|stop| timestamp >= stop)
-        {
+    /// Whether the queue should be running at `timestamp`, given the local
+    /// clock's offset from UTC. Daily and weekday windows are wall-clock
+    /// times ("02:00 to 07:00"), so they must be evaluated in local time.
+    pub fn is_active_at(&self, timestamp: i64, utc_offset_seconds: i32) -> bool {
+        if !self.enabled || timestamp < self.start_at {
             return false;
         }
+
         match self.kind {
-            ScheduleKind::Once => true,
-            ScheduleKind::Daily => {
-                (timestamp - self.start_at).rem_euclid(86_400) < self.remaining_window()
+            ScheduleKind::Once => self.stop_at.is_none_or(|stop| timestamp < stop),
+            ScheduleKind::Daily | ScheduleKind::Weekdays => {
+                let local = timestamp + i64::from(utc_offset_seconds);
+                let local_day = local.div_euclid(86_400);
+                let minute = local.rem_euclid(86_400) / 60;
+                let (start, end) = self.window(utc_offset_seconds);
+
+                // The day a window belongs to is the day it opened, so the
+                // after-midnight part of 23:00-07:00 counts for the evening
+                // before when checking weekdays.
+                let opened_on = if start == end {
+                    Some(local_day)
+                } else if start < end {
+                    (start..end).contains(&minute).then_some(local_day)
+                } else if minute >= start {
+                    Some(local_day)
+                } else if minute < end {
+                    Some(local_day - 1)
+                } else {
+                    None
+                };
+
+                opened_on.is_some_and(|day| self.kind == ScheduleKind::Daily || self.runs_on(day))
             }
-            ScheduleKind::Weekdays => {
-                let day = (timestamp.div_euclid(86_400) + 4).rem_euclid(7) as u8;
-                self.weekdays_mask & (1 << day) != 0
-            }
-            ScheduleKind::Repeating => self.interval_seconds.is_some_and(|interval| {
-                interval > 0
-                    && i64::try_from(interval).ok().is_some_and(|interval| {
-                        (timestamp - self.start_at).rem_euclid(interval) < 60
+            ScheduleKind::Repeating => {
+                self.stop_at.is_none_or(|stop| timestamp < stop)
+                    && self.interval_seconds.is_some_and(|interval| {
+                        interval > 0
+                            && i64::try_from(interval).ok().is_some_and(|interval| {
+                                (timestamp - self.start_at).rem_euclid(interval) < 60
+                            })
                     })
-            }),
+            }
         }
     }
 
-    fn remaining_window(&self) -> i64 {
-        self.stop_at
-            .map_or(86_400, |stop| (stop - self.start_at).max(1))
+    /// Weekday bit for a day counted from the Unix epoch: bit 0 is Sunday.
+    fn runs_on(&self, local_day: i64) -> bool {
+        let weekday = (local_day + 4).rem_euclid(7) as u8;
+        self.weekdays_mask & (1 << weekday) != 0
+    }
+
+    /// The window in local minutes. Older schedules stored it as the time of
+    /// day of `start_at` and `stop_at`; with neither, it is the whole day.
+    fn window(&self, utc_offset_seconds: i32) -> (i64, i64) {
+        let minute_of =
+            |timestamp: i64| (timestamp + i64::from(utc_offset_seconds)).rem_euclid(86_400) / 60;
+        match (self.window_start_minute, self.window_end_minute) {
+            (Some(start), Some(end)) => (
+                i64::from(start).rem_euclid(MINUTES_PER_DAY),
+                i64::from(end).rem_euclid(MINUTES_PER_DAY),
+            ),
+            _ => match self.stop_at {
+                Some(stop) => (minute_of(self.start_at), minute_of(stop)),
+                None => (0, 0),
+            },
+        }
     }
 }
 
@@ -604,6 +658,16 @@ pub struct DownloadCompletion {
     pub mime_type: Option<String>,
     pub total_bytes: Option<u64>,
     pub downloaded_bytes: u64,
+}
+
+/// Non-secret request details a browser supplied with a download. Servers
+/// that check the page a download came from, or reject non-browser clients,
+/// need these to serve the file. Cookies and credentials are deliberately not
+/// part of this model.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RequestContext {
+    pub referrer: Option<String>,
+    pub user_agent: Option<String>,
 }
 
 #[cfg(test)]
@@ -770,17 +834,71 @@ mod tests {
             completion_action: CompletionAction::None,
             prevent_sleep: false,
             updated_at: 0,
+            window_start_minute: None,
+            window_end_minute: None,
         };
-        assert!(!schedule.is_active_at(86_399));
-        assert!(schedule.is_active_at(86_500));
-        assert!(!schedule.is_active_at(90_000));
+        assert!(!schedule.is_active_at(86_399, 0));
+        assert!(schedule.is_active_at(86_500, 0));
+        assert!(!schedule.is_active_at(90_000, 0));
+        // A legacy daily window repeats on the following days too.
+        assert!(schedule.is_active_at(86_400 * 5 + 100, 0));
         assert!(
             !QueueSchedule {
                 enabled: false,
                 ..schedule
             }
-            .is_active_at(86_500)
+            .is_active_at(86_500, 0)
         );
+    }
+
+    fn night_window(kind: ScheduleKind, weekdays_mask: u8) -> QueueSchedule {
+        QueueSchedule {
+            queue_id: "night".to_owned(),
+            enabled: true,
+            kind,
+            start_at: 0,
+            stop_at: None,
+            weekdays_mask,
+            interval_seconds: None,
+            completion_action: CompletionAction::None,
+            prevent_sleep: false,
+            updated_at: 0,
+            window_start_minute: Some(2 * 60),
+            window_end_minute: Some(7 * 60),
+        }
+    }
+
+    /// Tehran is UTC+03:30.
+    const TEHRAN: i32 = 3 * 3600 + 1800;
+    /// 2026-09-23 00:00 in Tehran (a Wednesday), as a Unix timestamp.
+    const WEDNESDAY_MIDNIGHT_TEHRAN: i64 = 1_790_121_600 - TEHRAN as i64;
+
+    #[test]
+    fn daily_windows_use_local_wall_clock_time() {
+        let schedule = night_window(ScheduleKind::Daily, 0);
+        let at = |hour: i64, minute: i64| WEDNESDAY_MIDNIGHT_TEHRAN + hour * 3600 + minute * 60;
+
+        assert!(!schedule.is_active_at(at(1, 59), TEHRAN));
+        assert!(schedule.is_active_at(at(2, 0), TEHRAN));
+        assert!(schedule.is_active_at(at(6, 59), TEHRAN));
+        assert!(!schedule.is_active_at(at(7, 0), TEHRAN));
+        // Evaluated in UTC the same instants would be wrong by 3.5 hours.
+        assert!(!schedule.is_active_at(at(2, 0), 0));
+        // Every day, not only the first one.
+        assert!(schedule.is_active_at(at(24 * 10 + 3, 0), TEHRAN));
+    }
+
+    #[test]
+    fn overnight_weekday_windows_belong_to_the_day_they_open() {
+        let mut schedule = night_window(ScheduleKind::Weekdays, 1 << 3); // Wednesday
+        schedule.window_start_minute = Some(23 * 60);
+        schedule.window_end_minute = Some(7 * 60);
+        let at = |hour: i64| WEDNESDAY_MIDNIGHT_TEHRAN + hour * 3600;
+
+        assert!(!schedule.is_active_at(at(3), TEHRAN)); // Wed 03:00 is Tuesday's night
+        assert!(schedule.is_active_at(at(23), TEHRAN)); // Wed 23:00
+        assert!(schedule.is_active_at(at(24 + 3), TEHRAN)); // Thu 03:00, Wednesday's night
+        assert!(!schedule.is_active_at(at(24 + 23), TEHRAN)); // Thu 23:00
     }
 
     #[test]
@@ -796,11 +914,13 @@ mod tests {
             completion_action: CompletionAction::None,
             prevent_sleep: false,
             updated_at: 0,
+            window_start_minute: None,
+            window_end_minute: None,
         };
-        assert!(schedule.is_active_at(101));
-        assert!(schedule.is_active_at(159));
-        assert!(!schedule.is_active_at(160));
-        assert!(schedule.is_active_at(400));
+        assert!(schedule.is_active_at(101, 0));
+        assert!(schedule.is_active_at(159, 0));
+        assert!(!schedule.is_active_at(160, 0));
+        assert!(schedule.is_active_at(400, 0));
     }
 
     #[test]

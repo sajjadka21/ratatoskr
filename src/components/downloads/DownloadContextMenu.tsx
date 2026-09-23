@@ -1,4 +1,5 @@
-﻿import {
+import { invoke } from "@tauri-apps/api/core";
+import {
   ChevronRight,
   Copy,
   ExternalLink,
@@ -16,10 +17,6 @@
   XCircle,
 } from "lucide-react";
 
-import {
-  openPath,
-  revealItemInDir,
-} from "@tauri-apps/plugin-opener";
 
 import {
   useEffect,
@@ -68,6 +65,7 @@ type DownloadContextMenuProps = {
     item: DownloadListItem,
   ) => void;
   onRefreshSource: (item: DownloadListItem) => void;
+  onError?: (message: string) => void;
 };
 
 const ACTION_ICONS = {
@@ -106,6 +104,7 @@ export function DownloadContextMenu({
   onChangePriority,
   onRemoveFromHistory,
   onRefreshSource,
+  onError,
 }: DownloadContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -228,13 +227,11 @@ export function DownloadContextMenu({
     if (!destinationPath) return;
 
     try {
-      await openPath(destinationPath);
+      await invoke("open_download_file", { id: item!.id });
       onClose();
     } catch (reason) {
-      console.error(
-        "Could not open file:",
-        reason,
-      );
+      onClose();
+      onError?.(`Could not open file: ${String(reason)}`);
     }
   }
 
@@ -242,13 +239,11 @@ export function DownloadContextMenu({
     if (!destinationPath) return;
 
     try {
-      await revealItemInDir(destinationPath);
+      await invoke("reveal_download_file", { id: item!.id });
       onClose();
     } catch (reason) {
-      console.error(
-        "Could not reveal file:",
-        reason,
-      );
+      onClose();
+      onError?.(`Could not show file in folder: ${String(reason)}`);
     }
   }
 

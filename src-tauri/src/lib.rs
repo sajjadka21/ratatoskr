@@ -7,11 +7,14 @@ use dm_core::{
     service::DownloadService,
     CoreService, TransferProgress,
 };
+mod automation;
+
+use automation::Automation;
 use dm_ipc::{
     AppInfoResponse, CategoryResponse, ComponentHealth, DownloadListItemResponse,
-    DownloadRuleResponse, DownloadTaskEvent, HealthCheckResponse, LinkCandidateResponse,
-    MediaClassificationResponse, MediaVariantResponse, QueueResponse, QueueRunnerEventResponse,
-    QueueScheduleResponse, TransferProgressResponse,
+    DownloadRuleResponse, DownloadSettingsResponse, DownloadTaskEvent, HealthCheckResponse,
+    LinkCandidateResponse, MediaClassificationResponse, MediaVariantResponse, QueueResponse,
+    QueueRunnerEventResponse, QueueScheduleResponse, TransferProgressResponse,
 };
 use dm_storage::Storage;
 use std::{
@@ -21,6 +24,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_opener::OpenerExt;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
@@ -43,6 +47,9 @@ pub struct AppState {
     storage: Arc<Storage>,
     downloads: DownloadService,
     queues: QueueService,
+    /// Links a browser sent before the window could receive them.
+    pending_link_intake: Mutex<Vec<String>>,
+    automation: Automation,
 }
 
 /// Publishes engine events to the UI and enforces the per-task event rate.
@@ -181,15 +188,30 @@ fn spawn_queue_runner(
     destination_directory: std::path::PathBuf,
 ) {
     tauri::async_runtime::spawn(async move {
+        let app = publisher.app.clone();
         let events_queue_id = queue_id.clone();
+        // Set once the runner hands a task over, so a queue that started and
+        // found nothing to do never triggers its completion action.
+        let processed_work = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let processed = Arc::clone(&processed_work);
         let result = queues
             .run_queue(&queue_id, destination_directory, move |event| {
+                if matches!(event, QueueRunnerEvent::TaskUpdated(_)) {
+                    processed.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
                 publisher.queue_event(&events_queue_id, event);
             })
             .await;
 
         match result {
-            Ok(_) => info!(queue_id = %queue_id, "queue runner stopped"),
+            Ok(_) => {
+                info!(queue_id = %queue_id, "queue runner stopped");
+                automation::queue_finished(
+                    &app,
+                    &queue_id,
+                    processed_work.load(std::sync::atomic::Ordering::Relaxed),
+                );
+            }
             Err(error) => warn!(queue_id = %queue_id, error = %error, "queue runner failed"),
         }
     });
@@ -471,6 +493,8 @@ fn set_queue_schedule(
     completion_action: String,
     prevent_sleep: bool,
     updated_at: i64,
+    window_start_minute: Option<u16>,
+    window_end_minute: Option<u16>,
 ) -> Result<QueueScheduleResponse, String> {
     let kind = kind
         .parse::<ScheduleKind>()
@@ -491,6 +515,8 @@ fn set_queue_schedule(
             completion_action,
             prevent_sleep,
             updated_at,
+            window_start_minute,
+            window_end_minute,
         })
         .map(queue_schedule_response)
         .map_err(|error| error.to_string())
@@ -664,7 +690,13 @@ fn handoff_browser_download(
     }
     .validate()
     .map_err(|error| error.to_string())?;
-    create_download_task(state, handoff.url)
+    let context = handoff.request_context();
+    let record = create_download_task(state.clone(), handoff.url)?;
+    state
+        .storage
+        .set_request_context(&record.id, &context)
+        .map_err(|error| error.to_string())?;
+    Ok(record)
 }
 
 #[tauri::command]
@@ -880,7 +912,7 @@ async fn run_queue_scheduler(
             }
         };
         for schedule in schedules {
-            if schedule.is_active_at(now) {
+            if schedule.is_active_at(now, automation::local_utc_offset_seconds()) {
                 let already_running = queues.is_running(&schedule.queue_id).unwrap_or(false);
                 if !already_running {
                     match queues.start_queue(&schedule.queue_id) {
@@ -922,6 +954,8 @@ fn queue_schedule_response(schedule: QueueSchedule) -> QueueScheduleResponse {
         completion_action: schedule.completion_action.as_str().to_owned(),
         prevent_sleep: schedule.prevent_sleep,
         updated_at: schedule.updated_at,
+        window_start_minute: schedule.window_start_minute,
+        window_end_minute: schedule.window_end_minute,
     }
 }
 
@@ -959,6 +993,214 @@ fn rule_response(rule: DownloadRule) -> DownloadRuleResponse {
         speed_cap: rule.speed_cap,
         browser_takeover_allowed: rule.browser_takeover_allowed,
     }
+}
+
+fn download_settings_response(
+    app: &AppHandle,
+    state: &AppState,
+) -> Result<DownloadSettingsResponse, String> {
+    Ok(DownloadSettingsResponse {
+        default_directory: state
+            .downloads
+            .default_directory()
+            .map_err(|error| error.to_string())?
+            .map(|path| path.to_string_lossy().into_owned()),
+        system_directory: app
+            .path()
+            .download_dir()
+            .ok()
+            .map(|path| path.to_string_lossy().into_owned()),
+        global_speed_limit: state.downloads.global_speed_limit(),
+        prevent_sleep: automation::prevent_sleep_enabled(state),
+    })
+}
+
+#[tauri::command]
+fn get_download_settings(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<DownloadSettingsResponse, String> {
+    download_settings_response(&app, &state)
+}
+
+/// `None` returns new downloads to the system Downloads folder.
+#[tauri::command]
+fn set_default_download_directory(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    directory: Option<String>,
+) -> Result<DownloadSettingsResponse, String> {
+    let directory = directory
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from);
+    state
+        .downloads
+        .set_default_directory(directory.as_deref())
+        .map_err(|error| error.to_string())?;
+    download_settings_response(&app, &state)
+}
+
+/// Bytes per second for every download together; `None` or 0 is unlimited.
+#[tauri::command]
+fn set_global_speed_limit(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    bytes_per_second: Option<u64>,
+) -> Result<DownloadSettingsResponse, String> {
+    state
+        .downloads
+        .set_global_speed_limit(bytes_per_second)
+        .map_err(|error| error.to_string())?;
+    download_settings_response(&app, &state)
+}
+
+#[tauri::command]
+fn set_prevent_sleep(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<DownloadSettingsResponse, String> {
+    state
+        .storage
+        .set_setting(
+            automation::SETTING_PREVENT_SLEEP,
+            if enabled { "true" } else { "false" },
+        )
+        .map_err(|error| error.to_string())?;
+    download_settings_response(&app, &state)
+}
+
+#[tauri::command]
+fn set_category_directory(
+    state: State<'_, AppState>,
+    id: String,
+    directory: Option<String>,
+) -> Result<CategoryResponse, String> {
+    if !is_blank_or_absolute(directory.as_deref()) {
+        return Err("the folder must be an absolute path".to_owned());
+    }
+    state
+        .storage
+        .set_category_directory(&id, directory.as_deref())
+        .map(category_response)
+        .map_err(|error| error.to_string())
+}
+
+/// Folders are stored only as absolute paths; blank means "not set".
+fn is_blank_or_absolute(directory: Option<&str>) -> bool {
+    directory
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_none_or(|value| std::path::Path::new(value).is_absolute())
+}
+
+/// Creates the rule when `rule.id` is empty, otherwise replaces it.
+#[tauri::command]
+fn save_download_rule(
+    state: State<'_, AppState>,
+    rule: DownloadRuleResponse,
+) -> Result<DownloadRuleResponse, String> {
+    let priority = rule
+        .priority
+        .as_deref()
+        .map(DownloadPriority::from_str)
+        .transpose()
+        .map_err(|_| "unknown priority".to_owned())?;
+    if !is_blank_or_absolute(rule.destination_directory.as_deref()) {
+        return Err("the folder must be an absolute path".to_owned());
+    }
+    let record = DownloadRule {
+        id: rule.id.trim().to_owned(),
+        name: rule.name,
+        enabled: rule.enabled,
+        sort_order: rule.sort_order,
+        domain: rule.domain,
+        url_pattern: rule.url_pattern,
+        extension: rule.extension,
+        mime_pattern: rule.mime_pattern,
+        min_size: rule.min_size,
+        max_size: rule.max_size,
+        category_id: rule.category_id,
+        destination_directory: rule.destination_directory,
+        queue_id: rule.queue_id,
+        priority,
+        max_connections: rule.max_connections,
+        max_host_concurrency: rule.max_host_concurrency,
+        speed_cap: rule.speed_cap.filter(|value| *value > 0),
+        browser_takeover_allowed: rule.browser_takeover_allowed,
+    };
+    let saved = if record.id.is_empty() {
+        state.storage.create_rule(&record)
+    } else {
+        state.storage.update_rule(&record)
+    };
+    saved.map(rule_response).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn delete_download_rule(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    state
+        .storage
+        .delete_rule(&id)
+        .map_err(|error| error.to_string())
+}
+
+/// Stops the power or exit action a finished queue scheduled.
+#[tauri::command]
+fn cancel_completion_action(app: AppHandle, state: State<'_, AppState>) -> bool {
+    match state.automation.cancel_pending() {
+        Some(id) => {
+            automation::publish_cancelled(&app, id);
+            true
+        }
+        None => false,
+    }
+}
+
+/// The file of a completed download. Opening goes through this lookup so the
+/// window can only ever open files the engine itself wrote.
+fn completed_file(state: &AppState, id: &str) -> Result<std::path::PathBuf, String> {
+    let record = state
+        .storage
+        .get_download(id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("download not found: {id}"))?;
+    if record.status != dm_common::DownloadStatus::Completed {
+        return Err("the download has not finished yet".to_owned());
+    }
+    let path = record
+        .destination_path
+        .map(std::path::PathBuf::from)
+        .ok_or_else(|| "the download has no file".to_owned())?;
+    if !path.is_file() {
+        return Err("the file was moved or deleted".to_owned());
+    }
+    Ok(path)
+}
+
+#[tauri::command]
+fn open_download_file(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    let path = completed_file(&state, &id)?;
+    app.opener()
+        .open_path(path.to_string_lossy(), None::<&str>)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn reveal_download_file(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    let path = completed_file(&state, &id)?;
+    app.opener()
+        .reveal_item_in_dir(path)
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -1004,14 +1246,131 @@ fn parse_hls_manifest(base_url: String, content: String) -> Vec<MediaVariantResp
         .collect()
 }
 
-fn start_browser_handoff(app: &AppHandle, state: &AppState, url: &str) -> Result<(), String> {
+/// What a launch of the executable asks the running application to do. The
+/// browser native host starts the executable with one of these switches; the
+/// single-instance plugin forwards a second launch's arguments here instead
+/// of opening another window with a second engine on the same database.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LaunchRequest {
+    /// Tasks the native host already persisted; start or queue them.
+    HandoffTasks(Vec<String>),
+    /// A bare URL from an older native host; create a task, then as above.
+    BrowserUrl(String),
+    /// Links from a text selection, for review in LinkGrabber.
+    GrabLinks(Vec<String>),
+}
+
+const ARG_HANDOFF_TASK: &str = "--handoff-task";
+const ARG_BROWSER_HANDOFF: &str = "--browser-handoff";
+const ARG_GRAB_LINKS: &str = "--grab-links";
+const LINK_INTAKE_EVENT: &str = "link-intake";
+
+fn parse_launch_args(args: &[String]) -> Vec<LaunchRequest> {
+    let mut requests = Vec::new();
+    let mut index = 0;
+
+    while index < args.len() {
+        let values = args[index + 1..]
+            .iter()
+            .take_while(|value| !value.starts_with("--"))
+            .cloned()
+            .collect::<Vec<_>>();
+        let consumed = values.len();
+
+        match args[index].as_str() {
+            ARG_HANDOFF_TASK if !values.is_empty() => {
+                requests.push(LaunchRequest::HandoffTasks(values))
+            }
+            ARG_BROWSER_HANDOFF => {
+                if let Some(url) = values.into_iter().next() {
+                    requests.push(LaunchRequest::BrowserUrl(url));
+                }
+            }
+            ARG_GRAB_LINKS if !values.is_empty() => requests.push(LaunchRequest::GrabLinks(values)),
+            _ => {}
+        }
+
+        index += 1 + consumed;
+    }
+
+    requests
+}
+
+/// Brings the main window forward so the user sees what the browser sent.
+fn reveal_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+fn handle_launch_requests(app: &AppHandle, requests: Vec<LaunchRequest>) {
+    if requests.is_empty() {
+        return;
+    }
+
+    let Some(state) = app.try_state::<AppState>() else {
+        warn!("launch request arrived before the application state was ready");
+        return;
+    };
+
+    for request in requests {
+        match request {
+            LaunchRequest::HandoffTasks(ids) => {
+                for id in ids {
+                    if let Err(error) = start_handoff_task(app, &state, &id) {
+                        warn!(download_id = %id, error = %error, "browser handoff could not start");
+                    }
+                }
+            }
+            LaunchRequest::BrowserUrl(url) => {
+                let started = dm_core::browser::BrowserHandoff {
+                    url,
+                    filename_hint: None,
+                    referrer: None,
+                    user_agent: None,
+                }
+                .validate()
+                .map_err(|error| error.to_string())
+                .and_then(|handoff| {
+                    state
+                        .downloads
+                        .create_task(&handoff.url)
+                        .map_err(|error| error.to_string())
+                })
+                .and_then(|task| start_handoff_task(app, &state, &task.id));
+                if let Err(error) = started {
+                    warn!(error = %error, "browser handoff could not start");
+                }
+            }
+            LaunchRequest::GrabLinks(urls) => {
+                if let Ok(mut pending) = state.pending_link_intake.lock() {
+                    pending.extend(urls.iter().cloned());
+                }
+                // A window that is already listening takes the links now; one
+                // still loading collects them with `take_pending_link_intake`.
+                let _ = app.emit(LINK_INTAKE_EVENT, ());
+            }
+        }
+    }
+
+    reveal_main_window(app);
+}
+
+/// Starts or queues a task that arrived from the browser, applying the same
+/// intake rules as Add Download, and shows the row immediately.
+fn start_handoff_task(app: &AppHandle, state: &AppState, task_id: &str) -> Result<(), String> {
     let task = state
-        .downloads
-        .create_task(url)
-        .map_err(|error| error.to_string())?;
+        .storage
+        .get_download(task_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("download not found: {task_id}"))?;
+    let publisher = EventPublisher::new(app.clone());
+
     let decision = state
         .downloads
-        .rule_decision_for_url(url)
+        .rule_decision_for_url(&task.source_url)
         .map_err(|error| error.to_string())?;
     if let Some(decision) = decision {
         if let Some(priority) = decision.priority {
@@ -1021,28 +1380,43 @@ fn start_browser_handoff(app: &AppHandle, state: &AppState, url: &str) -> Result
                 .map_err(|error| error.to_string())?;
         }
         if let Some(queue_id) = decision.queue_id {
-            state
+            let queued = state
                 .queues
                 .enqueue_task(&task.id, &queue_id, decision.priority)
                 .map_err(|error| error.to_string())?;
+            publisher.download_updated(queued);
             return Ok(());
         }
     }
-    state
+
+    let claimed = state
         .downloads
         .claim_task(&task.id)
         .map_err(|error| error.to_string())?;
+    publisher.download_updated(claimed);
+
     let destination_directory = app
         .path()
         .download_dir()
         .map_err(|error| error.to_string())?;
     spawn_transfer(
         state.downloads.clone(),
-        EventPublisher::new(app.clone()),
+        publisher,
         task.id,
         destination_directory,
     );
     Ok(())
+}
+
+/// Hands LinkGrabber the links a browser sent while the window was not yet
+/// listening. Each link is returned once.
+#[tauri::command]
+fn take_pending_link_intake(state: State<'_, AppState>) -> Vec<String> {
+    state
+        .pending_link_intake
+        .lock()
+        .map(|mut pending| std::mem::take(&mut *pending))
+        .unwrap_or_default()
 }
 
 /// Runs one task's transfer in the background and publishes what happens.
@@ -1082,16 +1456,24 @@ fn spawn_transfer(
 pub fn run() {
     init_logging();
 
-    let browser_handoff = std::env::args()
-        .collect::<Vec<_>>()
-        .windows(2)
-        .find(|args| args[0] == "--browser-handoff")
-        .map(|args| args[1].clone());
+    let launch_requests = parse_launch_args(&std::env::args().skip(1).collect::<Vec<_>>());
 
     info!("starting Download Manager");
 
     tauri::Builder::default()
+        // Registered first so a second launch exits before it opens a window
+        // or the database; its arguments are handled by this process instead.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            let requests = parse_launch_args(args.get(1..).unwrap_or_default());
+            if requests.is_empty() {
+                reveal_main_window(app);
+            } else {
+                handle_launch_requests(app, requests);
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(move |app| {
             let app_data_dir = app.path().app_data_dir()?;
@@ -1133,14 +1515,13 @@ pub fn run() {
                 storage: Arc::clone(&storage),
                 downloads: downloads.clone(),
                 queues: queues.clone(),
+                pending_link_intake: Mutex::new(Vec::new()),
+                automation: Automation::new(),
             });
 
-            if let Some(url) = browser_handoff.as_deref() {
-                let state = app.state::<AppState>();
-                if let Err(error) = start_browser_handoff(app.handle(), &state, url) {
-                    warn!(error = %error, "browser handoff could not start");
-                }
-            }
+            tauri::async_runtime::spawn(automation::run_keep_awake(app.handle().clone()));
+
+            handle_launch_requests(app.handle(), launch_requests.clone());
 
             let publisher = EventPublisher::new(app.handle().clone());
 
@@ -1206,9 +1587,61 @@ pub fn run() {
             list_download_rules,
             get_download_rule_explanation,
             inspect_links,
+            take_pending_link_intake,
+            get_download_settings,
+            set_default_download_directory,
+            set_global_speed_limit,
+            set_prevent_sleep,
+            set_category_directory,
+            save_download_rule,
+            delete_download_rule,
+            cancel_completion_action,
+            open_download_file,
+            reveal_download_file,
             classify_media_source,
             parse_hls_manifest
         ])
         .run(tauri::generate_context!())
         .expect("error while running Download Manager");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_launch_args, LaunchRequest};
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
+    #[test]
+    fn parses_every_launch_switch_the_native_host_sends() {
+        assert_eq!(
+            parse_launch_args(&args(&["--handoff-task", "a", "b"])),
+            vec![LaunchRequest::HandoffTasks(args(&["a", "b"]))]
+        );
+        assert_eq!(
+            parse_launch_args(&args(&["--browser-handoff", "https://x.test/f"])),
+            vec![LaunchRequest::BrowserUrl("https://x.test/f".to_owned())]
+        );
+        assert_eq!(
+            parse_launch_args(&args(&[
+                "--grab-links",
+                "https://x.test/1",
+                "https://x.test/2",
+                "--handoff-task",
+                "t1",
+            ])),
+            vec![
+                LaunchRequest::GrabLinks(args(&["https://x.test/1", "https://x.test/2"])),
+                LaunchRequest::HandoffTasks(args(&["t1"])),
+            ]
+        );
+    }
+
+    #[test]
+    fn ignores_unknown_and_empty_switches() {
+        assert!(parse_launch_args(&args(&[])).is_empty());
+        assert!(parse_launch_args(&args(&["--handoff-task"])).is_empty());
+        assert!(parse_launch_args(&args(&["--unknown", "x", "stray"])).is_empty());
+    }
 }

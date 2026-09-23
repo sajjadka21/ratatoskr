@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
  */
 
 const FRONTEND_ROOT = join(process.cwd(), "src");
-const BACKEND_ENTRY = join(process.cwd(), "src-tauri", "src", "lib.rs");
+const BACKEND_ROOT = join(process.cwd(), "src-tauri", "src");
 
 function sourceFiles(directory: string): string[] {
   return readdirSync(directory).flatMap((entry) => {
@@ -30,8 +30,12 @@ function frontendSource(): string {
     .join("\n");
 }
 
+/** Every Rust source of the desktop host; events live in several modules. */
 function backendSource(): string {
-  return readFileSync(BACKEND_ENTRY, "utf8");
+  return readdirSync(BACKEND_ROOT)
+    .filter((entry) => entry.endsWith(".rs"))
+    .map((entry) => readFileSync(join(BACKEND_ROOT, entry), "utf8"))
+    .join("\n");
 }
 
 /** Commands registered with Tauri, in registration order. */

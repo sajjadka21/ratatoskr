@@ -3,8 +3,24 @@
   "name": "Download Manager Handoff",
   "version": "1.0.0",
   "description": "Optional, local-only handoff to Download Manager.",
-  "permissions": ["downloads", "storage", "contextMenus", "nativeMessaging"],
-  "background": { "service_worker": "background.js" },
-  "action": { "default_title": "Download Manager", "default_popup": "popup.html" },
+  "permissions": [
+    "downloads",
+    "storage",
+    "contextMenus",
+    "nativeMessaging"
+  ],
+  "optional_permissions": [
+    "cookies"
+  ],
+  "optional_host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Download Manager",
+    "default_popup": "popup.html"
+  },
   "options_page": "options.html"
 }

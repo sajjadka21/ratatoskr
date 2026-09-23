@@ -1,3 +1,4 @@
+use crate::session::BrowserSession;
 use crate::{
     DownloadError, Downloader, SegmentTransferRequest, TransferProgress, TransferRequest,
     adaptive::{AdaptiveController, ThroughputSample},
@@ -75,6 +76,12 @@ pub enum DownloadServiceError {
     #[error("download {0} is not running")]
     NotRunning(String),
 
+    #[error("a browser session can only be attached before a download starts, not while it is {0}")]
+    SessionNotAccepted(dm_common::DownloadStatus),
+
+    #[error("browser session refused: {0}")]
+    BrowserSession(#[from] crate::session::SessionError),
+
     #[error("download {0} is already running")]
     AlreadyRunning(String),
 }
@@ -108,6 +115,9 @@ pub struct DownloadService {
     global_limiter: Arc<RateLimiter>,
     /// Rule-derived limits of transfers running now, by task id.
     overrides: Arc<Mutex<HashMap<String, TaskOverrides>>>,
+    /// Browser sessions handed over for tasks, by task id. Memory only: a
+    /// session is never written to storage and is forgotten on restart.
+    sessions: Arc<Mutex<HashMap<String, Arc<BrowserSession>>>>,
 }
 
 impl DownloadService {
@@ -127,7 +137,55 @@ impl DownloadService {
             segmented_threshold: DEFAULT_SEGMENTED_THRESHOLD,
             global_limiter: Arc::new(RateLimiter::new(global_limit)),
             overrides: Arc::new(Mutex::new(HashMap::new())),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
         })
+    }
+
+    /// Attaches a browser session to a task the browser just handed over.
+    ///
+    /// Only a task that has not started yet accepts one, so a session always
+    /// arrives before the first request and can never be swapped under a
+    /// running transfer.
+    pub fn attach_browser_session(&self, download_id: &str, cookie_header: &str) -> Result<()> {
+        let task = self.get_task(download_id)?;
+
+        if task.status != dm_common::DownloadStatus::Created {
+            return Err(DownloadServiceError::SessionNotAccepted(task.status));
+        }
+
+        let session = BrowserSession::new(&task.source_url, cookie_header)
+            .map_err(DownloadServiceError::BrowserSession)?;
+
+        self.sessions
+            .lock()
+            .map_err(|_| DownloadServiceError::ControlRegistryUnavailable)?
+            .insert(download_id.to_owned(), Arc::new(session));
+
+        Ok(())
+    }
+
+    /// Drops a task's browser session. Called when the task can no longer
+    /// need it: finished, cancelled or removed.
+    pub fn forget_browser_session(&self, download_id: &str) {
+        if let Ok(mut sessions) = self.sessions.lock() {
+            sessions.remove(download_id);
+        }
+    }
+
+    /// Whether a task currently holds a browser session. Reports presence
+    /// only; the session itself never leaves this service.
+    pub fn has_browser_session(&self, download_id: &str) -> bool {
+        self.sessions
+            .lock()
+            .map(|sessions| sessions.contains_key(download_id))
+            .unwrap_or(false)
+    }
+
+    fn browser_session_for(&self, download_id: &str) -> Option<Arc<BrowserSession>> {
+        self.sessions
+            .lock()
+            .ok()
+            .and_then(|sessions| sessions.get(download_id).cloned())
     }
 
     /// True while any transfer is moving bytes in this process.
@@ -239,6 +297,7 @@ impl DownloadService {
         let mut downloader = self
             .downloader
             .with_context(&context)
+            .with_session(self.browser_session_for(download_id))
             .with_limiter(Arc::clone(&self.global_limiter));
 
         if let Some(limiter) = self
@@ -321,6 +380,7 @@ impl DownloadService {
         remove_partial_file(task.temp_path.as_deref()).await;
         remove_task_segments(&self.storage, download_id).await;
         self.storage.mark_cancelled(download_id)?;
+        self.forget_browser_session(download_id);
         self.get_task(download_id)
     }
 
@@ -925,6 +985,7 @@ impl DownloadService {
                 remove_partial_file(task.temp_path.as_deref()).await;
                 remove_task_segments(&self.storage, download_id).await;
                 self.storage.mark_cancelled(download_id)?;
+                self.forget_browser_session(download_id);
             }
         }
 
@@ -1023,6 +1084,9 @@ impl DownloadService {
 
         self.storage
             .mark_completed(download_id, &completion, unix_timestamp_seconds()?)?;
+
+        // A finished download never needs its session again.
+        self.forget_browser_session(download_id);
 
         self.get_task(download_id)
     }
@@ -2204,5 +2268,276 @@ mod tests {
                 .unwrap(),
             DEFAULT_BODY
         );
+    }
+    const SESSION_COOKIE: &str = "session=s3cr3t-browser-login";
+
+    /// A server that, like a login-protected download, refuses every request
+    /// that does not carry the browser's session.
+    fn login_protected_server() -> ServerBehaviour {
+        ServerBehaviour {
+            required_header: Some(format!("cookie: {SESSION_COOKIE}")),
+            ..ServerBehaviour::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn a_login_protected_download_needs_the_browser_session() {
+        let server = TestServer::start(login_protected_server()).await;
+        let harness = harness();
+
+        let without = harness
+            .service
+            .create_task(&server.url("private.bin"))
+            .unwrap();
+        let _ = harness
+            .service
+            .start_task(&without.id, &harness.destination)
+            .await;
+
+        assert_eq!(
+            harness
+                .storage
+                .get_download(&without.id)
+                .unwrap()
+                .unwrap()
+                .status,
+            DownloadStatus::Failed,
+            "the server must really refuse a request without the session"
+        );
+
+        let with = harness
+            .service
+            .create_task(&server.url("private.bin"))
+            .unwrap();
+        harness
+            .service
+            .attach_browser_session(&with.id, SESSION_COOKIE)
+            .unwrap();
+
+        let finished = harness
+            .service
+            .start_task(&with.id, &harness.destination)
+            .await
+            .unwrap();
+
+        assert_eq!(finished.status, DownloadStatus::Completed);
+        assert_eq!(
+            tokio::fs::read(finished.destination_path.as_ref().unwrap())
+                .await
+                .unwrap(),
+            DEFAULT_BODY
+        );
+    }
+
+    #[tokio::test]
+    async fn a_browser_session_never_follows_a_redirect_to_another_origin() {
+        // The file itself lives on a different origin, the way a download
+        // page hands off to a CDN.
+        let cdn = TestServer::start(ServerBehaviour::default()).await;
+        let origin = TestServer::start(ServerBehaviour {
+            redirect_to: Some(cdn.url("file.bin")),
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+
+        let task = harness
+            .service
+            .create_task(&origin.url("download"))
+            .unwrap();
+        harness
+            .service
+            .attach_browser_session(&task.id, SESSION_COOKIE)
+            .unwrap();
+
+        let finished = harness
+            .service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+
+        assert_eq!(finished.status, DownloadStatus::Completed);
+        assert!(
+            origin.requests_with_cookie() > 0,
+            "the origin the session belongs to receives it"
+        );
+        assert_eq!(
+            cdn.requests_with_cookie(),
+            0,
+            "a session must never reach a host it was not captured for"
+        );
+        assert!(cdn.request_count() > 0, "the CDN really served the file");
+    }
+
+    /// The segmented engine does not follow the redirect on every request: it
+    /// sends its ranged requests straight to the resolved CDN address. Only
+    /// the engine's own origin check keeps the session off those requests,
+    /// so this is the test that fails if that check is ever removed.
+    #[tokio::test]
+    async fn segmented_requests_to_a_resolved_cdn_never_carry_the_session() {
+        let cdn = TestServer::start(ServerBehaviour::default()).await;
+        let origin = TestServer::start(ServerBehaviour {
+            redirect_to: Some(cdn.url("file.bin")),
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+        let service = harness
+            .service
+            .clone()
+            .with_segment_connections(2)
+            .with_segmented_threshold(1);
+
+        let task = service.create_task(&origin.url("download")).unwrap();
+        service
+            .attach_browser_session(&task.id, SESSION_COOKIE)
+            .unwrap();
+
+        let finished = service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+
+        assert_eq!(finished.status, DownloadStatus::Completed);
+        assert!(
+            cdn.ranged_request_count() > 1,
+            "the segmented engine really requested ranges from the CDN"
+        );
+        assert_eq!(
+            cdn.requests_with_cookie(),
+            0,
+            "a session must never reach a host it was not captured for"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_browser_session_is_never_written_to_disk() {
+        let server = TestServer::start(login_protected_server()).await;
+        let harness = harness();
+
+        let task = harness
+            .service
+            .create_task(&server.url("private.bin"))
+            .unwrap();
+        harness
+            .service
+            .attach_browser_session(&task.id, SESSION_COOKIE)
+            .unwrap();
+        harness
+            .service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+
+        // The database and its write-ahead log are checked byte by byte, so
+        // no future column or table can quietly start holding the session.
+        let mut checked = 0;
+        for entry in std::fs::read_dir(harness._root.path()).unwrap() {
+            let path = entry.unwrap().path();
+            let is_database = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("downloads.db"));
+
+            if is_database && path.is_file() {
+                let bytes = std::fs::read(&path).unwrap();
+                assert!(
+                    !bytes
+                        .windows(SESSION_COOKIE.len())
+                        .any(|window| window == SESSION_COOKIE.as_bytes()),
+                    "{} holds the browser session",
+                    path.display()
+                );
+                checked += 1;
+            }
+        }
+
+        assert!(checked > 0, "the database files were not found");
+    }
+
+    #[tokio::test]
+    async fn a_session_is_accepted_only_before_the_download_starts() {
+        let harness = harness();
+
+        let task = harness
+            .service
+            .create_task("https://example.com/file.bin")
+            .unwrap();
+        harness.service.claim_task(&task.id).unwrap();
+
+        let error = harness
+            .service
+            .attach_browser_session(&task.id, SESSION_COOKIE)
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            DownloadServiceError::SessionNotAccepted(DownloadStatus::Probing)
+        ));
+        assert!(!harness.service.has_browser_session(&task.id));
+    }
+
+    #[tokio::test]
+    async fn a_hostile_session_is_refused_without_being_echoed() {
+        let harness = harness();
+
+        let task = harness
+            .service
+            .create_task("https://example.com/file.bin")
+            .unwrap();
+
+        let error = harness
+            .service
+            .attach_browser_session(&task.id, "session=s3cr3t\r\nX-Injected: 1")
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            DownloadServiceError::BrowserSession(crate::session::SessionError::InvalidCharacters)
+        ));
+        assert!(!error.to_string().contains("s3cr3t"));
+        assert!(!harness.service.has_browser_session(&task.id));
+    }
+
+    #[tokio::test]
+    async fn a_session_is_forgotten_once_the_download_finishes() {
+        let server = TestServer::start(login_protected_server()).await;
+        let harness = harness();
+
+        let task = harness
+            .service
+            .create_task(&server.url("private.bin"))
+            .unwrap();
+        harness
+            .service
+            .attach_browser_session(&task.id, SESSION_COOKIE)
+            .unwrap();
+        assert!(harness.service.has_browser_session(&task.id));
+
+        harness
+            .service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+
+        assert!(!harness.service.has_browser_session(&task.id));
+    }
+
+    #[tokio::test]
+    async fn cancelling_forgets_the_session() {
+        let harness = harness();
+
+        let task = harness
+            .service
+            .create_task("https://example.com/file.bin")
+            .unwrap();
+        harness
+            .service
+            .attach_browser_session(&task.id, SESSION_COOKIE)
+            .unwrap();
+
+        harness.service.cancel_task(&task.id).await.unwrap();
+
+        assert!(!harness.service.has_browser_session(&task.id));
     }
 }

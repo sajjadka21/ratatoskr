@@ -5,6 +5,8 @@
 //! Every function is safe to call on any platform; outside Windows the power
 //! actions report `Unsupported` and keep-awake does nothing.
 
+pub mod session_channel;
+
 use std::{fmt, io, str::FromStr, sync::mpsc, thread};
 
 /// What to do with the computer after a queue finishes.

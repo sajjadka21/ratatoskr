@@ -42,6 +42,9 @@ pub struct ServerBehaviour {
     /// matched case-insensitively. Requests without it get `403 Forbidden`,
     /// the way hotlink-protected servers behave.
     pub required_header: Option<String>,
+    /// Answer every request with `302 Found` to this address, the way a
+    /// download link that hands off to a CDN behaves.
+    pub redirect_to: Option<String>,
 }
 
 impl Default for ServerBehaviour {
@@ -57,6 +60,7 @@ impl Default for ServerBehaviour {
             chunk_size: 8,
             truncate_after: None,
             required_header: None,
+            redirect_to: None,
         }
     }
 }
@@ -72,6 +76,9 @@ pub struct ServerStats {
     pub ranged_requests: AtomicUsize,
     pub active_bodies: AtomicUsize,
     pub peak_concurrent_bodies: AtomicUsize,
+    /// Requests that arrived carrying any `Cookie` header, so a test can prove
+    /// a session never reached a server it did not belong to.
+    pub requests_with_cookie: AtomicUsize,
 }
 
 #[derive(Debug)]
@@ -137,6 +144,11 @@ impl TestServer {
     pub fn peak_concurrent_bodies(&self) -> usize {
         self.stats.peak_concurrent_bodies.load(Ordering::SeqCst)
     }
+
+    /// How many requests reached this server carrying a `Cookie` header.
+    pub fn requests_with_cookie(&self) -> usize {
+        self.stats.requests_with_cookie.load(Ordering::SeqCst)
+    }
 }
 
 impl Drop for TestServer {
@@ -167,7 +179,22 @@ async fn serve(
         stats.ranged_requests.fetch_add(1, Ordering::SeqCst);
     }
 
+    if request
+        .lines()
+        .any(|line| line.to_ascii_lowercase().starts_with("cookie:"))
+    {
+        stats.requests_with_cookie.fetch_add(1, Ordering::SeqCst);
+    }
+
     let behaviour = behaviour.lock().unwrap().clone();
+
+    if let Some(location) = &behaviour.redirect_to {
+        let response = format!(
+            "HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        );
+        socket.write_all(response.as_bytes()).await?;
+        return socket.shutdown().await;
+    }
 
     let forbidden = behaviour.required_header.as_ref().is_some_and(|required| {
         !request

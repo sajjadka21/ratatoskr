@@ -6,23 +6,36 @@
 //! into the application's database itself and only then asks the (single
 //! instance) application to pick it up. If the application cannot be started
 //! the task is still waiting in the list the next time it opens.
+//!
+//! A browser session (cookie header) is the exception to "persist first": it
+//! must never reach the database or a command line. It travels to the running
+//! application over its private session channel, and the handoff is accepted
+//! only once the application has it. If that fails the task just created is
+//! removed again, so the browser keeps its own download and loses nothing.
 
 use dm_common::{APP_IDENTIFIER, DATABASE_FILE_NAME};
 use dm_core::{browser::BrowserHandoff, linkgrabber::extract_links, service::DownloadService};
 use dm_storage::Storage;
+use dm_system::session_channel::{DeliveryError, SessionHandoff};
 use serde::{Deserialize, Serialize};
 use std::{
-    env,
+    env, fmt,
     io::{self, Read, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::Arc,
+    time::Duration,
 };
 
 /// Links forwarded to LinkGrabber in one message. Windows limits a command
 /// line to 32 767 characters, so the total is bounded as well.
 const MAX_GRAB_LINKS: usize = 500;
 const MAX_GRAB_ARGUMENT_CHARS: usize = 24_000;
+
+/// How long to wait for an application that is already running, and for one
+/// that has to be started first.
+const SESSION_CONNECT_RUNNING: Duration = Duration::from_millis(750);
+const SESSION_CONNECT_STARTING: Duration = Duration::from_secs(20);
 
 /// Command-line switches understood by the desktop application.
 const ARG_HANDOFF_TASK: &str = "--handoff-task";
@@ -38,6 +51,27 @@ struct NativeRequest {
     filename_hint: Option<String>,
     referrer: Option<String>,
     user_agent: Option<String>,
+    /// The browser's cookie header for the download URL, present only when
+    /// the user turned session handover on in the extension.
+    cookies: Option<SecretCookie>,
+}
+
+/// A cookie header that cannot be printed by accident.
+#[derive(Deserialize)]
+#[serde(transparent)]
+struct SecretCookie(String);
+
+impl SecretCookie {
+    fn value(&self) -> Option<&str> {
+        let value = self.0.trim();
+        (!value.is_empty()).then_some(value)
+    }
+}
+
+impl fmt::Debug for SecretCookie {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("<redacted>")
+    }
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -71,6 +105,9 @@ struct Environment {
     database_path: Option<PathBuf>,
     application: Option<PathBuf>,
     launch: fn(&PathBuf, &[String]) -> bool,
+    /// Sends a session to the running application, which must be the program
+    /// at the given path.
+    deliver_session: fn(&SessionHandoff, &Path, Duration) -> Result<(), DeliveryError>,
 }
 
 impl Environment {
@@ -79,6 +116,7 @@ impl Environment {
             database_path: database_path(),
             application: application_path(),
             launch: launch_application,
+            deliver_session: dm_system::session_channel::deliver,
         }
     }
 }
@@ -130,6 +168,10 @@ fn handle_download(request: NativeRequest, environment: &Environment) -> NativeR
         return rejected("the download could not be saved");
     };
 
+    if let Some(cookie) = request.cookies.as_ref().and_then(SecretCookie::value) {
+        return hand_over_with_session(database_path, &task.id, cookie, environment);
+    }
+
     // The task exists now, so the handoff is accepted even when the
     // application cannot be started: the row is waiting for it.
     if let Some(application) = environment.application.as_ref() {
@@ -140,6 +182,62 @@ fn handle_download(request: NativeRequest, environment: &Environment) -> NativeR
         accepted: true,
         task_id: Some(task.id),
         ..NativeResponse::default()
+    }
+}
+
+/// Delivers the session to the running application, which then starts the
+/// task. Nothing about the session is written anywhere on the way.
+fn hand_over_with_session(
+    database_path: &Path,
+    task_id: &str,
+    cookie: &str,
+    environment: &Environment,
+) -> NativeResponse {
+    // The session goes only to the program this host was installed with; if
+    // that program cannot be identified, nothing is sent.
+    let Some(application) = environment.application.as_ref() else {
+        return withdraw(
+            database_path,
+            task_id,
+            "Download Manager executable was not found",
+        );
+    };
+
+    let handoff = SessionHandoff::new(task_id, cookie);
+
+    // Try the running application first; start it only if nothing answers.
+    let mut delivered =
+        (environment.deliver_session)(&handoff, application, SESSION_CONNECT_RUNNING);
+
+    if matches!(delivered, Err(DeliveryError::Unavailable)) {
+        (environment.launch)(application, &[]);
+        delivered = (environment.deliver_session)(&handoff, application, SESSION_CONNECT_STARTING);
+    }
+
+    match delivered {
+        Ok(()) => NativeResponse {
+            accepted: true,
+            task_id: Some(task_id.to_owned()),
+            ..NativeResponse::default()
+        },
+        Err(error) => withdraw(database_path, task_id, &error.to_string()),
+    }
+}
+
+/// Removes a task whose session could not be delivered, so the browser keeps
+/// its own download. If the application had already started the task, the
+/// reply was lost rather than the session, and the handoff stands.
+fn withdraw(database_path: &Path, task_id: &str, reason: &str) -> NativeResponse {
+    let removed =
+        Storage::open(database_path).map(|storage| storage.remove_download_record(task_id));
+
+    match removed {
+        Ok(Err(dm_storage::StorageError::DownloadNotRemovable { .. })) => NativeResponse {
+            accepted: true,
+            task_id: Some(task_id.to_owned()),
+            ..NativeResponse::default()
+        },
+        _ => rejected(reason),
     }
 }
 
@@ -270,11 +368,38 @@ fn write_message(writer: &mut impl Write, response: &NativeResponse) -> io::Resu
 mod tests {
     use super::{handle_message, read_message, write_message, Environment, NativeResponse};
     use dm_storage::Storage;
-    use std::{io::Cursor, path::PathBuf};
+    use dm_system::session_channel::{DeliveryError, SessionHandoff};
+    use std::{
+        io::Cursor,
+        path::{Path, PathBuf},
+        sync::Mutex,
+        time::Duration,
+    };
     use tempfile::tempdir;
+
+    const COOKIE: &str = "session=s3cr3t-browser-login";
 
     fn launched(_: &PathBuf, _: &[String]) -> bool {
         true
+    }
+
+    /// Sessions the fake application received, as (task id, cookie).
+    static DELIVERED: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
+
+    fn delivered_ok(handoff: &SessionHandoff, _: &Path, _: Duration) -> Result<(), DeliveryError> {
+        DELIVERED
+            .lock()
+            .unwrap()
+            .push((handoff.task_id.clone(), handoff.cookie.clone()));
+        Ok(())
+    }
+
+    fn nobody_answers(_: &SessionHandoff, _: &Path, _: Duration) -> Result<(), DeliveryError> {
+        Err(DeliveryError::Unavailable)
+    }
+
+    fn impostor(_: &SessionHandoff, _: &Path, _: Duration) -> Result<(), DeliveryError> {
+        Err(DeliveryError::UntrustedServer)
     }
 
     fn environment(database: Option<PathBuf>) -> Environment {
@@ -282,7 +407,124 @@ mod tests {
             database_path: database,
             application: Some(PathBuf::from("app.exe")),
             launch: launched,
+            deliver_session: delivered_ok,
         }
+    }
+
+    fn download_with_session() -> Vec<u8> {
+        format!(
+            r#"{{"type":"download","url":"https://example.com/private.zip","cookies":"{COOKIE}"}}"#
+        )
+        .into_bytes()
+    }
+
+    /// True when any database file in `directory` contains `needle`.
+    fn stored_anywhere(directory: &Path, needle: &str) -> bool {
+        std::fs::read_dir(directory).unwrap().any(|entry| {
+            let path = entry.unwrap().path();
+            path.is_file()
+                && std::fs::read(&path)
+                    .unwrap()
+                    .windows(needle.len())
+                    .any(|window| window == needle.as_bytes())
+        })
+    }
+
+    #[test]
+    fn a_session_is_delivered_and_never_stored() {
+        let directory = tempdir().unwrap();
+        let database = directory.path().join("downloads.db");
+
+        let response = handle_message(
+            &download_with_session(),
+            &environment(Some(database.clone())),
+        );
+
+        assert!(response.accepted, "{:?}", response.error);
+        let task_id = response.task_id.unwrap();
+        assert!(DELIVERED
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(id, cookie)| id == &task_id && cookie == COOKIE));
+
+        let storage = Storage::open(&database).unwrap();
+        assert!(storage.get_download(&task_id).unwrap().is_some());
+        drop(storage);
+
+        assert!(
+            !stored_anywhere(directory.path(), "s3cr3t-browser-login"),
+            "the session must never reach the database"
+        );
+    }
+
+    #[test]
+    fn an_undelivered_session_leaves_the_download_with_the_browser() {
+        let directory = tempdir().unwrap();
+        let database = directory.path().join("downloads.db");
+        let environment = Environment {
+            deliver_session: nobody_answers,
+            ..environment(Some(database.clone()))
+        };
+
+        let response = handle_message(&download_with_session(), &environment);
+
+        assert!(!response.accepted, "the browser must keep its own download");
+        assert!(
+            Storage::open(&database)
+                .unwrap()
+                .list_downloads()
+                .unwrap()
+                .is_empty(),
+            "the task created for the handoff must be withdrawn"
+        );
+    }
+
+    #[test]
+    fn a_session_is_never_sent_to_an_untrusted_program() {
+        let directory = tempdir().unwrap();
+        let database = directory.path().join("downloads.db");
+        let environment = Environment {
+            deliver_session: impostor,
+            ..environment(Some(database.clone()))
+        };
+
+        let response = handle_message(&download_with_session(), &environment);
+
+        assert!(!response.accepted);
+        assert!(!response.error.unwrap_or_default().contains("s3cr3t"));
+        assert!(Storage::open(&database)
+            .unwrap()
+            .list_downloads()
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn a_session_needs_a_known_application() {
+        let directory = tempdir().unwrap();
+        let database = directory.path().join("downloads.db");
+        let environment = Environment {
+            application: None,
+            ..environment(Some(database.clone()))
+        };
+
+        let response = handle_message(&download_with_session(), &environment);
+
+        assert!(!response.accepted);
+        assert!(Storage::open(&database)
+            .unwrap()
+            .list_downloads()
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn a_request_never_prints_its_session() {
+        let request: super::NativeRequest =
+            serde_json::from_slice(&download_with_session()).unwrap();
+
+        assert!(!format!("{request:?}").contains("s3cr3t"));
     }
 
     #[test]

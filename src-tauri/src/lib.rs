@@ -608,7 +608,10 @@ fn remove_download(
     state
         .storage
         .remove_download_record(&id)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+
+    state.downloads.forget_browser_session(&id);
+    Ok(())
 }
 #[tauri::command]
 fn get_add_download_input_mode(state: State<'_, AppState>) -> Result<String, String> {
@@ -1408,6 +1411,59 @@ fn start_handoff_task(app: &AppHandle, state: &AppState, task_id: &str) -> Resul
     Ok(())
 }
 
+/// Receives browser sessions from the native messaging host for as long as
+/// the application runs.
+///
+/// A session arrives together with the task it belongs to and is attached
+/// before the task starts, so the very first request already carries it. It
+/// is held in memory only; nothing here logs it, stores it, or sends it to
+/// the window.
+async fn serve_browser_sessions(app: AppHandle) {
+    let handler_app = app.clone();
+
+    let result = dm_system::session_channel::serve(move |handoff| {
+        receive_browser_session(&handler_app, &handoff.task_id, &handoff.cookie)
+    })
+    .await;
+
+    match result {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::Unsupported => {
+            info!("browser session handover is not available on this system");
+        }
+        Err(error) => {
+            warn!(error = %error, "browser session channel stopped");
+        }
+    }
+}
+
+fn receive_browser_session(
+    app: &AppHandle,
+    task_id: &str,
+    cookie: &str,
+) -> dm_system::session_channel::HandoffReply {
+    use dm_system::session_channel::HandoffReply;
+
+    let Some(state) = app.try_state::<AppState>() else {
+        return HandoffReply::refused("Download Manager is still starting");
+    };
+
+    if let Err(error) = state.downloads.attach_browser_session(task_id, cookie) {
+        warn!(download_id = %task_id, error = %error, "browser session refused");
+        return HandoffReply::refused(error.to_string());
+    }
+
+    if let Err(error) = start_handoff_task(app, &state, task_id) {
+        state.downloads.forget_browser_session(task_id);
+        warn!(download_id = %task_id, error = %error, "browser handoff could not start");
+        return HandoffReply::refused(error);
+    }
+
+    info!(download_id = %task_id, "browser handoff started with a browser session");
+    reveal_main_window(app);
+    HandoffReply::accepted()
+}
+
 /// Hands LinkGrabber the links a browser sent while the window was not yet
 /// listening. Each link is returned once.
 #[tauri::command]
@@ -1520,6 +1576,7 @@ pub fn run() {
             });
 
             tauri::async_runtime::spawn(automation::run_keep_awake(app.handle().clone()));
+            tauri::async_runtime::spawn(serve_browser_sessions(app.handle().clone()));
 
             handle_launch_requests(app.handle(), launch_requests.clone());
 

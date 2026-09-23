@@ -855,3 +855,106 @@ frontend type check failed until `npm install` ran. No source change.
   machine where that is acceptable.
 - The single-instance forwarding and browser handoff were not exercised
   end to end against a real browser in this pass.
+
+## Browser session handover (cookies)
+
+Status: Implemented and verified on Windows 11 (2026-09-23)
+
+Closes the limitation recorded in Step 1: downloads that need the browser
+login failed with 401/403 in the application, after the browser had already
+cancelled its own copy.
+
+### Design
+
+A cookie header is the most sensitive value the application handles, and
+AGENTS.md forbids storing or logging it. The native host is a separate,
+short-lived process, so the session needs a way into the running
+application that avoids the two existing channels: the database (forbidden)
+and the command line (readable by every process of the user, and recorded by
+process auditing).
+
+- **Extension:** off by default. Turning on "Hand over my browser login"
+  requests the optional `cookies` permission and site access from a user
+  gesture; turning it off removes both. The cookie header is built with
+  `chrome.cookies.getAll({ url })`, so the browser's own domain, path and
+  Secure matching decide what is included.
+- **Transport (`dm-system::session_channel`):** a Windows named pipe owned
+  by the application. Its DACL grants access to the current user's SID only
+  (protected, no inherited ACEs); remote clients are rejected; it is created
+  as the first instance of its name and a new instance always exists before
+  a connected one is handed off, so no other process can take the name while
+  the application runs. The name includes the user SID because pipes are
+  machine-wide. The client connects at identification level, and before
+  sending anything checks that the process owning the pipe is the installed
+  application executable, so a program that took the name first receives
+  nothing.
+- **Native host:** persists the task without the session, delivers the
+  session, and accepts the handoff only when the application confirms it. If
+  delivery fails, the task is withdrawn and the handoff refused, so the
+  browser resumes its own download. The session is attached before the task
+  starts, so the first request already carries it.
+- **Engine (`dm-core::session`):** the session lives in memory in
+  `DownloadService` and is attached per request only when the request's
+  scheme, host and port equal those it was captured for. It is marked
+  sensitive in the HTTP client, printed as `<redacted>`, forgotten on
+  completion, cancellation and removal, and lost on restart by design.
+
+### Defect found and fixed on the way
+
+- **The native host passed the browser's stdio to the application it
+  launched.** A child inherits stdin and stdout by default, and the
+  application logs to stdout, so its output could land inside the native
+  messaging stream and corrupt the reply the browser was waiting for. This
+  predates the session work and affected every handoff that had to start the
+  application. The native host now launches it with null stdio. Found by
+  running the real binary; covered by a regression test that fails without
+  the fix.
+
+### Tests added
+
+- Session model: exact-origin matching (scheme, host, port; no sibling or
+  parent domains), header-injection refusal, size and emptiness limits,
+  non-HTTP sources, redacted `Debug`, errors that never carry the cookie.
+- Engine, against local HTTP servers: a login-protected server refuses a
+  task without the session and serves one with it; a redirect to another
+  origin never carries it; **segmented ranged requests sent straight to a
+  resolved CDN never carry it** (verified to fail when the origin check is
+  removed: the CDN then received the cookie 8 times); the database and its
+  write-ahead log never contain it; attachment only before start; forgotten
+  on completion and cancellation.
+- Transport, over real Windows named pipes: delivery to the expected
+  program, nothing sent to any other program, refusals returned without the
+  session, a second server cannot take a name in use, nothing listening is
+  reported, per-user pipe name. The pipe tests were run five times in a row
+  after a fix to the server, which had disconnected before the client read
+  its reply.
+- Native host: delivered and never stored, withdrawn when undelivered or
+  sent to an untrusted program, requires a known application, requests never
+  print their session. Integration tests run the real binary and require the
+  stdout stream to hold exactly one framed reply.
+
+### Verification
+
+- `cargo fmt --all --check` - clean
+- `cargo clippy --workspace --all-targets -- -D warnings` - passed
+- `cargo test --workspace` - passed (216 Rust tests)
+- `cargo build -p tauri-app -p dm-native-host` - passed
+- `tsc --noEmit`, `npm test` (27 tests), `npm run build` - passed
+- Extension scripts pass `node --check`; the manifest parses.
+
+### Not verified
+
+- The full path with a real browser, the real extension and the real
+  application was not exercised: running the application here would use this
+  user's real database and Downloads folder. Each piece is covered above,
+  and the transport was tested over real Windows pipes.
+- Firefox's cookie API and partitioned (CHIPS) cookies were not tested;
+  `getAll({ url })` returns unpartitioned cookies only.
+
+### Known limitations
+
+- A session is lost when the application restarts, on purpose. A download
+  that needed a login and is resumed afterwards may be refused by the site;
+  start it again from the browser.
+- Handover needs Windows. Elsewhere the channel reports it is unsupported and
+  the browser keeps the download.

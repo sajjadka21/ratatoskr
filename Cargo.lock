@@ -957,6 +957,7 @@ dependencies = [
  "dm-common",
  "dm-core",
  "dm-storage",
+ "dm-system",
  "serde",
  "serde_json",
  "tempfile",
@@ -978,6 +979,10 @@ dependencies = [
 name = "dm-system"
 version = "0.1.0"
 dependencies = [
+ "dm-common",
+ "serde",
+ "serde_json",
+ "tokio",
  "windows-sys 0.61.2",
 ]
 

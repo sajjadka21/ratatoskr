@@ -1,12 +1,34 @@
 const NATIVE_HOST = "com.download_manager.native";
 
+const SESSION_PERMISSIONS = { permissions: ["cookies"], origins: ["<all_urls>"] };
+
 async function settings() {
   return chrome.storage.local.get({
     takeoverEnabled: false,
+    sessionHandover: false,
     minimumBytes: 0,
     excludedHosts: "",
     excludedExtensions: ""
   });
+}
+
+// The cookie header the browser itself would send to `url`: the browser
+// applies domain, path and Secure matching, so nothing from another site is
+// included. Returns null unless the user turned session handover on and the
+// permission is still granted. Never stored and never logged here.
+async function sessionFor(url) {
+  const { sessionHandover } = await settings();
+  if (!sessionHandover || !(await chrome.permissions.contains(SESSION_PERMISSIONS))) {
+    return null;
+  }
+
+  try {
+    const cookies = await chrome.cookies.getAll({ url });
+    const header = cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
+    return header || null;
+  } catch {
+    return null;
+  }
 }
 
 function hostExcluded(url, value) {
@@ -34,13 +56,14 @@ async function handoff(message) {
   }
 }
 
-function sendLink(url, referrer) {
+async function sendLink(url, referrer) {
   return handoff({
     type: "download",
     url,
     filenameHint: null,
     referrer: referrer || null,
-    userAgent: navigator.userAgent
+    userAgent: navigator.userAgent,
+    cookies: await sessionFor(url)
   });
 }
 

@@ -11,6 +11,7 @@ pub mod retry;
 pub mod rules;
 pub mod segment_planner;
 pub mod service;
+pub mod session;
 #[cfg(test)]
 pub mod testing;
 pub mod throughput;
@@ -22,7 +23,7 @@ use percent_encoding::percent_decode_str;
 use reqwest::{
     Client, RequestBuilder, StatusCode, Url,
     header::{
-        ACCEPT_ENCODING, CONTENT_DISPOSITION, CONTENT_RANGE, CONTENT_TYPE, ETAG, HeaderMap,
+        ACCEPT_ENCODING, CONTENT_DISPOSITION, CONTENT_RANGE, CONTENT_TYPE, COOKIE, ETAG, HeaderMap,
         HeaderValue, LAST_MODIFIED, RANGE, REFERER, USER_AGENT,
     },
 };
@@ -209,6 +210,9 @@ pub struct Downloader {
     /// Every limiter a transfer must satisfy: the application-wide limit,
     /// plus a per-task one when a rule caps the task.
     limiters: Vec<Arc<RateLimiter>>,
+    /// The browser session of one task, attached only to requests on the
+    /// origin it was captured for. Held in memory, never persisted.
+    session: Option<Arc<session::BrowserSession>>,
 }
 
 impl Downloader {
@@ -226,6 +230,7 @@ impl Downloader {
             referrer: None,
             user_agent: HeaderValue::from_static(DEFAULT_USER_AGENT),
             limiters: Vec::new(),
+            session: None,
         })
     }
 
@@ -265,18 +270,39 @@ impl Downloader {
             referrer: valid(&context.referrer),
             user_agent: valid(&context.user_agent).unwrap_or_else(|| self.user_agent.clone()),
             limiters: self.limiters.clone(),
+            session: self.session.clone(),
         }
     }
 
+    /// The same downloader, carrying one task's browser session.
+    pub fn with_session(&self, session: Option<Arc<session::BrowserSession>>) -> Self {
+        let mut downloader = self.clone();
+        downloader.session = session;
+        downloader
+    }
+
     fn request(&self, method: reqwest::Method, url: Url) -> RequestBuilder {
+        // Decided per request, not per task: a transfer that moves to another
+        // origin, such as a CDN after a redirect, must not carry the cookie.
+        let cookie = self
+            .session
+            .as_ref()
+            .filter(|session| session.applies_to(&url))
+            .map(|session| session.header().clone());
+
         let builder = self
             .client
             .request(method, url)
             .header(USER_AGENT, self.user_agent.clone())
             .header(ACCEPT_ENCODING, "identity");
 
-        match &self.referrer {
+        let builder = match &self.referrer {
             Some(referrer) => builder.header(REFERER, referrer.clone()),
+            None => builder,
+        };
+
+        match cookie {
+            Some(cookie) => builder.header(COOKIE, cookie),
             None => builder,
         }
     }

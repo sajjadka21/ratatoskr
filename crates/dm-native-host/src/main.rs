@@ -15,7 +15,7 @@ use std::{
     env,
     io::{self, Read, Write},
     path::PathBuf,
-    process::Command,
+    process::{Command, Stdio},
     sync::Arc,
 };
 
@@ -185,7 +185,17 @@ fn rejected(error: &str) -> NativeResponse {
 }
 
 fn launch_application(application: &PathBuf, arguments: &[String]) -> bool {
-    Command::new(application).args(arguments).spawn().is_ok()
+    // The browser talks to this host over stdin and stdout, and a child
+    // inherits both unless told otherwise. Anything the application printed -
+    // its log output, for one - would land in the middle of the native
+    // messaging stream and corrupt the reply the browser is waiting for.
+    Command::new(application)
+        .args(arguments)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .is_ok()
 }
 
 /// The database the desktop application uses: Tauri's application data

@@ -164,6 +164,12 @@ impl DownloadService {
         Ok(())
     }
 
+    /// Checks links without downloading them. Uses the plain engine, never a
+    /// task's browser session or context.
+    pub async fn probe_links(&self, urls: Vec<String>) -> Vec<crate::linkgrabber::LinkProbe> {
+        crate::linkgrabber::probe_links(&self.downloader, urls).await
+    }
+
     /// Drops a task's browser session. Called when the task can no longer
     /// need it: finished, cancelled or removed.
     pub fn forget_browser_session(&self, download_id: &str) {

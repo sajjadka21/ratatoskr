@@ -575,7 +575,31 @@ extraction, post-processing, and release hardening remain for later phases.
 
 ## Phase 8 - LinkGrabber / Batch
 
-Status: In progress
+Status: Complete (2026-09-23)
+
+### Completed in this pass
+
+- **Link checking before download.** "Check selected" probes each link the
+  way a download would start and stops there: reachable, file name, size and
+  whether it can be resumed, with a running total. At most four links are
+  checked at once, 500 per request, and each gets 15 seconds, so a dead link
+  is reported instead of holding up the batch. Errors never contain the URL.
+  The concurrency test first proves the server can observe overlap (more
+  than two at once without a limit), then that the limit holds.
+- **Numbered-series generator.** `https://site/part[01-20].rar` expands in
+  order, keeps zero padding, supports letter ranges and several ranges at
+  once, leaves non-range brackets such as IPv6 hosts alone, refuses backwards
+  ranges and anything over 1 000 links (checked on the product of all ranges,
+  with overflow-safe arithmetic).
+- **Order is kept.** Extracted links now appear in the order they occur on
+  the page; they used to be sorted as text, which put part10 before part2.
+- **Dropped files.** Text and HTML files dropped onto the input are read;
+  other files and anything over 2 MB are refused with a message.
+- **No uncontrolled batches.** The specification forbids launching hundreds
+  of links in parallel. With no queue chosen, a selection of more than 20
+  links starts through the Default Queue, and the page says so.
+
+### Earlier in this phase
 
 ### Implemented so far
 

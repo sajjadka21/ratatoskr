@@ -1218,6 +1218,49 @@ fn inspect_links(input: String) -> Vec<LinkCandidateResponse> {
         .collect()
 }
 
+/// Expands a sequential pattern such as `https://a.test/part[01-20].rar`
+/// into links for review in LinkGrabber.
+#[tauri::command]
+fn generate_links(pattern: String) -> Result<Vec<LinkCandidateResponse>, String> {
+    dm_core::linkgrabber::generate_links(&pattern)
+        .map(|links| links.into_iter().map(link_candidate_response).collect())
+        .map_err(|error| error.to_string())
+}
+
+/// Checks links before they become tasks: reachable, size, name, and
+/// whether they can be resumed. Bounded in count and concurrency.
+#[tauri::command]
+async fn probe_links(
+    state: State<'_, AppState>,
+    urls: Vec<String>,
+) -> Result<Vec<dm_ipc::LinkProbeResponse>, String> {
+    Ok(state
+        .downloads
+        .probe_links(urls)
+        .await
+        .into_iter()
+        .map(|probe| dm_ipc::LinkProbeResponse {
+            url: probe.url,
+            reachable: probe.reachable,
+            filename: probe.filename,
+            total_bytes: probe.total_bytes,
+            content_type: probe.content_type,
+            range_supported: probe.range_supported,
+            error: probe.error,
+        })
+        .collect())
+}
+
+fn link_candidate_response(
+    candidate: dm_core::linkgrabber::LinkCandidate,
+) -> LinkCandidateResponse {
+    LinkCandidateResponse {
+        url: candidate.url,
+        host: candidate.host,
+        extension: candidate.extension,
+    }
+}
+
 #[tauri::command]
 fn classify_media_source(
     url: String,
@@ -1644,6 +1687,8 @@ pub fn run() {
             list_download_rules,
             get_download_rule_explanation,
             inspect_links,
+            generate_links,
+            probe_links,
             take_pending_link_intake,
             get_download_settings,
             set_default_download_directory,

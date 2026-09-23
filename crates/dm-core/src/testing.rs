@@ -45,6 +45,9 @@ pub struct ServerBehaviour {
     /// Answer every request with `302 Found` to this address, the way a
     /// download link that hands off to a CDN behaves.
     pub redirect_to: Option<String>,
+    /// Wait this long before answering at all, the way an overloaded server
+    /// does.
+    pub response_delay: Option<Duration>,
 }
 
 impl Default for ServerBehaviour {
@@ -61,6 +64,7 @@ impl Default for ServerBehaviour {
             truncate_after: None,
             required_header: None,
             redirect_to: None,
+            response_delay: None,
         }
     }
 }
@@ -79,6 +83,9 @@ pub struct ServerStats {
     /// Requests that arrived carrying any `Cookie` header, so a test can prove
     /// a session never reached a server it did not belong to.
     pub requests_with_cookie: AtomicUsize,
+    /// Requests being handled right now, and the most there ever were.
+    pub active_requests: AtomicUsize,
+    pub peak_concurrent_requests: AtomicUsize,
 }
 
 #[derive(Debug)]
@@ -110,7 +117,12 @@ impl TestServer {
                     let stats = Arc::clone(&stats);
 
                     tokio::spawn(async move {
-                        let _ = serve(socket, behaviour, stats).await;
+                        let active = stats.active_requests.fetch_add(1, Ordering::SeqCst) + 1;
+                        stats
+                            .peak_concurrent_requests
+                            .fetch_max(active, Ordering::SeqCst);
+                        let _ = serve(socket, behaviour, Arc::clone(&stats)).await;
+                        stats.active_requests.fetch_sub(1, Ordering::SeqCst);
                     });
                 }
             })
@@ -148,6 +160,11 @@ impl TestServer {
     /// How many requests reached this server carrying a `Cookie` header.
     pub fn requests_with_cookie(&self) -> usize {
         self.stats.requests_with_cookie.load(Ordering::SeqCst)
+    }
+
+    /// The most requests of any kind that were ever handled at once.
+    pub fn peak_concurrent_requests(&self) -> usize {
+        self.stats.peak_concurrent_requests.load(Ordering::SeqCst)
     }
 }
 
@@ -187,6 +204,10 @@ async fn serve(
     }
 
     let behaviour = behaviour.lock().unwrap().clone();
+
+    if let Some(delay) = behaviour.response_delay {
+        tokio::time::sleep(delay).await;
+    }
 
     if let Some(location) = &behaviour.redirect_to {
         let response = format!(

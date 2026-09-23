@@ -252,6 +252,19 @@ pub struct LinkCandidateResponse {
     pub extension: Option<String>,
 }
 
+/// What checking a link found out. `error` never contains the URL.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkProbeResponse {
+    pub url: String,
+    pub reachable: bool,
+    pub filename: Option<String>,
+    pub total_bytes: Option<u64>,
+    pub content_type: Option<String>,
+    pub range_supported: bool,
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaClassificationResponse {

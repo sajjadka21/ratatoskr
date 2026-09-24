@@ -1,8 +1,10 @@
-import { Gauge, Pause, Play } from "lucide-react";
+import { Gauge, Globe2, Pause, Play } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useI18n } from "../../i18n/I18n";
 import { Sparkline } from "../common/Sparkline";
+import type { TrafficSummary } from "../../types/download";
+import { quotaState } from "../../utils/traffic";
 
 import "./ThroughputBand.css";
 
@@ -20,6 +22,8 @@ type ThroughputBandProps = {
   onSetSpeedLimit: (limit: number | null) => void;
   onPauseAll: () => void;
   onResumeAll: () => void;
+  traffic?: TrafficSummary | null;
+  onOpenTraffic?: () => void;
 };
 
 /**
@@ -37,6 +41,8 @@ export function ThroughputBand({
   onSetSpeedLimit,
   onPauseAll,
   onResumeAll,
+  traffic = null,
+  onOpenTraffic,
 }: ThroughputBandProps) {
   const { t, fmt } = useI18n();
   const chartRef = useRef<HTMLDivElement>(null);
@@ -56,6 +62,7 @@ export function ThroughputBand({
   const rate = fmt.rate(bytesPerSecond);
   const [value, unit] = moving && rate ? splitValue(rate) : [t("band.idle"), ""];
   const eta = fmt.duration(etaSeconds);
+  const quota = quotaState(traffic);
   const presets = speedLimit !== null && !LIMIT_PRESETS.includes(speedLimit)
     ? [...LIMIT_PRESETS, speedLimit]
     : LIMIT_PRESETS;
@@ -75,6 +82,29 @@ export function ThroughputBand({
             eta: eta ?? "",
           })}
         </span>
+        {traffic ? (
+          <button
+            type="button"
+            className={`throughput-band__traffic throughput-band__traffic--${quota?.level ?? "none"}`}
+            onClick={onOpenTraffic}
+            title={t("traffic.title")}
+          >
+            <Globe2 size={12} aria-hidden="true" />
+            <span className="num">
+              {quota
+                ? t("traffic.chip", { used: fmt.bytes(quota.used), quota: fmt.bytes(quota.quota) })
+                : t("traffic.chipNoQuota", {
+                    domestic: fmt.bytes(traffic.todayDomesticBytes),
+                    international: fmt.bytes(traffic.todayInternationalBytes),
+                  })}
+            </span>
+            {quota ? (
+              <span className="throughput-band__traffic-bar" aria-hidden="true">
+                <span style={{ inlineSize: `${quota.ratio * 100}%` }} />
+              </span>
+            ) : null}
+          </button>
+        ) : null}
       </div>
 
       <div className="throughput-band__chart" ref={chartRef}>

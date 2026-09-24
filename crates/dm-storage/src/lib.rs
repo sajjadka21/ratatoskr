@@ -15,8 +15,11 @@ mod request_context;
 mod schedules;
 mod segments;
 mod settings;
+mod traffic;
 
-const LATEST_SCHEMA_VERSION: i32 = 9;
+pub use traffic::{TrafficScope, TrafficTotals};
+
+const LATEST_SCHEMA_VERSION: i32 = 10;
 
 const MIGRATION_V1: &str = r#"
 BEGIN IMMEDIATE;
@@ -315,6 +318,58 @@ PRAGMA user_version = 9;
 COMMIT;
 "#;
 
+/// Segments of one download now share a single preallocated partial file
+/// and can be split while they run, so several rows name the same path. The
+/// table is rebuilt without the one-file-per-segment constraint; rows are
+/// kept. Daily traffic totals, split into domestic and international, feed
+/// the usage meter and the optional international quota.
+const MIGRATION_V10: &str = r#"
+BEGIN IMMEDIATE;
+
+CREATE TABLE download_segments_v10 (
+    download_id TEXT NOT NULL
+        REFERENCES downloads(id) ON DELETE CASCADE,
+    segment_index INTEGER NOT NULL
+        CHECK (segment_index >= 0),
+    start_byte INTEGER NOT NULL
+        CHECK (start_byte >= 0),
+    end_byte INTEGER NOT NULL
+        CHECK (end_byte >= start_byte),
+    downloaded_bytes INTEGER NOT NULL DEFAULT 0
+        CHECK (downloaded_bytes >= 0
+            AND downloaded_bytes <= end_byte - start_byte + 1),
+    temp_path TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'downloading', 'completed')),
+    PRIMARY KEY (download_id, segment_index)
+);
+
+INSERT INTO download_segments_v10
+    SELECT download_id, segment_index, start_byte, end_byte,
+           downloaded_bytes, temp_path, status
+    FROM download_segments;
+
+DROP TABLE download_segments;
+ALTER TABLE download_segments_v10 RENAME TO download_segments;
+
+CREATE INDEX idx_download_segments_status
+    ON download_segments(download_id, status, segment_index);
+
+CREATE TABLE traffic_usage (
+    day TEXT NOT NULL
+        CHECK (length(day) = 10),
+    scope TEXT NOT NULL
+        CHECK (scope IN ('domestic', 'international')),
+    bytes INTEGER NOT NULL DEFAULT 0
+        CHECK (bytes >= 0),
+    PRIMARY KEY (day, scope)
+);
+
+PRAGMA user_version = 10;
+
+COMMIT;
+"#;
+
 #[derive(Debug, Error)]
 pub enum StorageError {
     #[error("failed to create database directory: {0}")]
@@ -380,6 +435,9 @@ pub enum StorageError {
 
     #[error("invalid download segment: {0}")]
     InvalidSegment(String),
+
+    #[error("invalid traffic record: {0}")]
+    InvalidTraffic(String),
 
     #[error("invalid host profile key: {0}")]
     InvalidHostProfile(String),
@@ -542,6 +600,12 @@ fn run_migrations(connection: &Connection) -> Result<()> {
         connection.execute_batch(MIGRATION_V9)?;
     }
 
+    let version: i32 = connection.query_row("PRAGMA user_version;", [], |row| row.get(0))?;
+
+    if version == 9 {
+        connection.execute_batch(MIGRATION_V10)?;
+    }
+
     Ok(())
 }
 
@@ -568,6 +632,62 @@ mod tests {
         assert!(storage.table_exists("download_rules").unwrap());
         assert!(storage.table_exists("queue_schedules").unwrap());
         assert!(storage.health_check().is_ok());
+    }
+
+    #[test]
+    fn v10_keeps_segment_rows_and_lets_segments_share_one_file() {
+        let directory = tempdir().unwrap();
+        let database_path = directory.path().join("downloads.db");
+
+        {
+            let connection = Connection::open(&database_path).unwrap();
+            for migration in [
+                MIGRATION_V1,
+                super::MIGRATION_V2,
+                MIGRATION_V3,
+                super::MIGRATION_V4,
+                super::MIGRATION_V5,
+                super::MIGRATION_V6,
+                super::MIGRATION_V7,
+                super::MIGRATION_V8,
+                super::MIGRATION_V9,
+            ] {
+                connection.execute_batch(migration).unwrap();
+            }
+            connection
+                .execute(
+                    "INSERT INTO downloads (id, source_url, status, created_at) VALUES ('kept', 'https://example.com/a.bin', 'paused', 1)",
+                    [],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO download_segments (download_id, segment_index, start_byte, end_byte, downloaded_bytes, temp_path, status) VALUES ('kept', 0, 0, 9, 4, 'a.part.segment-0000.part', 'pending')",
+                    [],
+                )
+                .unwrap();
+        }
+
+        let storage = Storage::open(&database_path).unwrap();
+        assert_eq!(storage.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
+        let segments = storage.list_download_segments("kept").unwrap();
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].downloaded_bytes, 4);
+        assert!(storage.table_exists("traffic_usage").unwrap());
+
+        // Two rows may now name the same partial file.
+        let shared = |index: u32, start: u64, end: u64| dm_common::DownloadSegment {
+            download_id: "kept".to_owned(),
+            segment_index: index,
+            start_byte: start,
+            end_byte: end,
+            downloaded_bytes: 0,
+            temp_path: "a.part".to_owned(),
+            status: dm_common::SegmentStatus::Pending,
+        };
+        storage
+            .replace_download_segments("kept", &[shared(0, 0, 4), shared(1, 5, 9)])
+            .unwrap();
     }
 
     #[test]

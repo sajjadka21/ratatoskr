@@ -19,6 +19,7 @@ import {
 } from "react";
 
 import { useI18n } from "../../i18n/I18n";
+import { noticeText } from "../../utils/notices";
 import type { MessageKey } from "../../i18n/messages";
 import type { DownloadListItem, TaskAction, TransferMetrics } from "../../types/download";
 import { displayName } from "../../utils/fileKind";
@@ -214,7 +215,8 @@ const DownloadTableRow = memo(function DownloadTableRow({
   onAction,
   onContextMenu,
 }: RowProps) {
-  const { t, fmt } = useI18n();
+  const { t, fmt, language } = useI18n();
+  const notice = noticeText(item.errorCode, item.errorMessage, t, language);
   const status = item.status.toLowerCase();
   const transferring = status === "downloading";
   const percent =
@@ -298,12 +300,12 @@ const DownloadTableRow = memo(function DownloadTableRow({
             </span>
           ) : null}
           {connections ? <span className="download-table__chip download-table__chip--accent num">{connections}</span> : null}
-          {item.errorMessage && status !== "completed" ? (
+          {notice && status !== "completed" ? (
             <span
               className={`download-table__message download-table__message--${status === "failed" ? "error" : "notice"}`}
-              title={item.errorMessage}
+              title={notice}
             >
-              {item.errorMessage}
+              {notice}
             </span>
           ) : null}
         </span>

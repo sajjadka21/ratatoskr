@@ -14,6 +14,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 
 import { useI18n } from "../../i18n/I18n";
+import { engineReasonText, noticeText } from "../../utils/notices";
 import type { MessageKey } from "../../i18n/messages";
 import type { DownloadListItem, TaskAction, TransferMetrics } from "../../types/download";
 import { displayName } from "../../utils/fileKind";
@@ -65,7 +66,7 @@ export function DownloadDetailsPanel({
   onRefreshSource,
   onError,
 }: DownloadDetailsPanelProps) {
-  const { t, fmt } = useI18n();
+  const { t, fmt, language } = useI18n();
   const [copied, setCopied] = useState<"url" | "path" | null>(null);
   const [ruleExplanation, setRuleExplanation] = useState<string | null>(null);
 
@@ -187,7 +188,9 @@ export function DownloadDetailsPanel({
                 <span key={lane} className={lane < connections ? "details__lane details__lane--on" : "details__lane"} />
               ))}
             </div>
-            {metrics?.adaptiveReason ? <p className="details__engine">{metrics.adaptiveReason}</p> : null}
+            {metrics?.adaptiveReason ? (
+              <p className="details__engine">{engineReasonText(metrics.adaptiveReason, t)}</p>
+            ) : null}
           </section>
         ) : null}
 
@@ -230,7 +233,7 @@ export function DownloadDetailsPanel({
         {current.errorMessage ? (
           <div className={`details__failure details__failure--${status === "failed" ? "error" : "notice"}`}>
             <strong>{status === "failed" ? current.errorCode ?? t("details.failed") : t("details.attention")}</strong>
-            <span>{current.errorMessage}</span>
+            <span>{noticeText(current.errorCode, current.errorMessage, t, language)}</span>
           </div>
         ) : null}
 

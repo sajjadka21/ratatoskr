@@ -6,6 +6,7 @@
 //! actions report `Unsupported` and keep-awake does nothing.
 
 pub mod session_channel;
+pub mod sparse;
 
 use std::{fmt, io, str::FromStr, sync::mpsc, thread};
 

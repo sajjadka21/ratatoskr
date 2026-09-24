@@ -126,6 +126,85 @@ impl Storage {
         Ok(())
     }
 
+    /// Hands the tail of a segment that is still downloading to a new
+    /// segment, so an idle connection can take over part of the remaining
+    /// range. The running segment keeps `[start, new_end]`; the new segment
+    /// covers `[new_end + 1, old end]`. Both changes are made together: the
+    /// map on disk never has a gap or an overlap.
+    pub fn split_download_segment(
+        &self,
+        download_id: &str,
+        segment_index: u32,
+        new_end: u64,
+        tail: &DownloadSegment,
+    ) -> Result<()> {
+        validate_segment(tail, download_id)?;
+        let mut connection = self.connection()?;
+        let transaction = connection.transaction()?;
+        let current = transaction
+            .query_row(
+                r#"
+                SELECT download_id, segment_index, start_byte, end_byte,
+                       downloaded_bytes, temp_path, status
+                FROM download_segments
+                WHERE download_id = ?1 AND segment_index = ?2;
+                "#,
+                params![download_id, i64::from(segment_index)],
+                StoredSegmentRow::from_row,
+            )
+            .optional()?
+            .ok_or_else(|| StorageError::SegmentNotFound {
+                download_id: download_id.to_owned(),
+                segment_index,
+            })?
+            .into_segment()?;
+
+        let keeps_its_bytes = current
+            .start_byte
+            .checked_add(current.downloaded_bytes)
+            .is_some_and(|written_to| new_end.saturating_add(1) >= written_to);
+        if current.status == SegmentStatus::Completed
+            || new_end < current.start_byte
+            || new_end >= current.end_byte
+            || !keeps_its_bytes
+            || tail.start_byte != new_end + 1
+            || tail.end_byte != current.end_byte
+            || tail.downloaded_bytes != 0
+        {
+            return Err(StorageError::InvalidSegment(
+                "split does not divide the remaining range".to_owned(),
+            ));
+        }
+
+        transaction.execute(
+            "UPDATE download_segments SET end_byte = ?3 WHERE download_id = ?1 AND segment_index = ?2;",
+            params![
+                download_id,
+                i64::from(segment_index),
+                u64_to_i64(new_end, "segment_end_byte")?
+            ],
+        )?;
+        transaction.execute(
+            r#"
+            INSERT INTO download_segments (
+                download_id, segment_index, start_byte, end_byte,
+                downloaded_bytes, temp_path, status
+            )
+            VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6);
+            "#,
+            params![
+                download_id,
+                i64::from(tail.segment_index),
+                u64_to_i64(tail.start_byte, "segment_start_byte")?,
+                u64_to_i64(tail.end_byte, "segment_end_byte")?,
+                &tail.temp_path,
+                tail.status.as_str(),
+            ],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub fn clear_download_segments(&self, download_id: &str) -> Result<()> {
         let connection = self.connection()?;
         connection.execute(
@@ -296,6 +375,94 @@ mod tests {
         let segments = storage.list_download_segments(&task_id).unwrap();
         assert_eq!(segments.len(), 2);
         assert!(segments.iter().all(DownloadSegment::is_complete));
+    }
+
+    fn one_segment(download_id: &str, end: u64) -> DownloadSegment {
+        DownloadSegment {
+            download_id: download_id.to_owned(),
+            segment_index: 0,
+            start_byte: 0,
+            end_byte: end,
+            downloaded_bytes: 0,
+            temp_path: "file.part".to_owned(),
+            status: SegmentStatus::Pending,
+        }
+    }
+
+    #[test]
+    fn splitting_hands_the_tail_to_a_new_segment_without_a_gap() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::open(directory.path().join("downloads.db")).unwrap();
+        let task = storage
+            .create_download("https://example.com/file.bin", 1_000)
+            .unwrap();
+        storage
+            .replace_download_segments(&task.id, &[one_segment(&task.id, 99)])
+            .unwrap();
+        storage.claim_download_segment(&task.id, 0).unwrap();
+        storage
+            .update_download_segment_progress(&task.id, 0, 20)
+            .unwrap();
+
+        let tail = DownloadSegment {
+            segment_index: 1,
+            start_byte: 60,
+            end_byte: 99,
+            ..one_segment(&task.id, 99)
+        };
+        storage
+            .split_download_segment(&task.id, 0, 59, &tail)
+            .unwrap();
+
+        let segments = storage.list_download_segments(&task.id).unwrap();
+        assert_eq!(segments.len(), 2);
+        assert_eq!((segments[0].start_byte, segments[0].end_byte), (0, 59));
+        assert_eq!(segments[0].downloaded_bytes, 20);
+        assert_eq!((segments[1].start_byte, segments[1].end_byte), (60, 99));
+        assert_eq!(segments[1].status, SegmentStatus::Pending);
+    }
+
+    #[test]
+    fn a_split_may_not_cut_into_bytes_already_written() {
+        let directory = tempdir().unwrap();
+        let storage = Storage::open(directory.path().join("downloads.db")).unwrap();
+        let task = storage
+            .create_download("https://example.com/file.bin", 1_000)
+            .unwrap();
+        storage
+            .replace_download_segments(&task.id, &[one_segment(&task.id, 99)])
+            .unwrap();
+        storage.claim_download_segment(&task.id, 0).unwrap();
+        storage
+            .update_download_segment_progress(&task.id, 0, 50)
+            .unwrap();
+
+        let tail = DownloadSegment {
+            segment_index: 1,
+            start_byte: 40,
+            end_byte: 99,
+            ..one_segment(&task.id, 99)
+        };
+        assert!(
+            storage
+                .split_download_segment(&task.id, 0, 39, &tail)
+                .is_err()
+        );
+        // A tail that leaves a gap is refused too.
+        let gap = DownloadSegment {
+            segment_index: 1,
+            start_byte: 80,
+            end_byte: 99,
+            ..one_segment(&task.id, 99)
+        };
+        assert!(
+            storage
+                .split_download_segment(&task.id, 0, 70, &gap)
+                .is_err()
+        );
+        let segments = storage.list_download_segments(&task.id).unwrap();
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].end_byte, 99);
     }
 
     #[test]

@@ -202,6 +202,39 @@ pub struct DownloadSettingsResponse {
     /// Application-wide limit in bytes per second; `None` is unlimited.
     pub global_speed_limit: Option<u64>,
     pub prevent_sleep: bool,
+    /// Most connections one download may open.
+    pub max_connections: u32,
+}
+
+/// How downloads reach the network.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkSettingsResponse {
+    /// `off`, `system` or `manual`.
+    pub mode: String,
+    /// `socks5://127.0.0.1:10808` and the like; never with credentials.
+    pub proxy_url: Option<String>,
+    /// Hosts that skip the proxy, one per line.
+    pub direct_hosts: String,
+    /// Domestic hosts skip the proxy too.
+    pub domestic_direct: bool,
+    /// Extra domains counted as domestic besides `.ir`, one per line.
+    pub domestic_hosts: String,
+}
+
+/// Domestic and international traffic, for the usage meter.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrafficSummaryResponse {
+    pub period_start: String,
+    pub explicit_period: bool,
+    pub period_domestic_bytes: u64,
+    pub period_international_bytes: u64,
+    pub today_domestic_bytes: u64,
+    pub today_international_bytes: u64,
+    pub month_domestic_bytes: u64,
+    pub month_international_bytes: u64,
+    pub international_quota: Option<u64>,
 }
 
 /// A power or exit action waiting out its cancel period after a queue

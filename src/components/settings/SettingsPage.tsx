@@ -30,6 +30,9 @@ import {
   bytesToKibPerSecond,
 } from "../../utils/settingsFormat";
 
+import { Switch } from "./Switch";
+import { NetworkSection, TrafficSection } from "./NetworkSections";
+
 import "./SettingsPage.css";
 
 export type AddDownloadInputMode = "clipboard" | "manual";
@@ -107,6 +110,10 @@ export function SettingsPage({
         onChange={onDownloadSettingsChange}
         onError={onError}
       />
+
+      <TrafficSection onError={onError} onSaved={onSaved} />
+
+      <NetworkSection onError={onError} onSaved={onSaved} />
 
       <div className="settings-page__section">
         <div className="settings-page__section-heading">
@@ -321,31 +328,12 @@ function AppearanceSection({
   );
 }
 
-function Switch({
-  id,
-  checked,
-  label,
-  onChange,
-}: {
-  id: string;
-  checked: boolean;
-  label: string;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <label className="settings-page__switch">
-      <input id={id} type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
-      <span aria-hidden="true" />
-      <span className="visually-hidden">{label}</span>
-    </label>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Downloads: folder, speed limit, sleep
 // ---------------------------------------------------------------------------
 
 const SPEED_PRESETS_KIB: Array<number | null> = [null, 256, 1024, 5 * 1024];
+const CONNECTION_PRESETS = [1, 2, 4, 8, 16, 32];
 
 function DownloadsSection({
   settings,
@@ -483,6 +471,32 @@ function DownloadsSection({
             <button type="button" className="settings-page__secondary-button" onClick={applyCustom}>
               {t("settings.apply")}
             </button>
+          </div>
+        </div>
+
+        <div className="settings-page__row">
+          <div className="settings-page__row-label">
+            <strong>{t("settings.connections")}</strong>
+            <span>{t("settings.connectionsHint")}</span>
+          </div>
+          <div className="settings-page__row-control">
+            <div className="settings-page__segmented" role="group" aria-label={t("settings.connections")}>
+              {CONNECTION_PRESETS.map((connections) => (
+                <button
+                  key={connections}
+                  type="button"
+                  aria-pressed={settings?.maxConnections === connections}
+                  className={
+                    settings?.maxConnections === connections
+                      ? "settings-page__segment settings-page__segment--active"
+                      : "settings-page__segment"
+                  }
+                  onClick={() => void run("set_max_connections", { connections })}
+                >
+                  <span className="num">{fmt.number(connections)}</span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

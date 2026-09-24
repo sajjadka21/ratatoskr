@@ -751,3 +751,173 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Engine v2: text fields, host lists, the traffic meter. */
+.settings-page__text-input,
+.settings-page__textarea {
+  inline-size: 100%;
+  max-inline-size: 420px;
+  padding: 7px 10px;
+  color: var(--text-primary);
+  background: var(--bg-app);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font: 12.5px/1.5 var(--font-mono, ui-monospace, Consolas, monospace);
+}
+
+.settings-page__text-input {
+  block-size: 34px;
+}
+
+.settings-page__textarea {
+  resize: vertical;
+}
+
+.settings-page__text-input:disabled {
+  opacity: 0.5;
+}
+
+.settings-page__text-input:focus-visible,
+.settings-page__textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.settings-page__row-control--stack {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.settings-page__actions {
+  margin-block-start: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.traffic-meter {
+  margin-block-end: 12px;
+  padding: 16px 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.traffic-meter__period {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.traffic-meter__figures {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.traffic-meter__figure span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.traffic-meter__figure span::before {
+  content: "";
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--traffic-color);
+}
+
+.traffic-meter__figure strong {
+  font-size: 22px;
+  font-weight: 750;
+}
+
+.traffic-meter__figure--domestic {
+  --traffic-color: var(--success);
+}
+
+.traffic-meter__figure--international {
+  --traffic-color: var(--accent);
+  text-align: end;
+}
+
+.traffic-meter__figure--international span {
+  justify-content: flex-end;
+}
+
+.traffic-meter__split,
+.traffic-meter__bar {
+  block-size: 8px;
+  overflow: hidden;
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+.traffic-meter__split span,
+.traffic-meter__bar span {
+  display: block;
+  block-size: 100%;
+  background: var(--success);
+  border-radius: inherit;
+  transition: inline-size 300ms ease;
+}
+
+.traffic-meter__bar {
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+}
+
+.traffic-meter__bar span {
+  background: var(--accent);
+}
+
+.traffic-meter__quota--warning .traffic-meter__bar span {
+  background: var(--warning);
+}
+
+.traffic-meter__quota--reached .traffic-meter__bar span {
+  background: var(--danger);
+}
+
+.traffic-meter__quota {
+  display: grid;
+  gap: 6px;
+}
+
+.traffic-meter__quota-text {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.traffic-meter__quota--reached .traffic-meter__quota-text span:last-child {
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+.traffic-meter__small {
+  margin: 0;
+  display: flex;
+  gap: 24px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.traffic-meter__small dt {
+  display: inline;
+}
+
+.traffic-meter__small dt::after {
+  content: ": ";
+}
+
+.traffic-meter__small dd {
+  display: inline;
+  margin: 0;
+  color: var(--text-secondary);
+}

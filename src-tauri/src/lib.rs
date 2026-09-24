@@ -3,8 +3,10 @@ use dm_common::{
     QueueSchedule, QueueState, ScheduleKind,
 };
 use dm_core::{
+    network::{NetworkSettings, ProxyMode},
     queue::{QueueRunnerEvent, QueueService},
     service::DownloadService,
+    traffic::parse_host_list,
     CoreService, TransferProgress,
 };
 mod automation;
@@ -15,8 +17,9 @@ use dm_ipc::UiPreferencesResponse;
 use dm_ipc::{
     AppInfoResponse, CategoryResponse, ComponentHealth, DownloadListItemResponse,
     DownloadRuleResponse, DownloadSettingsResponse, DownloadTaskEvent, HealthCheckResponse,
-    LinkCandidateResponse, MediaClassificationResponse, MediaVariantResponse, QueueResponse,
-    QueueRunnerEventResponse, QueueScheduleResponse, TransferProgressResponse,
+    LinkCandidateResponse, MediaClassificationResponse, MediaVariantResponse,
+    NetworkSettingsResponse, QueueResponse, QueueRunnerEventResponse, QueueScheduleResponse,
+    TrafficSummaryResponse, TransferProgressResponse,
 };
 use dm_storage::Storage;
 use std::{
@@ -1018,7 +1021,109 @@ fn download_settings_response(
             .map(|path| path.to_string_lossy().into_owned()),
         global_speed_limit: state.downloads.global_speed_limit(),
         prevent_sleep: automation::prevent_sleep_enabled(state),
+        max_connections: u32::try_from(state.downloads.max_connections()).unwrap_or(u32::MAX),
     })
+}
+
+/// Most connections one download may open (1 to 64).
+#[tauri::command]
+fn set_max_connections(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    connections: u32,
+) -> Result<DownloadSettingsResponse, String> {
+    state
+        .downloads
+        .set_max_connections(connections as usize)
+        .map_err(|error| error.to_string())?;
+    download_settings_response(&app, &state)
+}
+
+fn network_settings_response(settings: &NetworkSettings) -> NetworkSettingsResponse {
+    NetworkSettingsResponse {
+        mode: settings.mode.as_str().to_owned(),
+        proxy_url: settings.proxy_url.clone(),
+        direct_hosts: settings.direct_hosts.join("\n"),
+        domestic_direct: settings.domestic_direct,
+        domestic_hosts: settings.domestic_hosts.join("\n"),
+    }
+}
+
+#[tauri::command]
+fn get_network_settings(state: State<'_, AppState>) -> NetworkSettingsResponse {
+    network_settings_response(&state.downloads.network_settings())
+}
+
+/// Stores and applies the proxy route. A proxy address with a user name or
+/// password is refused, so no credential is ever written.
+#[tauri::command]
+fn set_network_settings(
+    state: State<'_, AppState>,
+    settings: NetworkSettingsResponse,
+) -> Result<NetworkSettingsResponse, String> {
+    let mode = ProxyMode::parse(&settings.mode)
+        .ok_or_else(|| format!("unknown proxy mode {:?}", settings.mode))?;
+    let next = NetworkSettings {
+        mode,
+        proxy_url: settings
+            .proxy_url
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty()),
+        direct_hosts: parse_host_list(&settings.direct_hosts),
+        domestic_direct: settings.domestic_direct,
+        domestic_hosts: parse_host_list(&settings.domestic_hosts),
+    };
+    state
+        .downloads
+        .set_network_settings(&next)
+        .map_err(|error| error.to_string())?;
+    Ok(network_settings_response(
+        &state.downloads.network_settings(),
+    ))
+}
+
+fn traffic_summary_response(state: &AppState) -> Result<TrafficSummaryResponse, String> {
+    state
+        .downloads
+        .set_utc_offset_seconds(automation::local_utc_offset_seconds());
+    let summary = state
+        .downloads
+        .traffic_summary()
+        .map_err(|error| error.to_string())?;
+    Ok(TrafficSummaryResponse {
+        period_start: summary.period_start,
+        explicit_period: summary.explicit_period,
+        period_domestic_bytes: summary.period_domestic_bytes,
+        period_international_bytes: summary.period_international_bytes,
+        today_domestic_bytes: summary.today_domestic_bytes,
+        today_international_bytes: summary.today_international_bytes,
+        month_domestic_bytes: summary.month_domestic_bytes,
+        month_international_bytes: summary.month_international_bytes,
+        international_quota: summary.international_quota,
+    })
+}
+
+#[tauri::command]
+fn get_traffic_summary(state: State<'_, AppState>) -> Result<TrafficSummaryResponse, String> {
+    traffic_summary_response(&state)
+}
+
+/// `quota` in bytes (`None` or 0 for none); `period_start` as `YYYY-MM-DD`,
+/// or `None` to count the last 30 days.
+#[tauri::command]
+fn set_traffic_quota(
+    state: State<'_, AppState>,
+    quota: Option<u64>,
+    period_start: Option<String>,
+) -> Result<TrafficSummaryResponse, String> {
+    let period_start = period_start
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty());
+    state
+        .downloads
+        .set_traffic_quota(quota, period_start.as_deref())
+        .map_err(|error| error.to_string())?;
+    traffic_summary_response(&state)
 }
 
 #[tauri::command]
@@ -1652,6 +1757,7 @@ pub fn run() {
             let storage = Arc::new(Storage::open(&database_path)?);
 
             let downloads = DownloadService::new(Arc::clone(&storage))?;
+            downloads.set_utc_offset_seconds(automation::local_utc_offset_seconds());
 
             // Recover before anything is listed or resumed, so a transfer the
             // previous process was in the middle of never appears as active
@@ -1791,6 +1897,11 @@ pub fn run() {
             get_download_settings,
             set_default_download_directory,
             set_global_speed_limit,
+            set_max_connections,
+            get_network_settings,
+            set_network_settings,
+            get_traffic_summary,
+            set_traffic_quota,
             set_prevent_sleep,
             set_category_directory,
             save_download_rule,

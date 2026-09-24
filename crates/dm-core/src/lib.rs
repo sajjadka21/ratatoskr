@@ -3,6 +3,7 @@ pub mod browser;
 pub mod control;
 pub mod linkgrabber;
 pub mod media;
+pub mod network;
 pub mod postprocess;
 pub mod queue;
 pub mod ratelimit;
@@ -12,13 +13,16 @@ pub mod rules;
 pub mod segment_planner;
 pub mod service;
 pub mod session;
+pub mod slot;
 #[cfg(test)]
 pub mod testing;
 pub mod throughput;
+pub mod traffic;
 
 use crate::control::{StopReason, TaskControl};
 use crate::ratelimit::RateLimiter;
-use dm_common::{DownloadSegment, RequestContext};
+use crate::slot::RangeSlot;
+use dm_common::RequestContext;
 use percent_encoding::percent_decode_str;
 use reqwest::{
     Client, RequestBuilder, StatusCode, Url,
@@ -172,21 +176,29 @@ pub struct TransferRequest<'a> {
     pub total_bytes: Option<u64>,
 }
 
-/// A bounded byte range written to its own segment file. `downloaded_bytes`
-/// is relative to `start_byte`, allowing a paused segment to resume without
-/// ever appending outside its inclusive range.
+/// One connection's share of a segmented transfer. All connections write
+/// into the same preallocated partial file.
 #[derive(Debug, Clone)]
-pub struct SegmentTransferRequest<'a> {
+pub struct RangeTransferRequest<'a> {
     pub source_url: &'a str,
-    pub temp_path: &'a Path,
-    pub start_byte: u64,
-    pub end_byte: u64,
-    pub downloaded_bytes: u64,
-    pub total_bytes: Option<u64>,
+    pub file_path: &'a Path,
+    pub total_bytes: u64,
+    /// Written bytes between two flushes to disk.
+    pub checkpoint_bytes: u64,
+    /// Longest time between two flushes to disk.
+    pub checkpoint_interval: Duration,
+}
+
+/// Reported while a range downloads: `written` bytes were just written, and,
+/// after a flush, `durable_bytes` of the range are safely on disk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RangeProgress {
+    pub written: u64,
+    pub durable_bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SegmentTransferOutcome {
+pub struct RangeTransferOutcome {
     pub downloaded_bytes: u64,
 }
 
@@ -217,13 +229,13 @@ pub struct Downloader {
 
 impl Downloader {
     pub fn new() -> Result<Self> {
-        let client = Client::builder()
-            .connect_timeout(Duration::from_secs(20))
-            .no_gzip()
-            .no_brotli()
-            .no_deflate()
-            .no_zstd()
-            .build()?;
+        Self::with_network(&network::NetworkSettings::default())
+    }
+
+    /// A downloader whose connections follow `settings`: direct, through the
+    /// system proxy, or through the user's proxy with direct exceptions.
+    pub fn with_network(settings: &network::NetworkSettings) -> Result<Self> {
+        let client = settings.build_client()?;
 
         Ok(Self {
             client,
@@ -499,53 +511,40 @@ impl Downloader {
         .await
     }
 
-    /// Transfers one inclusive byte range and leaves the segment file in
-    /// place. A response is accepted only when it is a precise `206` for the
-    /// requested range; a `200` or a mismatched `Content-Range` is rejected so
-    /// that a server which ignores ranges can never corrupt a segment.
-    pub async fn transfer_segment<F>(
+    /// Downloads the range of `slot` straight into the shared partial file,
+    /// at its own offset. A response is accepted only when it is a precise
+    /// `206` for the requested range; a `200` or a mismatched
+    /// `Content-Range` is rejected so that a server which ignores ranges can
+    /// never write the wrong bytes into the file.
+    ///
+    /// The slot may shrink while this runs (another connection took over its
+    /// tail); the transfer then stops at the new end. Every `checkpoint`
+    /// bytes, and whenever it stops, the file is flushed to disk before the
+    /// durable byte count is reported, so a recorded count never runs ahead
+    /// of what a power cut would leave behind.
+    pub async fn transfer_range<F>(
         &self,
-        request: SegmentTransferRequest<'_>,
+        request: RangeTransferRequest<'_>,
+        slot: &RangeSlot,
         control: &TaskControl,
         mut on_progress: F,
-    ) -> Result<SegmentTransferOutcome>
+    ) -> Result<RangeTransferOutcome>
     where
-        F: FnMut(DownloadProgress) -> Result<()> + Send,
+        F: FnMut(RangeProgress) -> Result<()> + Send,
     {
-        if request.start_byte > request.end_byte {
-            return Err(DownloadError::InvalidRangeResponse {
-                expected_start: request.start_byte,
-                expected_end: request.end_byte,
-                actual: "invalid requested range".to_owned(),
+        let start = slot.start();
+        let mut written_to = slot.next();
+        let requested_end = slot.end();
+        if written_to > requested_end {
+            return Ok(RangeTransferOutcome {
+                downloaded_bytes: written_to - start,
             });
         }
 
-        let expected_bytes = request.end_byte - request.start_byte + 1;
-        if request.downloaded_bytes > expected_bytes {
-            return Err(DownloadError::SegmentOverflow {
-                expected: expected_bytes,
-                actual: request.downloaded_bytes,
-            });
-        }
-
-        let absolute_start = request
-            .start_byte
-            .checked_add(request.downloaded_bytes)
-            .ok_or(DownloadError::SegmentOverflow {
-                expected: expected_bytes,
-                actual: request.downloaded_bytes,
-            })?;
         let url = validate_source_url(request.source_url)?;
-        if let Some(parent) = request.temp_path.parent() {
-            fs::create_dir_all(parent).await?;
-        }
-
         let response = self
             .request(reqwest::Method::GET, url)
-            .header(
-                RANGE,
-                format!("bytes={absolute_start}-{}", request.end_byte),
-            )
+            .header(RANGE, format!("bytes={written_to}-{requested_end}"))
             .send()
             .await?;
 
@@ -560,160 +559,129 @@ impl Downloader {
         let content_range = header_text(response.headers(), CONTENT_RANGE);
         let parsed_range = content_range.as_deref().and_then(parse_content_range);
         let valid_response = response.status() == StatusCode::PARTIAL_CONTENT
-            && parsed_range.is_some_and(|(start, end, total)| {
-                start == absolute_start
-                    && end == request.end_byte
-                    && request
-                        .total_bytes
-                        .is_none_or(|expected| total == Some(expected))
+            && parsed_range.is_some_and(|(first, last, total)| {
+                first == written_to && last == requested_end && total == Some(request.total_bytes)
             });
 
         if !valid_response {
             let actual = content_range.unwrap_or_else(|| response.status().to_string());
             return Err(DownloadError::InvalidRangeResponse {
-                expected_start: absolute_start,
-                expected_end: request.end_byte,
+                expected_start: written_to,
+                expected_end: requested_end,
                 actual,
             });
         }
 
-        let mut downloaded_bytes = request.downloaded_bytes;
-        let mut file = open_partial_file(request.temp_path, downloaded_bytes).await?;
-        on_progress(DownloadProgress {
-            downloaded_bytes,
-            total_bytes: Some(expected_bytes),
-        })?;
+        let mut file = OpenOptions::new()
+            .write(true)
+            .open(request.file_path)
+            .await?;
+        file.seek(std::io::SeekFrom::Start(written_to)).await?;
 
+        let mut durable_to = written_to;
+        let mut last_checkpoint = std::time::Instant::now();
         let mut response = response;
-        loop {
-            let chunk = tokio::select! {
-                biased;
 
-                reason = control.stopped() => {
-                    file.flush().await?;
-                    file.sync_all().await?;
-                    return Err(DownloadError::Stopped(reason));
+        let result: Result<()> = async {
+            loop {
+                let chunk = tokio::select! {
+                    biased;
+                    reason = control.stopped() => return Err(DownloadError::Stopped(reason)),
+                    chunk = response.chunk() => chunk?,
+                };
+
+                let Some(chunk) = chunk else {
+                    break;
+                };
+
+                let (offset, allowed) = slot.claim(chunk.len() as u64);
+                if offset != written_to {
+                    return Err(DownloadError::InvalidRangeResponse {
+                        expected_start: written_to,
+                        expected_end: slot.end(),
+                        actual: "range claimed out of order".to_owned(),
+                    });
+                }
+                let allowed_len = usize::try_from(allowed).unwrap_or(chunk.len());
+                if allowed_len > 0 {
+                    file.write_all(&chunk[..allowed_len]).await?;
+                    written_to += allowed;
+                    on_progress(RangeProgress {
+                        written: allowed,
+                        durable_bytes: None,
+                    })?;
                 }
 
-                chunk = response.chunk() => chunk?,
-            };
+                // The range ended here, either as requested or because its
+                // tail was handed to another connection.
+                if allowed_len < chunk.len() || written_to > slot.end() {
+                    break;
+                }
 
-            let Some(chunk) = chunk else {
-                break;
-            };
+                if written_to - durable_to >= request.checkpoint_bytes
+                    || last_checkpoint.elapsed() >= request.checkpoint_interval
+                {
+                    file.flush().await?;
+                    file.sync_data().await?;
+                    durable_to = written_to;
+                    last_checkpoint = std::time::Instant::now();
+                    on_progress(RangeProgress {
+                        written: 0,
+                        durable_bytes: Some(durable_to - start),
+                    })?;
+                }
 
-            let next = downloaded_bytes.saturating_add(chunk.len() as u64);
-            if next > expected_bytes {
-                file.flush().await?;
-                file.sync_all().await?;
-                return Err(DownloadError::SegmentOverflow {
-                    expected: expected_bytes,
-                    actual: next,
-                });
+                self.throttle(allowed_len, control).await?;
             }
-
-            file.write_all(&chunk).await?;
-            downloaded_bytes = next;
-            on_progress(DownloadProgress {
-                downloaded_bytes,
-                total_bytes: Some(expected_bytes),
-            })?;
-
-            if let Err(error) = self.throttle(chunk.len(), control).await {
-                file.flush().await?;
-                file.sync_all().await?;
-                return Err(error);
-            }
+            Ok(())
         }
+        .await;
 
-        file.flush().await?;
-        file.sync_all().await?;
+        // Whatever happened, what was written is made durable and reported,
+        // so a pause or an error resumes from the right byte.
+        let flushed = async {
+            file.flush().await?;
+            file.sync_data().await
+        }
+        .await;
         drop(file);
+        if flushed.is_ok() && written_to > durable_to {
+            on_progress(RangeProgress {
+                written: 0,
+                durable_bytes: Some(written_to - start),
+            })?;
+        }
+        result?;
+        flushed?;
 
-        if downloaded_bytes != expected_bytes {
+        let end = slot.end();
+        if written_to != end + 1 {
             return Err(DownloadError::IncompleteTransfer {
-                expected: expected_bytes,
-                actual: downloaded_bytes,
+                expected: end + 1 - start,
+                actual: written_to - start,
             });
         }
 
-        Ok(SegmentTransferOutcome { downloaded_bytes })
+        Ok(RangeTransferOutcome {
+            downloaded_bytes: written_to - start,
+        })
     }
 
-    /// Concatenates completed segment files into the normal partial file and
-    /// finalizes it under the destination name.
-    pub async fn assemble_segments(
+    /// Publishes a shared partial file once every range in it is complete.
+    pub async fn finalize_shared_file(
         &self,
         temp_path: &Path,
         destination_path: &Path,
-        segments: &[DownloadSegment],
         total_bytes: u64,
     ) -> Result<TransferOutcome> {
-        let mut ordered = segments.to_vec();
-        ordered.sort_by_key(|segment| segment.segment_index);
-        let mut output = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(temp_path)
-            .await?;
-        let mut written = 0_u64;
-        let mut next_start = 0_u64;
-
-        for segment in &ordered {
-            let expected =
-                segment
-                    .expected_bytes()
-                    .ok_or_else(|| DownloadError::InvalidRangeResponse {
-                        expected_start: segment.start_byte,
-                        expected_end: segment.end_byte,
-                        actual: "segment length overflow".to_owned(),
-                    })?;
-            if segment.start_byte != next_start || segment.end_byte >= total_bytes {
-                return Err(DownloadError::InvalidRangeResponse {
-                    expected_start: next_start,
-                    expected_end: total_bytes.saturating_sub(1),
-                    actual: format!(
-                        "segment {} does not cover the next byte",
-                        segment.segment_index
-                    ),
-                });
-            }
-            if !segment.is_complete() {
-                return Err(DownloadError::IncompleteTransfer {
-                    expected,
-                    actual: segment.downloaded_bytes,
-                });
-            }
-
-            let mut input = OpenOptions::new()
-                .read(true)
-                .open(&segment.temp_path)
-                .await?;
-            let metadata = input.metadata().await?;
-            if metadata.len() != expected {
-                return Err(DownloadError::IncompleteTransfer {
-                    expected,
-                    actual: metadata.len(),
-                });
-            }
-            tokio::io::copy(&mut input, &mut output).await?;
-            written = written.saturating_add(metadata.len());
-            next_start = segment.end_byte.saturating_add(1);
-        }
-
-        output.flush().await?;
-        output.sync_all().await?;
-        drop(output);
-
-        if written != total_bytes || next_start != total_bytes {
+        let length = fs::metadata(temp_path).await?.len();
+        if length != total_bytes {
             return Err(DownloadError::IncompleteTransfer {
                 expected: total_bytes,
-                actual: written,
+                actual: length,
             });
         }
-
-        finalize_transfer(temp_path, destination_path, written).await
+        finalize_transfer(temp_path, destination_path, total_bytes).await
     }
 
     /// Issues the body request, retrying without a range when the server
@@ -764,6 +732,29 @@ async fn open_partial_file(temp_path: &Path, offset: u64) -> Result<tokio::fs::F
     file.seek(std::io::SeekFrom::Start(offset)).await?;
 
     Ok(file)
+}
+
+/// Creates (or re-creates) the partial file of a segmented transfer at its
+/// full size, so every connection can write at its own offset.
+pub async fn preallocate_partial_file(temp_path: &Path, total_bytes: u64) -> Result<()> {
+    if let Some(parent) = temp_path.parent() {
+        fs::create_dir_all(parent).await?;
+    }
+    let path = temp_path.to_path_buf();
+    tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&path)?;
+        // Before the size is set, so Windows never zero-fills the gaps.
+        dm_system::sparse::mark_sparse(&file);
+        file.set_len(total_bytes)?;
+        file.sync_all()
+    })
+    .await
+    .map_err(|error| DownloadError::Io(std::io::Error::other(error)))??;
+    Ok(())
 }
 
 /// Publishes the finished partial file under its destination name, picking a
@@ -1499,37 +1490,70 @@ mod tests {
         );
     }
 
+    fn range_request<'a>(url: &'a str, file_path: &'a Path) -> RangeTransferRequest<'a> {
+        RangeTransferRequest {
+            source_url: url,
+            file_path,
+            total_bytes: DEFAULT_BODY.len() as u64,
+            checkpoint_bytes: 4,
+            checkpoint_interval: Duration::from_secs(60),
+        }
+    }
+
     #[tokio::test]
-    async fn transfers_a_precise_ranged_segment() {
+    async fn writes_a_range_at_its_own_offset_in_the_shared_file() {
         let server = TestServer::start(ServerBehaviour::default()).await;
+        let url = server.url("file.bin");
         let directory = tempdir().unwrap();
         let downloader = Downloader::new().unwrap();
         let control = TaskControl::new();
-        let temp = directory.path().join("segment-0000.part");
-        let start = 4_u64;
-        let end = 14_u64;
+        let temp = directory.path().join("file.bin.part");
+        let total = DEFAULT_BODY.len() as u64;
+        preallocate_partial_file(&temp, total).await.unwrap();
+        let slot = RangeSlot::new(4, 14, 0);
+        let mut durable = Vec::new();
 
         let outcome = downloader
-            .transfer_segment(
-                SegmentTransferRequest {
-                    source_url: &server.url("file.bin"),
-                    temp_path: &temp,
-                    start_byte: start,
-                    end_byte: end,
-                    downloaded_bytes: 0,
-                    total_bytes: Some(DEFAULT_BODY.len() as u64),
-                },
-                &control,
-                |_| Ok(()),
-            )
+            .transfer_range(range_request(&url, &temp), &slot, &control, |progress| {
+                durable.extend(progress.durable_bytes);
+                Ok(())
+            })
             .await
             .unwrap();
 
-        assert_eq!(outcome.downloaded_bytes, end - start + 1);
-        assert_eq!(
-            fs::read(&temp).await.unwrap(),
-            DEFAULT_BODY[start as usize..=end as usize]
-        );
+        assert_eq!(outcome.downloaded_bytes, 11);
+        let bytes = fs::read(&temp).await.unwrap();
+        assert_eq!(bytes.len() as u64, total);
+        assert_eq!(bytes[4..=14], DEFAULT_BODY[4..=14]);
+        assert!(bytes[..4].iter().all(|byte| *byte == 0));
+        // Durable counts only grow and end at the full range.
+        assert!(durable.windows(2).all(|pair| pair[0] <= pair[1]));
+        assert_eq!(durable.last(), Some(&11));
+    }
+
+    #[tokio::test]
+    async fn a_range_that_was_split_stops_at_its_new_end() {
+        let server = TestServer::start(ServerBehaviour::default()).await;
+        let url = server.url("file.bin");
+        let directory = tempdir().unwrap();
+        let downloader = Downloader::new().unwrap();
+        let control = TaskControl::new();
+        let temp = directory.path().join("file.bin.part");
+        let total = DEFAULT_BODY.len() as u64;
+        preallocate_partial_file(&temp, total).await.unwrap();
+
+        let head = RangeSlot::new(0, total - 1, 0);
+        let (tail_start, tail_end) = head.split_off(4).unwrap();
+        let tail = RangeSlot::new(tail_start, tail_end, 0);
+
+        for slot in [&head, &tail] {
+            downloader
+                .transfer_range(range_request(&url, &temp), slot, &control, |_| Ok(()))
+                .await
+                .unwrap();
+        }
+
+        assert_eq!(fs::read(&temp).await.unwrap(), DEFAULT_BODY);
     }
 
     #[tokio::test]
@@ -1539,29 +1563,23 @@ mod tests {
             ..ServerBehaviour::default()
         })
         .await;
+        let url = server.url("file.bin");
         let directory = tempdir().unwrap();
         let downloader = Downloader::new().unwrap();
         let control = TaskControl::new();
-        let temp = directory.path().join("segment-0000.part");
+        let temp = directory.path().join("file.bin.part");
+        preallocate_partial_file(&temp, DEFAULT_BODY.len() as u64)
+            .await
+            .unwrap();
+        let slot = RangeSlot::new(4, 14, 0);
 
         let error = downloader
-            .transfer_segment(
-                SegmentTransferRequest {
-                    source_url: &server.url("file.bin"),
-                    temp_path: &temp,
-                    start_byte: 4,
-                    end_byte: 14,
-                    downloaded_bytes: 0,
-                    total_bytes: Some(DEFAULT_BODY.len() as u64),
-                },
-                &control,
-                |_| Ok(()),
-            )
+            .transfer_range(range_request(&url, &temp), &slot, &control, |_| Ok(()))
             .await
             .unwrap_err();
 
         assert!(matches!(error, DownloadError::InvalidRangeResponse { .. }));
-        assert!(!fs::try_exists(&temp).await.unwrap());
+        assert!(fs::read(&temp).await.unwrap().iter().all(|byte| *byte == 0));
     }
 
     #[tokio::test]
@@ -1571,29 +1589,60 @@ mod tests {
             ..ServerBehaviour::default()
         })
         .await;
+        let url = server.url("file.bin");
         let directory = tempdir().unwrap();
         let downloader = Downloader::new().unwrap();
         let control = TaskControl::new();
-        let temp = directory.path().join("segment-0000.part");
+        let temp = directory.path().join("file.bin.part");
+        preallocate_partial_file(&temp, DEFAULT_BODY.len() as u64)
+            .await
+            .unwrap();
+        let slot = RangeSlot::new(0, 4, 0);
 
         let error = downloader
-            .transfer_segment(
-                SegmentTransferRequest {
-                    source_url: &server.url("file.bin"),
-                    temp_path: &temp,
-                    start_byte: 0,
-                    end_byte: 4,
-                    downloaded_bytes: 0,
-                    total_bytes: Some(DEFAULT_BODY.len() as u64),
-                },
-                &control,
-                |_| Ok(()),
-            )
+            .transfer_range(range_request(&url, &temp), &slot, &control, |_| Ok(()))
             .await
             .unwrap_err();
 
         assert!(matches!(error, DownloadError::HttpStatus { status: 429 }));
-        assert!(!fs::try_exists(&temp).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_manual_proxy_carries_requests_except_for_direct_hosts() {
+        let proxy = TestServer::start(ServerBehaviour::default()).await;
+        let proxy_url = proxy.url("");
+        let settings = network::NetworkSettings {
+            mode: network::ProxyMode::Manual,
+            proxy_url: Some(proxy_url.trim_end_matches('/').to_owned()),
+            direct_hosts: vec!["direct.invalid".to_owned()],
+            domestic_direct: true,
+            domestic_hosts: Vec::new(),
+        };
+        let downloader = Downloader::with_network(&settings).unwrap();
+
+        // The host does not exist: only the proxy can answer.
+        let probe = downloader
+            .probe("http://files.proxied.invalid/file.bin")
+            .await
+            .unwrap();
+        assert_eq!(probe.total_bytes, Some(DEFAULT_BODY.len() as u64));
+        let through_proxy = proxy.request_count();
+        assert!(through_proxy > 0);
+
+        // Direct and domestic hosts never reach the proxy.
+        assert!(
+            downloader
+                .probe("http://direct.invalid/file.bin")
+                .await
+                .is_err()
+        );
+        assert!(
+            downloader
+                .probe("http://dl.site.ir.invalid.ir/file.bin")
+                .await
+                .is_err()
+        );
+        assert_eq!(proxy.request_count(), through_proxy);
     }
 
     #[test]

@@ -11,6 +11,20 @@ pub struct StoredTransfer {
     pub partial_bytes_on_disk: Option<u64>,
 }
 
+impl StoredTransfer {
+    /// Nothing transferred and no partial file: the next attempt starts
+    /// from the first byte.
+    pub const fn fresh() -> Self {
+        Self {
+            downloaded_bytes: 0,
+            total_bytes: None,
+            etag: None,
+            last_modified: None,
+            partial_bytes_on_disk: None,
+        }
+    }
+}
+
 /// Why partial bytes could not be reused. Surfaced to the user, because
 /// silently restarting a large transfer is exactly the kind of thing a
 /// download manager should explain.

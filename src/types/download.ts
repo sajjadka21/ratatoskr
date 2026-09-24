@@ -92,6 +92,32 @@ export type DownloadSettings = {
   /// Bytes per second for all downloads together; null is unlimited.
   globalSpeedLimit: number | null;
   preventSleep: boolean;
+  /// Most connections one download may open.
+  maxConnections: number;
+};
+
+export type ProxyMode = "off" | "system" | "manual";
+
+/// How downloads reach the network. Host lists are one domain per line.
+export type NetworkSettings = {
+  mode: ProxyMode;
+  proxyUrl: string | null;
+  directHosts: string;
+  domesticDirect: boolean;
+  domesticHosts: string;
+};
+
+/// Domestic and international traffic, in bytes.
+export type TrafficSummary = {
+  periodStart: string;
+  explicitPeriod: boolean;
+  periodDomesticBytes: number;
+  periodInternationalBytes: number;
+  todayDomesticBytes: number;
+  todayInternationalBytes: number;
+  monthDomesticBytes: number;
+  monthInternationalBytes: number;
+  internationalQuota: number | null;
 };
 
 /// A power or exit action a finished queue scheduled, with its cancel window.

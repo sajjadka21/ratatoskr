@@ -59,3 +59,14 @@ describe("English formatting", () => {
     expect(en.rate(null)).toBeNull();
   });
 });
+
+describe("calendar days", () => {
+  it("shows a stored day in the Solar Hijri calendar in Persian", () => {
+    const fa = createFormatter("fa");
+    const en = createFormatter("en");
+    expect(fa.day("2026-09-24")).toContain("مهر");
+    expect(fa.day("2026-09-24")).toContain("۱۴۰۵");
+    expect(en.day("2026-09-24")).toContain("2026");
+    expect(en.day("not a day")).toBe("not a day");
+  });
+});

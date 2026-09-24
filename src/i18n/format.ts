@@ -30,6 +30,7 @@ export function createFormatter(language: Language) {
     dateStyle: "medium",
     timeStyle: "short",
   });
+  const dayFormat = new Intl.DateTimeFormat(DATE_LOCALE[language], { dateStyle: "long" });
   const time = new Intl.DateTimeFormat(DATE_LOCALE[language], {
     hour: "2-digit",
     minute: "2-digit",
@@ -93,9 +94,17 @@ export function createFormatter(language: Language) {
     return unixSeconds ? dateTime.format(new Date(unixSeconds * 1000)) : "—";
   }
 
+  /** A calendar day given as `YYYY-MM-DD`: `24 September 2026` / `۲ مهر ۱۴۰۵`. */
+  function day(isoDay: string): string {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDay);
+    if (!match) return isoDay;
+    const [, year, month, date] = match;
+    return dayFormat.format(new Date(Number(year), Number(month) - 1, Number(date)));
+  }
+
   function clock(unixMillis: number): string {
     return time.format(new Date(unixMillis));
   }
 
-  return { language, number, bytes, rate, duration, percent, date, clock };
+  return { language, number, bytes, rate, duration, percent, date, day, clock };
 }

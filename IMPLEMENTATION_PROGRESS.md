@@ -1043,3 +1043,103 @@ control calls an existing or new backend command.
 - Tray, close-to-tray, native dialogs and notifications need a Windows build
   of the application; they were only type-checked and unit-tested here.
 - `npm install` is required once, for the bundled Vazirmatn font.
+
+## Review follow-up - Step 4: Engine v2
+
+### One preallocated partial file
+
+- A segmented download writes every range straight into one `.part` file,
+  preallocated at full size, at its own offset. The old per-range files and
+  the final copy that joined them are gone: finishing a 10 GB file no longer
+  reads and writes 10 GB again, and it no longer needs twice the disk space.
+- On Windows the file is marked sparse before it is sized
+  (`dm-system::sparse`), so NTFS does not zero-fill the gap in front of a
+  late range. FAT32/exFAT refuse sparse files; downloads still work there.
+- Each connection flushes the file (`sync_data`) before it records how far
+  it got (at most every 8 MB or every second, and whenever it stops), so the
+  stored count never runs ahead of what survives a power cut.
+- Schema v10 rebuilds `download_segments` without the one-file-per-range
+  constraint (rows are kept) and adds `traffic_usage`.
+- A task paused by an older version, with ranges in separate files, is
+  detected and downloaded again from the start (with a notice); the old
+  files are removed.
+
+### Work stealing
+
+- Ranges are planned one per connection (never shorter than 1 MB). When a
+  connection is free and no planned range is left, the largest range still
+  running is split and its untouched half handed over (both halves at least
+  512 KB). The split is recorded in one transaction
+  (`Storage::split_download_segment`), which refuses any split that would cut
+  into written bytes or leave a gap.
+- A connection claims bytes from its range before writing them
+  (`slot::RangeSlot`), so two connections can never write the same byte.
+- The coordinator no longer reads every segment row from SQLite for each
+  received chunk; it counts written bytes in memory and reports progress at
+  most every 150 ms.
+
+### Adaptive connections
+
+- Starts with one connection and doubles while each step brings at least a
+  10% gain (1, 2, 4, 8 within a few seconds). A step without gain is undone
+  and remembered; after a while one extra connection is tried again. 429/503
+  still remove a connection and back off.
+- Throughput is judged over one-second windows during which the connection
+  count did not change, so a connection that is still opening does not
+  count as "no gain".
+- The limit is a setting now (`max_connections_per_download`, default 8,
+  1-64), shown in Settings.
+
+### Proxy and routing
+
+- `network_proxy_mode`: `off`, `system` (default, unchanged behaviour) or
+  `manual` with `network_proxy_url` (http, https, socks5, socks5h). Proxy
+  addresses with a user name or password are refused, so no credential is
+  ever stored.
+- Hosts in `network_direct_hosts` always go direct; with
+  `network_domestic_direct` (default on) so do domestic hosts, so Iranian
+  sites skip a foreign proxy.
+- Changing the settings rebuilds the HTTP client; running transfers keep
+  their connections.
+
+### Domestic and international traffic
+
+- Every download's bytes are counted per local day as domestic (`.ir` and
+  the domains in `traffic_domestic_hosts`) or international.
+- Optional international quota (`traffic_international_quota`) over a period
+  starting on a chosen day (`traffic_period_start`) or the last 30 days.
+  When the quota is used up, new international downloads are paused with
+  the notice code `quota` instead of starting; domestic downloads and
+  transfers already running are not affected.
+- Settings shows the split, the quota bar, today and this month; the
+  download page shows a small usage chip.
+
+### Interface
+
+- Settings: connections per download, a traffic and quota section, a network
+  and proxy section.
+- The adaptive engine's reasons and the `quota`, `interrupted` and
+  `restarted` notices are shown in the interface language.
+- Dates of the counting period use the Solar Hijri calendar in Persian.
+
+### Verification
+
+- `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo check --workspace` - passed
+- `cargo test --workspace` - passed (251 Rust tests). New tests cover the
+  shared file, splitting a running range, a split that stops a connection at
+  its new end, refusing splits that cut into written bytes, migration v10
+  keeping rows, replacing an old per-range layout, the doubling ramp and its
+  ceiling, proxy validation, routing through a manual proxy and around it
+  for direct and domestic hosts, traffic classification and local days,
+  quota enforcement, and settings round trips.
+- `tsc --noEmit`, `npm test` (50 tests), `npm run build` - passed
+- Screens checked with a mocked backend (Persian dark, English light).
+
+### Not verified
+
+- Sparse files, the Windows proxy behaviour and real-world throughput need
+  a Windows build and real servers. The sparse call was type-checked against
+  `windows-sys` 0.61 only.
+- The quota is checked when a download starts, not while it runs.
+- Domestic detection is by domain name, not by IP address.

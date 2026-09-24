@@ -24,12 +24,14 @@ import { SettingsPage, type AddDownloadInputMode } from "./components/settings/S
 import { useQueues } from "./hooks/useQueues";
 import { useThroughputHistory } from "./hooks/useThroughputHistory";
 import { useI18n } from "./i18n/I18n";
+import { engineReasonText } from "./utils/notices";
 import type { MessageKey } from "./i18n/messages";
 import type {
   CompletionActionEvent,
   DownloadListItem,
   DownloadPriority,
   DownloadSettings,
+  TrafficSummary,
   TaskAction,
   TransferMetricsMap,
   UiPreferences,
@@ -233,7 +235,11 @@ function App({ preferences, onPreferencesChange }: AppProps) {
         noteStatus(downloadId, "downloading");
         if (adaptiveReason && knownReason.current.get(downloadId) !== adaptiveReason) {
           knownReason.current.set(downloadId, adaptiveReason);
-          recordActivity(downloadId, { at: Date.now(), kind: "engine", text: adaptiveReason });
+          recordActivity(downloadId, {
+            at: Date.now(),
+            kind: "engine",
+            text: engineReasonText(adaptiveReason, latestT.current) ?? adaptiveReason,
+          });
         }
       }
 
@@ -279,6 +285,26 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     removeFromQueue,
     changePriority,
   } = useQueues({ upsertDownloads, updateDownloadProgress, clearLiveMetrics, refreshDownloads });
+
+  // The usage chip follows traffic without being a live counter: a refresh
+  // every 20 seconds, and whenever the downloads page comes back into view.
+  const [traffic, setTraffic] = useState<TrafficSummary | null>(null);
+  useEffect(() => {
+    if (page !== "downloads") return;
+    let cancelled = false;
+    const load = () =>
+      invoke<TrafficSummary>("get_traffic_summary")
+        .then((summary) => {
+          if (!cancelled) setTraffic(summary);
+        })
+        .catch(() => {});
+    void load();
+    const timer = window.setInterval(() => void load(), 20_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [page]);
 
   useEffect(() => {
     void Promise.all([
@@ -1009,6 +1035,8 @@ function App({ preferences, onPreferencesChange }: AppProps) {
                 onSetSpeedLimit={(limit) => void setSpeedLimit(limit)}
                 onPauseAll={() => void pauseAll()}
                 onResumeAll={() => void resumeAll()}
+                traffic={traffic}
+                onOpenTraffic={() => setPage("settings")}
               />
 
               {selectedIds.size > 1 ? (

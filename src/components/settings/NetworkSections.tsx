@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { useI18n } from "../../i18n/I18n";
 import type { MessageKey } from "../../i18n/messages";
-import type { NetworkSettings, ProxyMode, TrafficSummary } from "../../types/download";
+import type { EngineSettings, NetworkSettings, ProxyMode, TrafficSummary } from "../../types/download";
 import {
   bytesToGigabytes,
   domesticShare,
@@ -12,6 +12,7 @@ import {
   localDay,
   quotaState,
 } from "../../utils/traffic";
+import { heightLabel } from "../../utils/streams";
 import { Switch } from "./Switch";
 
 const MODES: Array<{ value: ProxyMode; label: MessageKey }> = [
@@ -411,6 +412,125 @@ export function TrafficSection({
               onClick={() => void saveDomesticHosts()}
             >
               <Globe2 size={14} /> {t("traffic.saveHosts")}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const STREAM_HEIGHTS: Array<number | null> = [null, 1080, 720, 480];
+
+/** Fresh-link adoption, gentle hosts and the automatic stream quality. */
+export function EngineSection({
+  onError,
+  onSaved,
+}: {
+  onError: (message: string) => void;
+  onSaved: (message: string) => void;
+}) {
+  const { t, fmt } = useI18n();
+  const [draft, setDraft] = useState<EngineSettings | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    invoke<EngineSettings>("get_engine_settings")
+      .then((settings) => {
+        if (!cancelled) setDraft(settings);
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) onError(String(reason));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [onError]);
+
+  if (!draft) return null;
+
+  async function save(next: EngineSettings, announce: boolean) {
+    try {
+      setDraft(await invoke<EngineSettings>("set_engine_settings", { settings: next }));
+      if (announce) onSaved(t("engineSettings.saved"));
+    } catch (reason) {
+      onError(String(reason));
+    }
+  }
+
+  return (
+    <div className="settings-page__section">
+      <div className="settings-page__section-heading">
+        <h2>{t("engineSettings.title")}</h2>
+        <p>{t("engineSettings.hint")}</p>
+      </div>
+
+      <div className="settings-page__group settings-page__rows">
+        <div className="settings-page__row">
+          <div className="settings-page__row-label">
+            <strong>{t("engineSettings.adopt")}</strong>
+            <span>{t("engineSettings.adoptHint")}</span>
+          </div>
+          <div className="settings-page__row-control">
+            <Switch
+              id="auto-adopt-links"
+              checked={draft.autoAdoptLinks}
+              label={t("engineSettings.adopt")}
+              onChange={(autoAdoptLinks) => void save({ ...draft, autoAdoptLinks }, false)}
+            />
+          </div>
+        </div>
+
+        <div className="settings-page__row">
+          <div className="settings-page__row-label">
+            <strong>{t("engineSettings.stream")}</strong>
+            <span>{t("engineSettings.streamHint")}</span>
+          </div>
+          <div className="settings-page__row-control">
+            <div className="settings-page__segmented" role="group" aria-label={t("engineSettings.stream")}>
+              {STREAM_HEIGHTS.map((height) => (
+                <button
+                  key={height ?? "best"}
+                  type="button"
+                  aria-pressed={draft.streamMaxHeight === height}
+                  className={
+                    draft.streamMaxHeight === height
+                      ? "settings-page__segment settings-page__segment--active"
+                      : "settings-page__segment"
+                  }
+                  onClick={() => void save({ ...draft, streamMaxHeight: height }, false)}
+                >
+                  <span className="num">{height === null ? t("engineSettings.best") : heightLabel(height, fmt.language)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-page__row">
+          <div className="settings-page__row-label">
+            <label htmlFor="polite-hosts">
+              <strong>{t("engineSettings.polite")}</strong>
+            </label>
+            <span>{t("engineSettings.politeHint")}</span>
+          </div>
+          <div className="settings-page__row-control settings-page__row-control--stack">
+            <textarea
+              id="polite-hosts"
+              className="settings-page__textarea"
+              dir="ltr"
+              rows={3}
+              spellCheck={false}
+              placeholder={"uploadboy.com\nexample.org"}
+              value={draft.politeHosts}
+              onChange={(event) => setDraft({ ...draft, politeHosts: event.target.value })}
+            />
+            <button
+              type="button"
+              className="settings-page__secondary-button"
+              onClick={() => void save(draft, true)}
+            >
+              <Save size={14} /> {t("engineSettings.save")}
             </button>
           </div>
         </div>

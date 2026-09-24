@@ -56,6 +56,45 @@ export const engineEn = {
   "engine.reason.single stream": "One connection (the server cannot resume)",
 
   "notice.quota": "Paused: the international traffic quota is used up.",
+  "engine.reason.stream segments": "Stream parts, a few at a time",
+
+  "notice.link_expired": "The link has expired. Start the download again from its page, or paste a fresh link: what was downloaded is kept.",
+  "notice.link_refreshed": "Continuing with a fresh link for the same file.",
+  "notice.protected_stream": "This stream is protected (DRM) and cannot be downloaded.",
+  "notice.live_stream": "This is a live stream; only complete videos can be downloaded.",
+  "notice.needs_muxing": "The sound of this stream is a separate track, which needs FFmpeg to join; not supported yet.",
+  "notice.unsupported_stream": "DASH streams (.mpd) are not supported yet.",
+
+  "palette.label": "Command palette",
+  "palette.placeholder": "Type a command or a file name…",
+  "palette.empty": "Nothing matches.",
+  "palette.limitNone": "Remove the speed limit",
+  "palette.limitTo": "Limit speed to {rate}",
+  "palette.theme": "Change the theme",
+
+  "mirrors.title": "Mirrors",
+  "mirrors.hint": "Other addresses of the same file. Each is checked first, and the parts are shared between those that match.",
+  "mirrors.add": "Add a mirror",
+  "mirrors.remove": "Remove this mirror",
+
+  "stream.checking": "Stream link — reading the qualities…",
+  "stream.single": "Stream link — one quality; it will be saved as a video file.",
+  "stream.quality": "Quality",
+  "stream.best": "Best available",
+  "stream.needsMuxing": "separate sound",
+
+  "engineSettings.title": "Smart behaviour",
+  "engineSettings.hint": "How the engine treats links, servers and streams.",
+  "engineSettings.adopt": "Continue with fresh links",
+  "engineSettings.adoptHint": "When a new link is for a file whose download stopped part-way (for example because its link expired), that download continues instead of starting a second copy.",
+  "engineSettings.polite": "Gentle with these sites",
+  "engineSettings.politeHint": "At most two connections and no extra splitting, for servers that block download managers. One domain per line.",
+  "engineSettings.stream": "Stream quality",
+  "engineSettings.streamHint": "Picked automatically when a stream link is added without choosing.",
+  "engineSettings.best": "Best",
+  "engineSettings.save": "Save",
+  "engineSettings.saved": "Saved.",
+
   "notice.interrupted": "Interrupted when the app closed. It will continue from where it stopped.",
   "notice.restarted": "Downloaded again from the start: the partial file could not be continued.",
 };
@@ -119,6 +158,45 @@ export const engineFa: Record<EngineMessageKey, string> = {
   "engine.reason.single stream": "یک اتصال (سرور ادامه‌ی دانلود را پشتیبانی نمی‌کند)",
 
   "notice.quota": "متوقف شد: سهمیه‌ی بین‌الملل تمام شده است.",
+  "engine.reason.stream segments": "بخش‌های ویدیو، چندتا چندتا",
+
+  "notice.link_expired": "لینک منقضی شده است. دانلود را دوباره از صفحه‌اش شروع کنید یا لینک تازه بچسبانید: بخش دانلودشده حفظ می‌شود.",
+  "notice.link_refreshed": "با لینک تازه‌ی همین فایل ادامه می‌دهد.",
+  "notice.protected_stream": "این ویدیو محافظت‌شده (DRM) است و دانلود نمی‌شود.",
+  "notice.live_stream": "این پخش زنده است؛ فقط ویدیوهای کامل دانلود می‌شوند.",
+  "notice.needs_muxing": "صدای این ویدیو جداست و برای یکی‌کردنش FFmpeg لازم است؛ هنوز پشتیبانی نمی‌شود.",
+  "notice.unsupported_stream": "ویدیوهای DASH (‎.mpd) هنوز پشتیبانی نمی‌شوند.",
+
+  "palette.label": "پالت فرمان",
+  "palette.placeholder": "یک فرمان یا نام فایل بنویسید…",
+  "palette.empty": "چیزی پیدا نشد.",
+  "palette.limitNone": "برداشتن محدودیت سرعت",
+  "palette.limitTo": "محدود کردن سرعت به {rate}",
+  "palette.theme": "تغییر تم",
+
+  "mirrors.title": "آینه‌ها",
+  "mirrors.hint": "نشانی‌های دیگرِ همین فایل. هرکدام اول بررسی می‌شود و بخش‌ها بین آن‌هایی که درست‌اند تقسیم می‌شود.",
+  "mirrors.add": "افزودن آینه",
+  "mirrors.remove": "حذف این آینه",
+
+  "stream.checking": "لینک ویدیو — در حال خواندن کیفیت‌ها…",
+  "stream.single": "لینک ویدیو — یک کیفیت دارد و به‌صورت فایل ویدیو ذخیره می‌شود.",
+  "stream.quality": "کیفیت",
+  "stream.best": "بهترین کیفیت",
+  "stream.needsMuxing": "صدای جدا",
+
+  "engineSettings.title": "رفتار هوشمند",
+  "engineSettings.hint": "موتور با لینک‌ها، سرورها و ویدیوها چطور رفتار کند.",
+  "engineSettings.adopt": "ادامه با لینک تازه",
+  "engineSettings.adoptHint": "وقتی لینک تازه مال فایلی است که دانلودش نیمه‌کاره مانده (مثلاً چون لینکش منقضی شده)، همان دانلود ادامه پیدا می‌کند و نسخه‌ی دوم ساخته نمی‌شود.",
+  "engineSettings.polite": "ملایم با این سایت‌ها",
+  "engineSettings.politeHint": "حداکثر دو اتصال و بدون تقسیم اضافه، برای سرورهایی که دانلود منیجر را مسدود می‌کنند. هر خط یک دامنه.",
+  "engineSettings.stream": "کیفیت ویدیو",
+  "engineSettings.streamHint": "وقتی لینک ویدیو بدون انتخاب کیفیت اضافه شود، خودکار انتخاب می‌شود.",
+  "engineSettings.best": "بهترین",
+  "engineSettings.save": "ذخیره",
+  "engineSettings.saved": "ذخیره شد.",
+
   "notice.interrupted": "با بسته‌شدن برنامه قطع شد. از همان‌جا ادامه پیدا می‌کند.",
   "notice.restarted": "از اول دانلود شد: فایل نیمه‌کاره قابل ادامه نبود.",
 };

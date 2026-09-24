@@ -41,6 +41,9 @@ pub fn classify_failure(error: &DownloadError) -> FailureClass {
 
         DownloadError::Io(error) => classify_io(error.kind()),
 
+        // What the stream is does not change on a second attempt.
+        DownloadError::Stream(_) | DownloadError::TooLarge { .. } => FailureClass::Permanent,
+
         DownloadError::Http(error) => match error.status() {
             Some(status) => classify_status(status),
             None if error.is_timeout() || error.is_connect() || error.is_request() => {

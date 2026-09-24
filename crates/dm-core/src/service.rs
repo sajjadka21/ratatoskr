@@ -63,6 +63,17 @@ const INTERRUPTED_ERROR_MESSAGE: &str =
 /// restarts from zero says why rather than appearing to lose progress.
 const RESTARTED_NOTICE_CODE: &str = "restarted";
 
+/// Recorded on a task whose link stopped working after it had worked, or
+/// whose signed link was refused.
+pub const LINK_EXPIRED_CODE: &str = "link_expired";
+const LINK_EXPIRED_MESSAGE: &str = "The link has expired. Start the download again from the page it came from, or paste a fresh link: what was downloaded is kept.";
+/// Recorded on a task that continued with a fresh link found for it.
+pub const LINK_ADOPTED_CODE: &str = "link_refreshed";
+const LINK_ADOPTED_MESSAGE: &str = "Continuing with a fresh link for the same file.";
+/// Whether a new link for a file whose old link expired is used for that
+/// download instead of starting a second one.
+pub const SETTING_AUTO_ADOPT_LINKS: &str = "auto_adopt_links";
+
 /// Recorded on a task paused because the international quota is used up.
 pub const QUOTA_NOTICE_CODE: &str = "quota";
 
@@ -123,6 +134,14 @@ pub const SETTING_INTERNATIONAL_QUOTA: &str = "traffic_international_quota";
 pub const SETTING_QUOTA_PERIOD_START: &str = "traffic_period_start";
 /// Most connections one download may open.
 pub const SETTING_MAX_CONNECTIONS: &str = "max_connections_per_download";
+/// Hosts treated gently: at most `POLITE_CONNECTIONS` connections, and no
+/// splitting of running ranges. One domain per line.
+pub const SETTING_POLITE_HOSTS: &str = "polite_hosts";
+const POLITE_CONNECTIONS: usize = 2;
+/// Highest stream quality chosen automatically (a height such as 720).
+pub const SETTING_STREAM_MAX_HEIGHT: &str = "stream_max_height";
+/// Stream segments fetched at the same time.
+const STREAM_CONNECTIONS: usize = 4;
 
 /// What the intake rules decided for one running transfer, after probing
 /// told the engine the file's type and size.
@@ -424,6 +443,42 @@ impl DownloadService {
             })
     }
 
+    /// Other addresses of a download's file.
+    pub fn mirrors(&self, download_id: &str) -> Result<Vec<String>> {
+        Ok(self.storage.list_mirrors(download_id)?)
+    }
+
+    /// Replaces a download's mirrors. Each must be an http(s) address; they
+    /// are checked against the file itself when the download next runs.
+    pub fn set_mirrors(&self, download_id: &str, urls: &[String]) -> Result<Vec<String>> {
+        for url in urls.iter().filter(|url| !url.trim().is_empty()) {
+            validate_source_url(url.trim())?;
+        }
+        Ok(self.storage.set_mirrors(download_id, urls)?)
+    }
+
+    /// Domains that get gentle treatment, one per line.
+    pub fn polite_hosts(&self) -> Vec<String> {
+        self.storage
+            .get_setting(SETTING_POLITE_HOSTS)
+            .ok()
+            .flatten()
+            .map(|value| crate::traffic::parse_host_list(&value))
+            .unwrap_or_default()
+    }
+
+    pub fn set_polite_hosts(&self, hosts: &[String]) -> Result<()> {
+        self.storage
+            .set_setting(SETTING_POLITE_HOSTS, &hosts.join("\n"))?;
+        Ok(())
+    }
+
+    fn is_polite_host(&self, host: &str) -> bool {
+        self.polite_hosts()
+            .iter()
+            .any(|suffix| host == suffix || host.ends_with(&format!(".{suffix}")))
+    }
+
     pub fn set_max_connections(&self, connections: usize) -> Result<()> {
         let connections = connections.clamp(1, MAX_SEGMENT_CONNECTIONS);
         self.storage
@@ -687,8 +742,115 @@ impl DownloadService {
             return Err(DownloadServiceError::AlreadyRunning(download_id.to_owned()));
         }
 
-        self.storage.update_source_url(download_id, source_url)?;
+        self.storage.adopt_source_url(download_id, source_url)?;
         self.get_task(download_id)
+    }
+
+    pub fn auto_adopt_links(&self) -> bool {
+        self.storage
+            .get_setting(SETTING_AUTO_ADOPT_LINKS)
+            .ok()
+            .flatten()
+            .as_deref()
+            != Some("false")
+    }
+
+    pub fn set_auto_adopt_links(&self, enabled: bool) -> Result<()> {
+        self.storage.set_setting(
+            SETTING_AUTO_ADOPT_LINKS,
+            if enabled { "true" } else { "false" },
+        )?;
+        Ok(())
+    }
+
+    /// Downloads a fresh link could continue: stopped part-way, not running,
+    /// with a known name and size to compare against.
+    fn adoption_candidates(&self, except: &str) -> Result<Vec<DownloadRecord>> {
+        use dm_common::DownloadStatus as Status;
+        Ok(self
+            .storage
+            .list_downloads()?
+            .into_iter()
+            .filter(|task| {
+                task.id != except
+                    && matches!(
+                        task.status,
+                        Status::Failed | Status::Paused | Status::Cancelled
+                    )
+                    && task.downloaded_bytes > 0
+                    && task.total_bytes.is_some()
+                    && task.filename.is_some()
+            })
+            .filter(|task| !matches!(self.control_for(&task.id), Ok(Some(_))))
+            .collect())
+    }
+
+    /// Cheap check before probing: is there anything a new link could
+    /// continue?
+    pub fn may_adopt(&self, new_task_id: &str) -> bool {
+        self.auto_adopt_links()
+            && self
+                .adoption_candidates(new_task_id)
+                .is_ok_and(|candidates| !candidates.is_empty())
+    }
+
+    /// When a newly added link is a fresh link for a download that stopped
+    /// part-way (typically because its link expired), moves the link to that
+    /// download and removes the new task, so the file continues instead of
+    /// starting over in a second copy.
+    ///
+    /// The new link is probed, and a download matches only when the server
+    /// reports the same file name and size, and the same validator when
+    /// both sides have one. Exactly one match is required. Returns the
+    /// download that now carries the link.
+    pub async fn adopt_fresh_link(&self, new_task_id: &str) -> Result<Option<DownloadRecord>> {
+        if !self.auto_adopt_links() {
+            return Ok(None);
+        }
+        let candidates = self.adoption_candidates(new_task_id)?;
+        if candidates.is_empty() {
+            return Ok(None);
+        }
+        let fresh = self.get_task(new_task_id)?;
+        if fresh.status != dm_common::DownloadStatus::Created || fresh.downloaded_bytes > 0 {
+            return Ok(None);
+        }
+        let Ok(probe) = self
+            .downloader_for(new_task_id)?
+            .probe(&fresh.source_url)
+            .await
+        else {
+            return Ok(None);
+        };
+        let matches = candidates
+            .into_iter()
+            .filter(|task| {
+                task.filename.as_deref() == Some(probe.filename.as_str())
+                    && task.total_bytes == probe.total_bytes
+                    && match (&task.etag, &probe.etag) {
+                        (Some(stored), Some(now)) => stored == now,
+                        _ => true,
+                    }
+            })
+            .collect::<Vec<_>>();
+        let [target] = matches.as_slice() else {
+            return Ok(None);
+        };
+
+        let context = self.storage.get_request_context(new_task_id)?;
+        self.storage
+            .adopt_source_url(&target.id, &fresh.source_url)?;
+        self.storage.set_request_context(&target.id, &context)?;
+        if let Some(session) = self.browser_session_for(new_task_id)
+            && let Ok(mut sessions) = self.sessions.lock()
+        {
+            sessions.remove(new_task_id);
+            sessions.insert(target.id.clone(), session);
+        }
+        self.storage
+            .record_notice(&target.id, LINK_ADOPTED_CODE, LINK_ADOPTED_MESSAGE)?;
+        self.storage.remove_download_record(new_task_id)?;
+        Ok(Some(self.get_task(&target.id)?))
     }
 
     /// True while this process is transferring the task.
@@ -839,6 +1001,25 @@ impl DownloadService {
                         .map(|value| value.max(1) as usize),
                 },
             );
+        }
+
+        match crate::media::classify_source(&probe.final_url, probe.content_type.as_deref()) {
+            Some(crate::media::MediaKind::Hls) => {
+                return self
+                    .run_stream_transfer(
+                        task,
+                        &probe,
+                        decision.as_ref(),
+                        destination_directory,
+                        control,
+                        on_progress,
+                    )
+                    .await;
+            }
+            Some(crate::media::MediaKind::Dash) => {
+                return Err(DownloadError::Stream(crate::hls::HlsError::Dash).into());
+            }
+            _ => {}
         }
 
         // Paths are reserved once and then kept, so a resumed task writes to
@@ -1042,6 +1223,301 @@ impl DownloadService {
         Ok(outcome?)
     }
 
+    /// Downloads an unprotected HLS stream: the best quality (or the one
+    /// the link already names), its segments fetched a few at a time and
+    /// appended in order, decrypted when they use plain AES-128.
+    ///
+    /// Progress survives a pause or a restart: a small record next to the
+    /// partial file says how many segments are in it, and the file is cut
+    /// back to that point before continuing.
+    async fn run_stream_transfer<F>(
+        &self,
+        task: &DownloadRecord,
+        probe: &crate::SourceProbe,
+        decision: Option<&RuleDecision>,
+        destination_directory: &Path,
+        control: Arc<TaskControl>,
+        on_progress: &mut F,
+    ) -> Result<crate::TransferOutcome>
+    where
+        F: FnMut(&str, TransferProgress) + Send,
+    {
+        let downloader = self.downloader_for(&task.id)?;
+        let stream = crate::hls::resolve_stream(
+            &downloader,
+            &probe.final_url,
+            self.stream_max_height(),
+            control.as_ref(),
+        )
+        .await?;
+        let playlist = &stream.playlist;
+        let extension = playlist.extension();
+
+        let (destination_path, temp_path) = match (&task.destination_path, &task.temp_path) {
+            (Some(destination), Some(temp)) => (PathBuf::from(destination), PathBuf::from(temp)),
+            _ => {
+                let directory = self.resolve_destination(decision, destination_directory);
+                let filename = crate::hls::stream_filename(&probe.final_url, extension);
+                self.base_downloader()
+                    .plan_paths(&directory, &filename)
+                    .await?
+            }
+        };
+        let filename = destination_path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| crate::hls::stream_filename(&probe.final_url, extension));
+        self.storage.set_transfer_plan(
+            &task.id,
+            &TransferPlan {
+                resolved_url: stream.media_url.clone(),
+                filename,
+                destination_path: destination_path.to_string_lossy().into_owned(),
+                temp_path: temp_path.to_string_lossy().into_owned(),
+                mime_type: Some(
+                    if extension == "mp4" {
+                        "video/mp4"
+                    } else {
+                        "video/mp2t"
+                    }
+                    .to_owned(),
+                ),
+                total_bytes: None,
+                etag: None,
+                last_modified: None,
+                range_supported: false,
+            },
+        )?;
+        let scope = self.traffic_scope_of(&stream.media_url);
+        self.ensure_quota_allows(scope)?;
+        self.storage
+            .mark_downloading(&task.id, unix_timestamp_seconds()?)?;
+
+        // Where a previous attempt stopped.
+        let record_path = stream_record_path(&temp_path);
+        let total_parts = playlist.segments.len() + usize::from(playlist.init.is_some());
+        let (mut done_parts, mut written) = match read_stream_record(&record_path).await {
+            Some(record)
+                if record.media_url == stream.media_url
+                    && record.parts == total_parts
+                    && partial_file_size(&temp_path)
+                        .await
+                        .is_some_and(|size| size >= record.bytes) =>
+            {
+                (record.done, record.bytes)
+            }
+            _ => (0, 0),
+        };
+        let mut file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(&temp_path)
+            .await
+            .map_err(DownloadError::Io)?;
+        file.set_len(written).await.map_err(DownloadError::Io)?;
+        use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+        file.seek(std::io::SeekFrom::Start(written))
+            .await
+            .map_err(DownloadError::Io)?;
+        self.storage.update_progress(&task.id, written, None)?;
+
+        // Every part in order: the initialisation section first, if any.
+        let mut parts: Vec<StreamPart> = Vec::with_capacity(total_parts);
+        if let Some((uri, range)) = &playlist.init {
+            parts.push((uri.clone(), *range, None, 0));
+        }
+        for segment in &playlist.segments {
+            parts.push((
+                segment.uri.clone(),
+                segment.byte_range,
+                segment.key.clone(),
+                segment.sequence,
+            ));
+        }
+
+        let mut keys: HashMap<String, Arc<Vec<u8>>> = HashMap::new();
+        let mut in_flight: JoinSet<std::result::Result<(usize, Vec<u8>), DownloadError>> =
+            JoinSet::new();
+        let mut ready: std::collections::BTreeMap<usize, Vec<u8>> =
+            std::collections::BTreeMap::new();
+        let mut next_to_fetch = done_parts;
+        let mut meter = ThroughputMeter::new(Instant::now(), written);
+        let mut last_counted = written;
+        let started_written = written;
+        let started_done = done_parts;
+
+        while done_parts < total_parts {
+            while in_flight.len() < STREAM_CONNECTIONS
+                && next_to_fetch < total_parts
+                && ready.len() < STREAM_CONNECTIONS * 2
+            {
+                let (uri, range, key, sequence) = parts[next_to_fetch].clone();
+                let key_bytes = match &key {
+                    Some(key) => {
+                        if !keys.contains_key(&key.uri) {
+                            let bytes = downloader
+                                .fetch_bytes(&key.uri, None, 64, control.as_ref())
+                                .await?;
+                            keys.insert(key.uri.clone(), Arc::new(bytes));
+                        }
+                        keys.get(&key.uri).cloned()
+                    }
+                    None => None,
+                };
+                let downloader = downloader.clone();
+                let control = Arc::clone(&control);
+                let index = next_to_fetch;
+                in_flight.spawn(async move {
+                    let mut data = downloader
+                        .fetch_bytes(&uri, range, crate::hls::MAX_SEGMENT_BYTES, control.as_ref())
+                        .await?;
+                    if let (Some(key), Some(key_bytes)) = (key, key_bytes) {
+                        crate::hls::decrypt_segment(&mut data, &key_bytes, key.iv, sequence)?;
+                    }
+                    Ok((index, data))
+                });
+                next_to_fetch += 1;
+            }
+
+            let Some(joined) = in_flight.join_next().await else {
+                break;
+            };
+            let (index, data) = match joined {
+                Ok(Ok(part)) => part,
+                Ok(Err(error)) => {
+                    in_flight.abort_all();
+                    file.flush().await.map_err(DownloadError::Io)?;
+                    file.sync_data().await.map_err(DownloadError::Io)?;
+                    self.count_traffic(scope, written.saturating_sub(last_counted));
+                    return Err(error.into());
+                }
+                Err(_) => return Err(DownloadServiceError::ExecutionUnavailable),
+            };
+            ready.insert(index, data);
+
+            // Append whatever is now next in line.
+            let mut appended = false;
+            while let Some(data) = ready.remove(&done_parts) {
+                file.write_all(&data).await.map_err(DownloadError::Io)?;
+                written += data.len() as u64;
+                done_parts += 1;
+                appended = true;
+            }
+            if appended {
+                let now = Instant::now();
+                // Parts take seconds each, so recording after every one is
+                // cheap and loses nothing on a pause or a crash.
+                {
+                    file.flush().await.map_err(DownloadError::Io)?;
+                    file.sync_data().await.map_err(DownloadError::Io)?;
+                    write_stream_record(
+                        &record_path,
+                        &StreamRecord {
+                            media_url: stream.media_url.clone(),
+                            parts: total_parts,
+                            done: done_parts,
+                            bytes: written,
+                        },
+                    )
+                    .await;
+                    self.storage.update_progress(&task.id, written, None)?;
+                    self.count_traffic(scope, written.saturating_sub(last_counted));
+                    last_counted = written;
+                }
+
+                // The total is estimated from the parts fetched so far.
+                let fetched_now = done_parts - started_done;
+                let estimate = (fetched_now > 0).then(|| {
+                    let average = (written - started_written) / fetched_now as u64;
+                    written + average * (total_parts - done_parts) as u64
+                });
+                let bytes_per_second = meter.sample(written, now);
+                on_progress(
+                    &task.id,
+                    TransferProgress {
+                        downloaded_bytes: written,
+                        total_bytes: estimate,
+                        bytes_per_second,
+                        eta_seconds: meter.eta_seconds(written, estimate),
+                        active_connections: Some(in_flight.len().max(1) as u32),
+                        max_connections: Some(STREAM_CONNECTIONS as u32),
+                        adaptive_reason: Some("stream segments"),
+                    },
+                );
+            }
+        }
+
+        file.flush().await.map_err(DownloadError::Io)?;
+        file.sync_all().await.map_err(DownloadError::Io)?;
+        drop(file);
+        self.count_traffic(scope, written.saturating_sub(last_counted));
+        let _ = tokio::fs::remove_file(&record_path).await;
+        self.storage
+            .update_progress(&task.id, written, Some(written))?;
+        let outcome = self
+            .base_downloader()
+            .finalize_shared_file(&temp_path, &destination_path, written)
+            .await?;
+        Ok(outcome)
+    }
+
+    /// Highest stream quality picked automatically; `None` for the best.
+    pub fn stream_max_height(&self) -> Option<u32> {
+        self.storage
+            .get_setting(SETTING_STREAM_MAX_HEIGHT)
+            .ok()
+            .flatten()
+            .and_then(|value| value.parse::<u32>().ok())
+            .filter(|value| *value > 0)
+    }
+
+    pub fn set_stream_max_height(&self, height: Option<u32>) -> Result<()> {
+        self.storage.set_setting(
+            SETTING_STREAM_MAX_HEIGHT,
+            &height
+                .filter(|value| *value > 0)
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+        )?;
+        Ok(())
+    }
+
+    /// The qualities a stream link offers, for the user to choose from.
+    pub async fn stream_variants(&self, url: &str) -> Result<Vec<crate::hls::Variant>> {
+        validate_source_url(url)?;
+        Ok(crate::hls::list_variants(&self.base_downloader(), url).await?)
+    }
+
+    /// The addresses a segmented transfer may read from: the resolved
+    /// source, then each mirror that answers with ranges for a file of the
+    /// same size and, when both sides have one, the same validator. A mirror
+    /// that does not prove this is skipped, never trusted.
+    async fn verified_sources(
+        &self,
+        download_id: &str,
+        downloader: &Downloader,
+        probe: &crate::SourceProbe,
+        total_bytes: u64,
+    ) -> Result<Vec<String>> {
+        let mut sources = vec![probe.final_url.clone()];
+        for mirror in self.storage.list_mirrors(download_id)? {
+            let Ok(found) = downloader.probe(&mirror).await else {
+                continue;
+            };
+            let same_file = found.range_supported
+                && found.total_bytes == Some(total_bytes)
+                && match (&probe.etag, &found.etag) {
+                    (Some(expected), Some(actual)) => expected == actual,
+                    _ => true,
+                };
+            if same_file && !sources.contains(&found.final_url) {
+                sources.push(found.final_url);
+            }
+        }
+        Ok(sources)
+    }
+
     /// Downloads a ranged source over several connections into one
     /// preallocated partial file.
     ///
@@ -1066,7 +1542,13 @@ impl DownloadService {
     {
         let total_bytes = probe.total_bytes.ok_or(SegmentPlanError::EmptyResource)?;
         let host = normalized_host(&probe.final_url)?;
-        let max_connections = self.max_connections();
+        let polite =
+            self.is_polite_host(&host) || self.is_polite_host(&normalized_host(&task.source_url)?);
+        let max_connections = if polite {
+            self.max_connections().min(POLITE_CONNECTIONS)
+        } else {
+            self.max_connections()
+        };
         let connection_limit = self
             .storage
             .get_host_profile(&host)?
@@ -1135,14 +1617,26 @@ impl DownloadService {
                 .max()
                 .unwrap_or(0),
             workers: JoinSet::new(),
-            min_split_bytes: self.min_split_bytes,
+            // Polite hosts get their planned ranges and nothing more.
+            min_split_bytes: if polite {
+                u64::MAX
+            } else {
+                self.min_split_bytes
+            },
+            healthy: vec![true],
+            next_source: 0,
         };
+        let downloader = self.downloader_for(&task.id)?;
+        let sources = self
+            .verified_sources(&task.id, &downloader, probe, total_bytes)
+            .await?;
+        pool.healthy = vec![true; sources.len()];
         let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<u64>();
         let context = SegmentPoolContext {
-            downloader: self.downloader_for(&task.id)?,
+            downloader,
             storage: Arc::clone(&self.storage),
             control: Arc::clone(&control),
-            source_url: probe.final_url.clone(),
+            sources,
             temp_path: temp_path.to_path_buf(),
             total_bytes,
             checkpoint_bytes: self.checkpoint_bytes,
@@ -1191,7 +1685,31 @@ impl DownloadService {
                                 break Err(error);
                             }
                         }
-                        Ok(Err(error)) => break Err(error),
+                        Ok(Err(failure)) => {
+                            if pool.healthy_sources() > 1 && is_source_failure(&failure.error) {
+                                // One address failed; the others carry on and
+                                // this range goes back to be picked up again.
+                                pool.healthy[failure.source] = false;
+                                pool.active.remove(&failure.segment_index);
+                                let requeued = self
+                                    .storage
+                                    .release_download_segment(&task.id, failure.segment_index)
+                                    .and_then(|()| {
+                                        self.storage
+                                            .get_download_segment(&task.id, failure.segment_index)
+                                    });
+                                match requeued {
+                                    Ok(Some(segment)) => pool.pending.push_front(segment),
+                                    Ok(None) => {}
+                                    Err(error) => break Err(error.into()),
+                                }
+                                if let Err(error) = pool.fill(&task.id, target_connections, &context) {
+                                    break Err(error);
+                                }
+                            } else {
+                                break Err(failure.error);
+                            }
+                        }
                         Err(_join_error) => break Err(DownloadServiceError::ExecutionUnavailable),
                     }
                 }
@@ -1343,13 +1861,29 @@ impl DownloadService {
         task: &DownloadRecord,
         error: DownloadError,
     ) -> Result<DownloadRecord> {
+        let attempts = task.attempts.saturating_add(1);
+
+        // A signed or session-bound link that stopped working is not a
+        // failure a retry can fix; say what happened and how to go on.
+        if link_looks_expired(&error, task) {
+            self.storage.record_attempt(download_id, attempts)?;
+            self.storage
+                .mark_failed(download_id, LINK_EXPIRED_CODE, LINK_EXPIRED_MESSAGE)?;
+            return Err(DownloadServiceError::Download(error));
+        }
+
         let message = error.redacted_message();
         let class = classify_failure(&error);
-        let attempts = task.attempts.saturating_add(1);
 
         if class == FailureClass::Retryable
             && let Some(delay) = self.retry_policy.delay_for(attempts)
         {
+            // A server that said when to come back is taken at its word.
+            let asked = self
+                .base_downloader()
+                .take_retry_after(task.resolved_url.as_deref().unwrap_or(&task.source_url))
+                .or_else(|| self.base_downloader().take_retry_after(&task.source_url));
+            let delay = asked.map_or(delay, |asked| asked.max(delay));
             let retry_at = unix_timestamp_seconds()?.saturating_add(delay.as_secs() as i64);
 
             self.storage.mark_retrying(
@@ -1466,6 +2000,57 @@ async fn remove_segment_files(segments: &[DownloadSegment]) {
     }
 }
 
+/// One piece of a stream in download order: address, byte range, key,
+/// media sequence number.
+type StreamPart = (
+    String,
+    Option<(u64, u64)>,
+    Option<crate::hls::SegmentKey>,
+    u64,
+);
+
+/// Where a stream download records how far it got.
+struct StreamRecord {
+    media_url: String,
+    parts: usize,
+    done: usize,
+    bytes: u64,
+}
+
+fn stream_record_path(temp_path: &Path) -> PathBuf {
+    let mut name = temp_path.as_os_str().to_owned();
+    name.push(".stream");
+    PathBuf::from(name)
+}
+
+async fn read_stream_record(path: &Path) -> Option<StreamRecord> {
+    let text = tokio::fs::read_to_string(path).await.ok()?;
+    let mut lines = text.lines();
+    if lines.next()? != "rud-stream-v1" {
+        return None;
+    }
+    Some(StreamRecord {
+        media_url: lines.next()?.to_owned(),
+        parts: lines.next()?.parse().ok()?,
+        done: lines.next()?.parse().ok()?,
+        bytes: lines.next()?.parse().ok()?,
+    })
+}
+
+/// Written beside, then renamed over, so a crash never leaves half a record.
+async fn write_stream_record(path: &Path, record: &StreamRecord) {
+    let text = format!(
+        "rud-stream-v1\n{}\n{}\n{}\n{}\n",
+        record.media_url, record.parts, record.done, record.bytes
+    );
+    let mut staging = path.as_os_str().to_owned();
+    staging.push(".new");
+    let staging = PathBuf::from(staging);
+    if tokio::fs::write(&staging, text).await.is_ok() {
+        let _ = tokio::fs::rename(&staging, path).await;
+    }
+}
+
 /// Removes separate segment files left by older versions, never the shared
 /// partial file itself.
 async fn remove_segment_files_except(segments: &[DownloadSegment], shared: &Path) {
@@ -1508,7 +2093,9 @@ struct SegmentPoolContext {
     downloader: Downloader,
     storage: Arc<Storage>,
     control: Arc<TaskControl>,
-    source_url: String,
+    /// The resolved source first, then every mirror that proved to serve
+    /// the same bytes.
+    sources: Vec<String>,
     temp_path: PathBuf,
     total_bytes: u64,
     checkpoint_bytes: u64,
@@ -1522,14 +2109,25 @@ struct FinishedRange {
     downloaded_bytes: u64,
 }
 
+/// A connection that failed, and the source it was reading from, so a bad
+/// mirror can be dropped without failing the whole download.
+struct RangeFailure {
+    segment_index: u32,
+    source: usize,
+    error: DownloadServiceError,
+}
+
 /// The ranges of one transfer: those waiting for a connection and those
 /// being downloaded, by segment index.
 struct SegmentPool {
     pending: std::collections::VecDeque<DownloadSegment>,
     active: HashMap<u32, Arc<RangeSlot>>,
     next_index: u32,
-    workers: JoinSet<std::result::Result<FinishedRange, DownloadServiceError>>,
+    workers: JoinSet<std::result::Result<FinishedRange, RangeFailure>>,
     min_split_bytes: u64,
+    /// Which sources are still trusted, by index into the context's list.
+    healthy: Vec<bool>,
+    next_source: usize,
 }
 
 impl SegmentPool {
@@ -1582,6 +2180,23 @@ impl SegmentPool {
         Ok(Some(tail))
     }
 
+    fn healthy_sources(&self) -> usize {
+        self.healthy.iter().filter(|healthy| **healthy).count()
+    }
+
+    /// The next trusted source, taking turns so ranges spread evenly.
+    fn pick_source(&mut self) -> usize {
+        let count = self.healthy.len().max(1);
+        for _ in 0..count {
+            let candidate = self.next_source % count;
+            self.next_source = self.next_source.wrapping_add(1);
+            if self.healthy.get(candidate).copied().unwrap_or(false) {
+                return candidate;
+            }
+        }
+        0
+    }
+
     fn spawn(&mut self, segment: DownloadSegment, context: &SegmentPoolContext) -> Result<()> {
         context
             .storage
@@ -1596,7 +2211,8 @@ impl SegmentPool {
         let downloader = context.downloader.clone();
         let storage = Arc::clone(&context.storage);
         let control = Arc::clone(&context.control);
-        let source_url = context.source_url.clone();
+        let source = self.pick_source();
+        let source_url = context.sources[source.min(context.sources.len() - 1)].clone();
         let temp_path = context.temp_path.clone();
         let total_bytes = context.total_bytes;
         let checkpoint_bytes = context.checkpoint_bytes;
@@ -1631,7 +2247,12 @@ impl SegmentPool {
                         Ok(())
                     },
                 )
-                .await?;
+                .await
+                .map_err(|error| RangeFailure {
+                    segment_index: index,
+                    source,
+                    error: error.into(),
+                })?;
             Ok(FinishedRange {
                 segment_index: index,
                 downloaded_bytes: outcome.downloaded_bytes,
@@ -1695,6 +2316,7 @@ enum SegmentedTransferResult {
 
 async fn remove_partial_file(temp_path: Option<&str>) {
     if let Some(path) = temp_path {
+        let _ = tokio::fs::remove_file(stream_record_path(Path::new(path))).await;
         let _ = tokio::fs::remove_file(path).await;
     }
 }
@@ -1712,7 +2334,68 @@ fn error_code_for(error: &DownloadError) -> &'static str {
         DownloadError::HttpStatus { status: 503 } => "server_busy",
         DownloadError::HttpStatus { .. } => "download_error",
         DownloadError::Stopped(_) => "stopped",
+        DownloadError::Stream(crate::hls::HlsError::Protected) => "protected_stream",
+        DownloadError::Stream(crate::hls::HlsError::Live) => "live_stream",
+        DownloadError::Stream(crate::hls::HlsError::NeedsMuxing) => "needs_muxing",
+        DownloadError::Stream(crate::hls::HlsError::Dash) => "unsupported_stream",
+        DownloadError::Stream(_) => "stream_error",
+        DownloadError::TooLarge { .. } => "stream_error",
     }
+}
+
+/// Errors that belong to the address being read, not to the download as a
+/// whole: another mirror may well succeed where this one failed.
+fn is_source_failure(error: &DownloadServiceError) -> bool {
+    matches!(
+        error,
+        DownloadServiceError::Download(
+            DownloadError::Http(_)
+                | DownloadError::HttpStatus { .. }
+                | DownloadError::InvalidRangeResponse { .. }
+                | DownloadError::IncompleteTransfer { .. }
+        )
+    )
+}
+
+/// A 401/403/404/410 means an expired link when the link had worked
+/// before, or when it carries the signature or expiry parameters that
+/// time-limited links use.
+fn link_looks_expired(error: &DownloadError, task: &DownloadRecord) -> bool {
+    let status = match error {
+        DownloadError::HttpStatus { status } => Some(*status),
+        DownloadError::Http(error) => error.status().map(|status| status.as_u16()),
+        _ => None,
+    };
+    matches!(status, Some(401 | 403 | 404 | 410))
+        && (task.downloaded_bytes > 0 || url_looks_signed(&task.source_url))
+}
+
+/// Query parameters that time-limited download links commonly carry: S3,
+/// Google Cloud, CloudFront, nginx `secure_link` and the like.
+pub fn url_looks_signed(url: &str) -> bool {
+    const MARKERS: &[&str] = &[
+        "expires",
+        "expire",
+        "expiry",
+        "exp",
+        "e",
+        "signature",
+        "sig",
+        "token",
+        "st",
+        "md5",
+        "hash",
+        "policy",
+        "key-pair-id",
+        "x-amz-signature",
+        "x-amz-expires",
+        "x-goog-signature",
+        "x-goog-expires",
+    ];
+    reqwest::Url::parse(url).is_ok_and(|url| {
+        url.query_pairs()
+            .any(|(key, _)| MARKERS.contains(&key.to_ascii_lowercase().as_str()))
+    })
 }
 
 fn unix_timestamp_seconds() -> Result<i64> {
@@ -3261,5 +3944,545 @@ mod tests {
                 .unwrap(),
             None
         );
+    }
+
+    /// Starts a slow download, pauses it part-way and returns the paused row.
+    async fn paused_part_way(harness: &Harness, url: &str) -> DownloadRecord {
+        let created = harness.service.create_task(url).unwrap();
+        let service = harness.service.clone();
+        let destination = harness.destination.clone();
+        let task_id = created.id.clone();
+        let transfer = tokio::spawn(async move { service.start_task(&task_id, destination).await });
+        await_status(&harness.storage, &created.id, DownloadStatus::Downloading).await;
+        await_partial_bytes(&harness.storage, &created.id).await;
+        harness.service.pause_task(&created.id).unwrap();
+        let paused = transfer.await.unwrap().unwrap();
+        assert_eq!(paused.status, DownloadStatus::Paused);
+        paused
+    }
+
+    #[tokio::test]
+    async fn a_link_that_stops_working_part_way_is_reported_as_expired() {
+        let server = TestServer::start(slow_server()).await;
+        let harness = harness();
+        let paused = paused_part_way(&harness, &server.url("movie.bin")).await;
+
+        server.update(|behaviour| behaviour.status = Some((403, "Forbidden")));
+        let _ = harness
+            .service
+            .start_task(&paused.id, &harness.destination)
+            .await;
+
+        let failed = harness.storage.get_download(&paused.id).unwrap().unwrap();
+        assert_eq!(failed.status, DownloadStatus::Failed);
+        assert_eq!(failed.error_code.as_deref(), Some(LINK_EXPIRED_CODE));
+        assert_eq!(
+            failed.downloaded_bytes, paused.downloaded_bytes,
+            "what was downloaded is kept"
+        );
+        assert!(
+            tokio::fs::try_exists(failed.temp_path.unwrap())
+                .await
+                .unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refused_signed_link_is_expired_but_a_plain_refusal_is_not() {
+        let server = TestServer::start(ServerBehaviour {
+            status: Some((403, "Forbidden")),
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+
+        let signed = harness
+            .service
+            .create_task(&server.url("file.bin?Expires=1790000000&Signature=abc"))
+            .unwrap();
+        let _ = harness
+            .service
+            .start_task(&signed.id, &harness.destination)
+            .await;
+        let signed = harness.storage.get_download(&signed.id).unwrap().unwrap();
+        assert_eq!(signed.error_code.as_deref(), Some(LINK_EXPIRED_CODE));
+
+        let plain = harness
+            .service
+            .create_task(&server.url("file.bin"))
+            .unwrap();
+        let _ = harness
+            .service
+            .start_task(&plain.id, &harness.destination)
+            .await;
+        let plain = harness.storage.get_download(&plain.id).unwrap().unwrap();
+        assert_ne!(plain.error_code.as_deref(), Some(LINK_EXPIRED_CODE));
+    }
+
+    #[test]
+    fn signed_links_are_recognised_by_their_parameters() {
+        assert!(url_looks_signed(
+            "https://bucket.s3.amazonaws.com/a.zip?X-Amz-Expires=300&X-Amz-Signature=f"
+        ));
+        assert!(url_looks_signed(
+            "https://dl.example.ir/a.zip?md5=abc&e=1790000000"
+        ));
+        assert!(url_looks_signed("https://cdn.example.com/a.zip?token=xyz"));
+        assert!(!url_looks_signed("https://example.com/a.zip?lang=fa"));
+        assert!(!url_looks_signed("https://example.com/a.zip"));
+    }
+
+    #[tokio::test]
+    async fn a_fresh_link_for_the_same_file_continues_the_stopped_download() {
+        let old_server = TestServer::start(slow_server()).await;
+        let new_server = TestServer::start(ServerBehaviour::default()).await;
+        let harness = harness();
+        let paused = paused_part_way(&harness, &old_server.url("movie.bin")).await;
+        let fresh_url = new_server.url("movie.bin?token=new");
+
+        let fresh = harness.service.create_task(&fresh_url).unwrap();
+        let adopted = harness
+            .service
+            .adopt_fresh_link(&fresh.id)
+            .await
+            .unwrap()
+            .expect("the paused download matches the new link");
+
+        assert_eq!(adopted.id, paused.id);
+        assert_eq!(adopted.source_url, fresh_url);
+        assert_eq!(adopted.downloaded_bytes, paused.downloaded_bytes);
+        assert_eq!(adopted.error_code.as_deref(), Some(LINK_ADOPTED_CODE));
+        assert!(
+            harness.storage.get_download(&fresh.id).unwrap().is_none(),
+            "no second copy of the download is left behind"
+        );
+
+        let finished = harness
+            .service
+            .start_task(&adopted.id, &harness.destination)
+            .await
+            .unwrap();
+        assert_eq!(finished.status, DownloadStatus::Completed);
+        assert_eq!(
+            tokio::fs::read(finished.destination_path.as_ref().unwrap())
+                .await
+                .unwrap(),
+            DEFAULT_BODY
+        );
+        assert!(
+            new_server.ranged_request_count() >= 2,
+            "the new link continued from the kept bytes"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_new_link_for_a_different_file_is_not_adopted() {
+        let old_server = TestServer::start(slow_server()).await;
+        let other = TestServer::start(ServerBehaviour {
+            body: b"a different and longer file than the one that was paused".to_vec(),
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+        let paused = paused_part_way(&harness, &old_server.url("movie.bin")).await;
+
+        let fresh = harness
+            .service
+            .create_task(&other.url("movie.bin"))
+            .unwrap();
+        assert!(harness.service.may_adopt(&fresh.id));
+        assert!(
+            harness
+                .service
+                .adopt_fresh_link(&fresh.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(harness.storage.get_download(&fresh.id).unwrap().is_some());
+        let untouched = harness.storage.get_download(&paused.id).unwrap().unwrap();
+        assert_eq!(untouched.source_url, paused.source_url);
+
+        harness.service.set_auto_adopt_links(false).unwrap();
+        assert!(!harness.service.may_adopt(&fresh.id));
+    }
+
+    #[tokio::test]
+    async fn refreshing_a_link_by_hand_keeps_the_downloaded_bytes() {
+        let server = TestServer::start(slow_server()).await;
+        let harness = harness();
+        let paused = paused_part_way(&harness, &server.url("movie.bin")).await;
+
+        let refreshed = harness
+            .service
+            .refresh_source_url(&paused.id, &server.url("movie.bin?fresh=1"))
+            .unwrap();
+        assert_eq!(refreshed.downloaded_bytes, paused.downloaded_bytes);
+        assert_eq!(refreshed.temp_path, paused.temp_path);
+
+        let finished = harness
+            .service
+            .start_task(&paused.id, &harness.destination)
+            .await
+            .unwrap();
+        assert_eq!(
+            tokio::fs::read(finished.destination_path.as_ref().unwrap())
+                .await
+                .unwrap(),
+            DEFAULT_BODY
+        );
+    }
+
+    #[tokio::test]
+    async fn a_server_that_asks_to_wait_is_given_that_long() {
+        let server = TestServer::start(ServerBehaviour {
+            status: Some((503, "Service Unavailable")),
+            retry_after: Some(120),
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+        let task = harness
+            .service
+            .create_task(&server.url("busy.bin"))
+            .unwrap();
+        let before = unix_timestamp_seconds().unwrap();
+
+        let _ = harness
+            .service
+            .start_task(&task.id, &harness.destination)
+            .await;
+
+        let retrying = harness.storage.get_download(&task.id).unwrap().unwrap();
+        assert_eq!(retrying.status, DownloadStatus::Retrying);
+        assert!(
+            retrying.retry_at.unwrap() >= before + 120,
+            "the next attempt waits at least as long as the server asked"
+        );
+    }
+
+    #[tokio::test]
+    async fn polite_hosts_get_two_connections_and_no_splitting() {
+        let behaviour = slow_body_server();
+        let body = behaviour.body.clone();
+        let server = TestServer::start(behaviour).await;
+        let harness = harness();
+        harness
+            .service
+            .set_polite_hosts(&["127.0.0.1".to_owned()])
+            .unwrap();
+        let service = harness
+            .service
+            .clone()
+            .with_segment_connections(8)
+            .with_segmented_threshold(1)
+            .with_segment_sizes(1, 100)
+            .with_evaluation_window(Duration::from_millis(20));
+        let task = service.create_task(&server.url("gentle.bin")).unwrap();
+
+        let finished = service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            tokio::fs::read(finished.destination_path.as_ref().unwrap())
+                .await
+                .unwrap(),
+            body
+        );
+        assert!(server.peak_concurrent_bodies() <= POLITE_CONNECTIONS);
+        // One probe plus the two planned ranges: nothing was split off.
+        assert_eq!(server.ranged_request_count(), 1 + POLITE_CONNECTIONS);
+    }
+
+    fn mirrored_service(harness: &Harness) -> DownloadService {
+        harness
+            .service
+            .clone()
+            .with_segment_connections(4)
+            .with_segmented_threshold(1)
+            .with_segment_sizes(1, 200)
+            .with_evaluation_window(Duration::from_millis(20))
+    }
+
+    #[tokio::test]
+    async fn ranges_are_spread_over_mirrors_of_the_same_file() {
+        let behaviour = slow_body_server();
+        let body = behaviour.body.clone();
+        let primary = TestServer::start(behaviour.clone()).await;
+        let mirror = TestServer::start(behaviour).await;
+        let harness = harness();
+        let service = mirrored_service(&harness);
+        let task = service.create_task(&primary.url("big.iso")).unwrap();
+        service
+            .set_mirrors(&task.id, &[mirror.url("mirror/big.iso")])
+            .unwrap();
+
+        let finished = service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            tokio::fs::read(finished.destination_path.as_ref().unwrap())
+                .await
+                .unwrap(),
+            body
+        );
+        assert!(
+            mirror.ranged_request_count() >= 2,
+            "the mirror served ranges, not just the check"
+        );
+        assert!(primary.ranged_request_count() >= 2);
+    }
+
+    #[tokio::test]
+    async fn a_mirror_that_breaks_is_dropped_and_its_range_finished_elsewhere() {
+        let behaviour = slow_body_server();
+        let body = behaviour.body.clone();
+        let primary = TestServer::start(behaviour.clone()).await;
+        let broken = TestServer::start(behaviour).await;
+        let harness = harness();
+        let service = mirrored_service(&harness);
+        let task = service.create_task(&primary.url("big.iso")).unwrap();
+        service
+            .set_mirrors(&task.id, &[broken.url("big.iso")])
+            .unwrap();
+        // The mirror passes its check, then cuts every range short.
+        broken.update(|behaviour| behaviour.truncate_after = Some(20));
+
+        let finished = service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+
+        assert_eq!(finished.status, DownloadStatus::Completed);
+        assert_eq!(
+            tokio::fs::read(finished.destination_path.as_ref().unwrap())
+                .await
+                .unwrap(),
+            body
+        );
+        assert!(
+            broken.ranged_request_count() >= 2,
+            "the broken mirror was really tried for a range"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_mirror_of_a_different_file_is_never_used() {
+        let behaviour = slow_body_server();
+        let body = behaviour.body.clone();
+        let primary = TestServer::start(behaviour).await;
+        let other = TestServer::start(ServerBehaviour::default()).await;
+        let harness = harness();
+        let service = mirrored_service(&harness);
+        let task = service.create_task(&primary.url("big.iso")).unwrap();
+        service
+            .set_mirrors(&task.id, &[other.url("big.iso")])
+            .unwrap();
+
+        let finished = service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            tokio::fs::read(finished.destination_path.as_ref().unwrap())
+                .await
+                .unwrap(),
+            body
+        );
+        assert_eq!(other.ranged_request_count(), 1, "only the check reached it");
+    }
+
+    #[test]
+    fn mirrors_must_be_web_addresses() {
+        let harness = harness();
+        let task = harness
+            .service
+            .create_task("https://example.com/a.iso")
+            .unwrap();
+        assert!(
+            harness
+                .service
+                .set_mirrors(&task.id, &["file:///etc/passwd".to_owned()])
+                .is_err()
+        );
+        assert!(harness.service.mirrors(&task.id).unwrap().is_empty());
+    }
+
+    fn encrypt_part(plain: &[u8], key: [u8; 16], sequence: u64) -> Vec<u8> {
+        use aes::Aes128;
+        use cbc::cipher::{BlockEncryptMut, KeyIvInit, block_padding::Pkcs7};
+        let mut iv = [0_u8; 16];
+        iv[8..].copy_from_slice(&sequence.to_be_bytes());
+        let mut buffer = plain.to_vec();
+        buffer.resize(plain.len() + 16, 0);
+        cbc::Encryptor::<Aes128>::new(&key.into(), &iv.into())
+            .encrypt_padded_mut::<Pkcs7>(&mut buffer, plain.len())
+            .unwrap()
+            .to_vec()
+    }
+
+    /// A small VOD stream: a master playlist, one quality with three parts,
+    /// the last of them AES-128 encrypted.
+    fn stream_server(chunk_delay: Option<Duration>) -> (ServerBehaviour, Vec<u8>) {
+        let key = [9_u8; 16];
+        let second = b"second part, ".repeat(60);
+        let third = b"third and last part ".repeat(40);
+        let parts: [&[u8]; 3] = [b"first part of the video ", &second, &third];
+        let master = "#EXTM3U\n\
+            #EXT-X-STREAM-INF:BANDWIDTH=400000,RESOLUTION=640x360\nlow/index.m3u8\n\
+            #EXT-X-STREAM-INF:BANDWIDTH=1200000,RESOLUTION=1280x720\nhigh/index.m3u8\n";
+        let media = "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:0\n\
+            #EXTINF:4,\na.ts\n#EXTINF:4,\nb.ts\n\
+            #EXT-X-KEY:METHOD=AES-128,URI=\"/keys/k1\"\n#EXTINF:4,\nc.ts\n#EXT-X-ENDLIST\n";
+        let low = "#EXTM3U\n#EXTINF:4,\nwrong.ts\n#EXT-X-ENDLIST\n";
+        let behaviour = ServerBehaviour {
+            chunk_size: 16,
+            chunk_delay,
+            filename: None,
+            routes: vec![
+                (
+                    "/show/episode-12/master.m3u8".to_owned(),
+                    master.as_bytes().to_vec(),
+                ),
+                (
+                    "/show/episode-12/high/index.m3u8".to_owned(),
+                    media.as_bytes().to_vec(),
+                ),
+                (
+                    "/show/episode-12/low/index.m3u8".to_owned(),
+                    low.as_bytes().to_vec(),
+                ),
+                ("/show/episode-12/high/a.ts".to_owned(), parts[0].to_vec()),
+                ("/show/episode-12/high/b.ts".to_owned(), parts[1].to_vec()),
+                (
+                    "/show/episode-12/high/c.ts".to_owned(),
+                    encrypt_part(parts[2], key, 2),
+                ),
+                ("/keys/k1".to_owned(), key.to_vec()),
+            ],
+            ..ServerBehaviour::default()
+        };
+        (behaviour, parts.concat())
+    }
+
+    #[tokio::test]
+    async fn an_hls_stream_is_saved_in_the_best_quality_and_decrypted() {
+        let (behaviour, expected) = stream_server(None);
+        let server = TestServer::start(behaviour).await;
+        let harness = harness();
+        let task = harness
+            .service
+            .create_task(&server.url("show/episode-12/master.m3u8"))
+            .unwrap();
+
+        let finished = harness
+            .service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+
+        assert_eq!(finished.status, DownloadStatus::Completed);
+        let path = finished.destination_path.clone().unwrap();
+        assert!(
+            path.ends_with("episode-12.ts"),
+            "named after the show: {path}"
+        );
+        assert_eq!(tokio::fs::read(&path).await.unwrap(), expected);
+        assert_eq!(finished.total_bytes, Some(expected.len() as u64));
+    }
+
+    #[tokio::test]
+    async fn a_paused_stream_continues_from_the_parts_it_already_has() {
+        let (behaviour, expected) = stream_server(Some(Duration::from_millis(30)));
+        let server = TestServer::start(behaviour).await;
+        let harness = harness();
+        let task = harness
+            .service
+            .create_task(&server.url("show/episode-12/master.m3u8"))
+            .unwrap();
+        let service = harness.service.clone();
+        let destination = harness.destination.clone();
+        let task_id = task.id.clone();
+        let transfer = tokio::spawn(async move { service.start_task(&task_id, destination).await });
+
+        // Wait until at least one part is safely in the file.
+        let mut paused_at = 0;
+        for _ in 0..1200 {
+            let row = harness.storage.get_download(&task.id).unwrap().unwrap();
+            if row.downloaded_bytes > 0 {
+                paused_at = row.downloaded_bytes;
+                break;
+            }
+            sleep(Duration::from_millis(5)).await;
+        }
+        assert!(paused_at > 0);
+        harness.service.pause_task(&task.id).unwrap();
+        let paused = transfer.await.unwrap().unwrap();
+        assert_eq!(paused.status, DownloadStatus::Paused);
+
+        let finished = harness
+            .service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+        assert_eq!(
+            tokio::fs::read(finished.destination_path.as_ref().unwrap())
+                .await
+                .unwrap(),
+            expected
+        );
+    }
+
+    #[tokio::test]
+    async fn protected_live_and_dash_streams_fail_with_a_reason() {
+        let drm = "#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"skd://k\",KEYFORMAT=\"com.apple.streamingkeydelivery\"\n#EXTINF:4,\na.ts\n#EXT-X-ENDLIST\n";
+        let live = "#EXTM3U\n#EXTINF:4,\na.ts\n";
+        let server = TestServer::start(ServerBehaviour {
+            routes: vec![
+                ("/drm.m3u8".to_owned(), drm.as_bytes().to_vec()),
+                ("/live.m3u8".to_owned(), live.as_bytes().to_vec()),
+                ("/movie.mpd".to_owned(), b"<MPD/>".to_vec()),
+            ],
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+
+        for (path, code) in [
+            ("drm.m3u8", "protected_stream"),
+            ("live.m3u8", "live_stream"),
+            ("movie.mpd", "unsupported_stream"),
+        ] {
+            let task = harness.service.create_task(&server.url(path)).unwrap();
+            let _ = harness
+                .service
+                .start_task(&task.id, &harness.destination)
+                .await;
+            let row = harness.storage.get_download(&task.id).unwrap().unwrap();
+            assert_eq!(row.status, DownloadStatus::Failed, "{path}");
+            assert_eq!(row.error_code.as_deref(), Some(code), "{path}");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_qualities_of_a_stream_can_be_listed_before_downloading() {
+        let (behaviour, _) = stream_server(None);
+        let server = TestServer::start(behaviour).await;
+        let harness = harness();
+        let variants = harness
+            .service
+            .stream_variants(&server.url("show/episode-12/master.m3u8"))
+            .await
+            .unwrap();
+        assert_eq!(variants.len(), 2);
+        assert_eq!(variants[1].height, Some(720));
+
+        harness.service.set_stream_max_height(Some(480)).unwrap();
+        assert_eq!(harness.service.stream_max_height(), Some(480));
     }
 }

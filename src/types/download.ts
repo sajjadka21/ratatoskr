@@ -168,3 +168,21 @@ export type UiPreferences = {
   theme: "dark" | "light" | "system";
   closeToTray: boolean;
 };
+
+/// A quality an HLS stream offers.
+export type StreamVariant = {
+  uri: string;
+  bandwidth: number | null;
+  width: number | null;
+  height: number | null;
+  /// Its sound is a separate track, which this version cannot join.
+  needsMuxing: boolean;
+};
+
+/// Engine behaviour: fresh links continue stopped downloads, gentle hosts,
+/// automatic stream quality.
+export type EngineSettings = {
+  autoAdoptLinks: boolean;
+  politeHosts: string;
+  streamMaxHeight: number | null;
+};

@@ -529,3 +529,32 @@ var(--bg-elevated);
   color: var(--text-muted);
   font-size: 11px;
 }
+
+.add-download-modal__stream {
+  margin-top: 9px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.add-download-modal__stream label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.add-download-modal__stream select {
+  height: 28px;
+  padding: 0 8px;
+  color: var(--text-primary);
+  background: var(--bg-app);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+
+.add-download-modal__stream-note {
+  color: var(--text-muted);
+}

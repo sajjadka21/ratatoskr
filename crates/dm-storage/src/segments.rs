@@ -68,6 +68,40 @@ impl Storage {
         Ok(())
     }
 
+    /// Hands one running segment back, keeping its progress, so another
+    /// connection can take it over.
+    pub fn release_download_segment(&self, download_id: &str, segment_index: u32) -> Result<()> {
+        let connection = self.connection()?;
+        connection.execute(
+            "UPDATE download_segments SET status = 'pending' WHERE download_id = ?1 AND segment_index = ?2 AND status = 'downloading';",
+            params![download_id, i64::from(segment_index)],
+        )?;
+        Ok(())
+    }
+
+    /// One segment as stored.
+    pub fn get_download_segment(
+        &self,
+        download_id: &str,
+        segment_index: u32,
+    ) -> Result<Option<DownloadSegment>> {
+        let connection = self.connection()?;
+        connection
+            .query_row(
+                r#"
+                SELECT download_id, segment_index, start_byte, end_byte,
+                       downloaded_bytes, temp_path, status
+                FROM download_segments
+                WHERE download_id = ?1 AND segment_index = ?2;
+                "#,
+                params![download_id, i64::from(segment_index)],
+                StoredSegmentRow::from_row,
+            )
+            .optional()?
+            .map(StoredSegmentRow::into_segment)
+            .transpose()
+    }
+
     pub fn claim_download_segment(&self, download_id: &str, segment_index: u32) -> Result<()> {
         let connection = self.connection()?;
         let changed = connection.execute(

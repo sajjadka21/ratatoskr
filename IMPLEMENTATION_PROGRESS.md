@@ -1143,3 +1143,91 @@ control calls an existing or new backend command.
   `windows-sys` 0.61 only.
 - The quota is checked when a download starts, not while it runs.
 - Domestic detection is by domain name, not by IP address.
+
+## Review follow-up - Step 5: Links, streams, mirrors, control
+
+### Expired links
+
+- A 401/403/404/410 on a download that had already transferred bytes, or on
+  a link carrying signature or expiry parameters (S3, Google Cloud,
+  CloudFront, nginx `secure_link`...), fails with the code `link_expired`
+  and a message saying how to go on. It is not retried.
+- Refreshing a link by hand now keeps the downloaded bytes
+  (`Storage::adopt_source_url`); on the next start the engine probes the new
+  link and continues only if the size and validators still match, otherwise
+  it starts over with a notice. The old behaviour discarded everything.
+- A fresh link added in the window or sent by the browser for a file whose
+  download stopped part-way continues that download instead of creating a
+  second copy (`adopt_fresh_link`): the new link is probed and must report
+  the same file name and size, and the same ETag when both have one; exactly
+  one stopped download must match. The request context and any browser
+  session move with it; the new row is removed. Setting `auto_adopt_links`
+  (default on).
+
+### Polite hosts and Retry-After
+
+- Hosts in `polite_hosts` get at most two connections and no splitting of
+  running ranges.
+- A `Retry-After` (seconds, capped at an hour) on 429/503 sets the next
+  automatic attempt at least that far away.
+
+### Mirrors
+
+- A download can have up to 16 other addresses (`download_mirrors`, schema
+  v11). Before a segmented transfer each mirror is probed and used only if it
+  serves ranges of a file with the same size and validator. Ranges take turns
+  across the trusted sources; a source that fails a range is dropped and the
+  range, with its durable progress, goes back to be finished elsewhere.
+- Details panel: add and remove mirrors.
+
+### HLS streams (unprotected)
+
+- Master and media playlists (quoted attributes, `EXT-X-MAP`,
+  `EXT-X-BYTERANGE`, media sequence). The best quality that carries its own
+  sound, at or below `stream_max_height`, is chosen; the Add dialog lists the
+  qualities of a `.m3u8` link to pick one by hand.
+- Parts are fetched four at a time and appended in order. `AES-128`
+  (clear-key) parts are decrypted with the explicit IV or the sequence
+  number. Transport streams are saved as `.ts`, fragmented MP4 as `.mp4`,
+  named after the show rather than `index.m3u8`.
+- Pause and restart continue from the parts already written (a small
+  `.stream` record next to the partial file).
+- Refused with a reason and not retried: DRM (SAMPLE-AES, any key format
+  other than `identity`, protected session keys) `protected_stream`; live
+  playlists `live_stream`; qualities with a separate sound track
+  `needs_muxing`; DASH `unsupported_stream`.
+
+### Command line and command palette
+
+- `rud` (`crates/dm-cli`): add, list, status, pause, resume, retry, cancel,
+  pause-all, queue start/stop. Reading commands open the database directly
+  (WAL); acting commands are passed to the application through its
+  single-instance launch arguments (`--control`, `--refresh`), which the
+  application carries out with the same rules as its buttons. Short ids are
+  accepted when unambiguous.
+- A local HTTP API was not added: it would be a new way in for any program or
+  web page on the computer, and needs an authentication design first.
+- Ctrl+K opens a command palette: every action, every page and every download
+  by name or host; English keywords also find Persian commands. Ctrl+, opens
+  Settings.
+
+### Verification
+
+- `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo check --workspace` - passed
+- `cargo test --workspace` - passed (285 Rust tests). New tests cover
+  expired-link detection, signed-link recognition, adoption and its refusal
+  for a different file, refresh keeping bytes, Retry-After, polite hosts,
+  mirrors sharing ranges, a broken mirror dropped mid-transfer, a mirror of
+  another file never used, the HLS parser (attributes, ranges, keys, DRM,
+  live), AES-128 decryption, a full HLS download with a master playlist and
+  an encrypted part, pausing and resuming a stream, refused stream kinds,
+  migration v11, the CLI commands, and the new launch switches.
+- `tsc --noEmit`, `npm test` (58 tests), `npm run build` - passed
+- Screens checked with a mocked backend (Persian dark).
+
+### Not verified
+
+- Real HLS sites, real mirrors, and the CLI talking to a running Windows
+  build.
+- DASH and streams whose sound is a separate track need FFmpeg; not done.

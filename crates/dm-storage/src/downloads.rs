@@ -532,6 +532,24 @@ impl Storage {
         )
     }
 
+    /// Points a task at a fresh link for the same file, keeping everything
+    /// already downloaded. Whether those bytes may be reused is decided when
+    /// the task next starts: the engine probes the new link and compares size
+    /// and validators with what was stored, and starts over when they differ.
+    pub fn adopt_source_url(&self, id: &str, source_url: &str) -> Result<()> {
+        self.transition(
+            id,
+            DownloadStatus::Created,
+            "source_url = ?2,
+             resolved_url = NULL,
+             retry_at = NULL,
+             error_code = NULL,
+             error_message = NULL,
+             queue_position = NULL",
+            params![id, source_url],
+        )
+    }
+
     /// Schedules an automatic retry. `attempts` is authoritative in the row so
     /// the budget survives a restart.
     pub fn mark_retrying(

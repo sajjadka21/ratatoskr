@@ -360,3 +360,55 @@
     box-shadow: var(--shadow-modal);
   }
 }
+
+.details__mirrors {
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  list-style: none;
+}
+
+.details__mirrors li {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.details__mirror-add {
+  margin-top: 8px;
+  display: flex;
+  gap: 6px;
+}
+
+.details__mirror-add input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 9px;
+  color: var(--text-primary);
+  background: var(--bg-app);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font: 12px ui-monospace, Consolas, monospace;
+}
+
+.details__mirror-add button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.details__mirror-add button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

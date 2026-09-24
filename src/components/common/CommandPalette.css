@@ -1,0 +1,117 @@
+.command-palette__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1800;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12vh 16px 16px;
+  background: var(--backdrop);
+  backdrop-filter: blur(6px);
+}
+
+.command-palette {
+  inline-size: min(620px, 100%);
+  overflow: hidden;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
+  animation: command-palette-in 120ms ease-out;
+}
+
+.command-palette__search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.command-palette__search input {
+  flex: 1;
+  min-width: 0;
+  height: 52px;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  outline: none;
+  font: inherit;
+  font-size: 15px;
+}
+
+.command-palette__search kbd {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
+  color: var(--text-muted);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.command-palette__list {
+  max-block-size: min(420px, 60vh);
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.command-palette__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.command-palette__item--active {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.command-palette__item--active svg {
+  color: var(--accent);
+}
+
+.command-palette__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.command-palette__hint {
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.command-palette__empty {
+  padding: 22px;
+  color: var(--text-muted);
+  text-align: center;
+  font-size: 13px;
+}
+
+@keyframes command-palette-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.command-palette__search input:focus,
+.command-palette__search input:focus-visible {
+  outline: none;
+}

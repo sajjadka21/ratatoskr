@@ -225,7 +225,7 @@ const en = {
   "tray.idle": "Rud — idle",
   "tray.active": "Rud — {speed} · {count} downloading",
 
-  "shortcuts.hint": "Ctrl+N add · Ctrl+F search · Space pause/resume · Del remove",
+  "shortcuts.hint": "Ctrl+K commands · Ctrl+N add · Ctrl+F search · Space pause/resume · Del remove",
 } as const;
 
 type CoreKey = keyof typeof en;
@@ -447,7 +447,7 @@ const coreFa: Record<CoreKey, string> = {
   "tray.idle": "رود — بیکار",
   "tray.active": "رود — {speed} · {count} در حال دریافت",
 
-  "shortcuts.hint": "Ctrl+N افزودن · Ctrl+F جستجو · Space توقف/ادامه · Del حذف",
+  "shortcuts.hint": "Ctrl+K فرمان‌ها · Ctrl+N افزودن · Ctrl+F جستجو · Space توقف/ادامه · Del حذف",
 };
 
 const enAll = { ...en, ...pageEn, ...engineEn };

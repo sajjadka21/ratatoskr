@@ -1,0 +1,18 @@
+[package]
+name = "dm-cli"
+version = "1.0.0"
+edition = "2024"
+description = "rud: the Download Manager from the command line"
+
+[[bin]]
+name = "rud"
+path = "src/main.rs"
+
+[dependencies]
+dm-common = { version = "0.1.0", path = "../dm-common" }
+dm-storage = { version = "0.1.0", path = "../dm-storage" }
+dm-system = { version = "0.1.0", path = "../dm-system" }
+serde_json = "1.0.145"
+
+[dev-dependencies]
+tempfile = "3.27.0"

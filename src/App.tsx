@@ -24,7 +24,9 @@ import { SettingsPage, type AddDownloadInputMode } from "./components/settings/S
 import { useQueues } from "./hooks/useQueues";
 import { useThroughputHistory } from "./hooks/useThroughputHistory";
 import { useI18n } from "./i18n/I18n";
-import { engineReasonText } from "./utils/notices";
+import { engineReasonText, noticeText } from "./utils/notices";
+import { CommandPalette } from "./components/common/CommandPalette";
+import type { PaletteCommand } from "./utils/commandSearch";
 import type { MessageKey } from "./i18n/messages";
 import type {
   CompletionActionEvent,
@@ -45,7 +47,7 @@ type ComponentHealth = { status: "ready" | "error"; message: string | null };
 type HealthCheckResponse = { core: ComponentHealth; storage: ComponentHealth; database: ComponentHealth };
 
 type DownloadTaskEvent = {
-  kind: "progress" | "updated";
+  kind: "progress" | "updated" | "removed";
   downloadId: string;
   downloadedBytes: number;
   totalBytes: number | null;
@@ -113,6 +115,14 @@ type AppProps = {
   onPreferencesChange: (preferences: UiPreferences) => void;
 };
 
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "";
+  }
+}
+
 function App({ preferences, onPreferencesChange }: AppProps) {
   const { t, fmt, language } = useI18n();
 
@@ -130,6 +140,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
 
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const lastSelectedIndex = useRef<number | null>(null);
 
@@ -322,8 +333,15 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   // start (a queue resumed at launch, a browser handoff) still update the list.
   const latestT = useRef(t);
   latestT.current = t;
+  const latestLanguage = useRef(language);
+  latestLanguage.current = language;
   useEffect(() => {
     const subscription = listen<DownloadTaskEvent>(DOWNLOAD_TASK_EVENT, ({ payload }) => {
+      if (payload.kind === "removed") {
+        clearLiveMetrics(payload.downloadId);
+        setDownloads((current) => current.filter((item) => item.id !== payload.downloadId));
+        return;
+      }
       if (payload.kind === "updated" && payload.download) {
         const status = payload.download.status.toLowerCase();
         const name = displayName(payload.download);
@@ -333,7 +351,16 @@ function App({ preferences, onPreferencesChange }: AppProps) {
           notify(
             "error",
             payload.download.errorMessage
-              ? latestT.current("toast.failedWithReason", { name, reason: payload.download.errorMessage })
+              ? latestT.current("toast.failedWithReason", {
+                  name,
+                  reason:
+                    noticeText(
+                      payload.download.errorCode,
+                      payload.download.errorMessage,
+                      latestT.current,
+                      latestLanguage.current,
+                    ) ?? payload.download.errorMessage,
+                })
               : latestT.current("toast.failed", { name }),
           );
         }
@@ -826,14 +853,79 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     [],
   );
 
+  // ---- command palette ----------------------------------------------------
+
+  const paletteCommands: PaletteCommand[] = (() => {
+    const commands: PaletteCommand[] = [
+      { id: "add", group: "action", label: t("nav.addLink"), hint: "Ctrl+N", keywords: "add new link url download افزودن", run: () => void openAddDownload() },
+      { id: "pause-all", group: "action", label: t("band.pauseAll"), keywords: "pause all stop توقف", run: () => void pauseAll() },
+      { id: "resume-all", group: "action", label: t("band.resumeAll"), keywords: "resume all continue start ادامه", run: () => void resumeAll() },
+      { id: "limit-none", group: "action", label: t("palette.limitNone"), keywords: "speed limit unlimited سرعت", run: () => void setSpeedLimit(null) },
+      { id: "limit-1m", group: "action", label: t("palette.limitTo", { rate: fmt.rate(1024 * 1024) ?? "" }), keywords: "speed limit 1 mb سرعت", run: () => void setSpeedLimit(1024 * 1024) },
+      { id: "limit-5m", group: "action", label: t("palette.limitTo", { rate: fmt.rate(5 * 1024 * 1024) ?? "" }), keywords: "speed limit 5 mb سرعت", run: () => void setSpeedLimit(5 * 1024 * 1024) },
+      {
+        id: "language",
+        group: "action",
+        label: preferences.language === "fa" ? "Switch to English" : "تغییر زبان به فارسی",
+        keywords: "language english persian farsi زبان",
+        run: () => onPreferencesChange({ ...preferences, language: preferences.language === "fa" ? "en" : "fa" }),
+      },
+      {
+        id: "theme",
+        group: "action",
+        label: t("palette.theme"),
+        keywords: "theme dark light mode تم تیره روشن",
+        run: () =>
+          onPreferencesChange({
+            ...preferences,
+            theme: preferences.theme === "dark" ? "light" : preferences.theme === "light" ? "system" : "dark",
+          }),
+      },
+      { id: "go-downloads", group: "go", label: t("nav.all"), keywords: "downloads list دانلودها", run: () => goToSection("all") },
+      { id: "go-active", group: "go", label: t("nav.active"), keywords: "active downloading", run: () => goToSection("active") },
+      { id: "go-failed", group: "go", label: t("nav.failed"), keywords: "failed errors attention", run: () => goToSection("failed") },
+      { id: "go-grabber", group: "go", label: t("nav.linkGrabber"), keywords: "link grabber collect", run: () => goToPage("linkgrabber") },
+      { id: "go-queues", group: "go", label: t("nav.queues"), keywords: "queues schedule", run: () => goToPage("queues") },
+      { id: "go-categories", group: "go", label: t("nav.categories"), keywords: "categories folders", run: () => goToPage("categories") },
+      { id: "go-settings", group: "go", label: t("nav.settings"), hint: "Ctrl+,", keywords: "settings preferences options proxy quota", run: () => goToPage("settings") },
+    ];
+    for (const item of downloads.slice(0, 500)) {
+      commands.push({
+        id: `download-${item.id}`,
+        group: "download",
+        label: displayName(item),
+        hint: t(`status.${item.status.toLowerCase()}` as MessageKey),
+        keywords: hostOf(item.sourceUrl),
+        run: () => {
+          goToSection("all");
+          setFocusedId(item.id);
+          setSelectedIds(new Set([item.id]));
+          setDetailsOpen(true);
+        },
+      });
+    }
+    return commands;
+  })();
+
   // ---- keyboard -----------------------------------------------------------
 
-  const overlayOpen = modalOpen || Boolean(contextMenu) || Boolean(removeCandidate) || Boolean(refreshCandidate);
+  const overlayOpen =
+    modalOpen || paletteOpen || Boolean(contextMenu) || Boolean(removeCandidate) || Boolean(refreshCandidate);
   const keyboard = useRef<(event: KeyboardEvent) => void>(() => {});
   keyboard.current = (event: KeyboardEvent) => {
     const control = event.ctrlKey || event.metaKey;
     const key = event.key.toLowerCase();
 
+    if (control && (key === "k" || (event.shiftKey && key === "p"))) {
+      event.preventDefault();
+      setPaletteOpen((open) => !open);
+      return;
+    }
+    if (control && key === ",") {
+      event.preventDefault();
+      goToPage("settings");
+      return;
+    }
     if (control && key === "n") {
       event.preventDefault();
       void openAddDownload();
@@ -1150,6 +1242,8 @@ function App({ preferences, onPreferencesChange }: AppProps) {
           }}
         />
       ) : null}
+
+      <CommandPalette open={paletteOpen} commands={paletteCommands} onClose={() => setPaletteOpen(false)} />
 
       <AddDownloadModal
         open={modalOpen}

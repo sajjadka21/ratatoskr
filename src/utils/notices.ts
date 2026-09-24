@@ -2,6 +2,17 @@ import type { Language, MessageKey } from "../i18n/messages";
 import { messages } from "../i18n/messages";
 import type { Translate } from "../i18n/I18n";
 
+const TRANSLATED_NOTICES = new Set([
+  "quota",
+  "interrupted",
+  "link_expired",
+  "link_refreshed",
+  "protected_stream",
+  "live_stream",
+  "needs_muxing",
+  "unsupported_stream",
+]);
+
 /**
  * The text shown for a task's notice. The engine writes its notices in
  * English; the ones the interface knows by code are shown translated.
@@ -13,7 +24,7 @@ export function noticeText(
   language: Language,
 ): string | null {
   if (!message) return null;
-  if (code === "quota" || code === "interrupted") return t(`notice.${code}`);
+  if (code && TRANSLATED_NOTICES.has(code)) return t(`notice.${code}` as MessageKey);
   // The restart message names the exact cause; Persian gets the general
   // explanation rather than an English sentence.
   if (code === "restarted" && language === "fa") return t("notice.restarted");

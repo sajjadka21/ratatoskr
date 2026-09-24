@@ -10,6 +10,7 @@ use thiserror::Error;
 mod categories;
 mod downloads;
 mod host_profiles;
+mod mirrors;
 mod queues;
 mod request_context;
 mod schedules;
@@ -19,7 +20,7 @@ mod traffic;
 
 pub use traffic::{TrafficScope, TrafficTotals};
 
-const LATEST_SCHEMA_VERSION: i32 = 10;
+const LATEST_SCHEMA_VERSION: i32 = 11;
 
 const MIGRATION_V1: &str = r#"
 BEGIN IMMEDIATE;
@@ -370,6 +371,26 @@ PRAGMA user_version = 10;
 COMMIT;
 "#;
 
+/// Other addresses of the same file. A segmented download spreads its
+/// ranges over every mirror that serves exactly the same bytes.
+const MIGRATION_V11: &str = r#"
+BEGIN IMMEDIATE;
+
+CREATE TABLE download_mirrors (
+    download_id TEXT NOT NULL
+        REFERENCES downloads(id) ON DELETE CASCADE,
+    url TEXT NOT NULL
+        CHECK (length(url) > 0),
+    position INTEGER NOT NULL
+        CHECK (position >= 0),
+    PRIMARY KEY (download_id, url)
+);
+
+PRAGMA user_version = 11;
+
+COMMIT;
+"#;
+
 #[derive(Debug, Error)]
 pub enum StorageError {
     #[error("failed to create database directory: {0}")]
@@ -435,6 +456,9 @@ pub enum StorageError {
 
     #[error("invalid download segment: {0}")]
     InvalidSegment(String),
+
+    #[error("invalid mirror: {0}")]
+    InvalidMirror(String),
 
     #[error("invalid traffic record: {0}")]
     InvalidTraffic(String),
@@ -604,6 +628,12 @@ fn run_migrations(connection: &Connection) -> Result<()> {
 
     if version == 9 {
         connection.execute_batch(MIGRATION_V10)?;
+    }
+
+    let version: i32 = connection.query_row("PRAGMA user_version;", [], |row| row.get(0))?;
+
+    if version == 10 {
+        connection.execute_batch(MIGRATION_V11)?;
     }
 
     Ok(())

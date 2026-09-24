@@ -22,6 +22,7 @@ import { formatHost } from "../../utils/format";
 import { availableActions } from "../../utils/taskActions";
 import { FileBadge } from "../common/FileBadge";
 import { Sparkline } from "../common/Sparkline";
+import { MirrorsEditor } from "./MirrorsEditor";
 
 import "./DownloadDetailsPanel.css";
 
@@ -288,6 +289,8 @@ export function DownloadDetailsPanel({
             </Property>
           ) : null}
         </dl>
+
+        {status !== "completed" ? <MirrorsEditor downloadId={current.id} onError={onError} /> : null}
 
         <section className="details__section">
           <h3>{t("details.activity")}</h3>

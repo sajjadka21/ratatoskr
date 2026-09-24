@@ -22,6 +22,8 @@ Main crates:
 - dm-storage - SQLite persistence
 - dm-ipc - IPC contracts
 - dm-native-host - Chrome/Edge/Firefox Native Messaging stdio host
+- dm-system - Windows power, sleep, sparse files, locating the app
+- dm-cli - `rud`, the command-line tool
 - src-tauri - desktop application host
 
 ## Development
@@ -64,6 +66,23 @@ place it next to the application, replace the extension ID in
 `native-messaging-host.json`, and register the host manifest in the browser's
 Native Messaging registry/directory. Takeover is disabled by default and all
 cookies, credentials, authorization headers, and access tokens are excluded.
+
+## Command line (`rud`)
+
+Build with `cargo build --release -p dm-cli` and place `rud.exe` next to the
+application. It uses the application's own database and hands every action to
+the running application (starting it when needed), so there is one engine and
+one record of every download:
+
+```text
+rud add https://example.com/file.iso          # add and start
+rud add --later https://example.com/big.zip   # add, start later
+rud list [--status downloading] [--json]
+rud status 3f2a9c1e
+rud pause|resume|cancel <id>...               # ids may be shortened
+rud pause-all
+rud queue start "Default Queue"
+```
 
 ## Principles
 

@@ -48,6 +48,11 @@ pub struct ServerBehaviour {
     /// Wait this long before answering at all, the way an overloaded server
     /// does.
     pub response_delay: Option<Duration>,
+    /// Sent as `Retry-After` with a status answer.
+    pub retry_after: Option<u64>,
+    /// Other bodies served by path (without the query), for tests that need
+    /// several resources from one server, such as a stream's playlists.
+    pub routes: Vec<(String, Vec<u8>)>,
 }
 
 impl Default for ServerBehaviour {
@@ -65,6 +70,8 @@ impl Default for ServerBehaviour {
             required_header: None,
             redirect_to: None,
             response_delay: None,
+            retry_after: None,
+            routes: Vec::new(),
         }
     }
 }
@@ -203,7 +210,27 @@ async fn serve(
         stats.requests_with_cookie.fetch_add(1, Ordering::SeqCst);
     }
 
-    let behaviour = behaviour.lock().unwrap().clone();
+    let mut behaviour = behaviour.lock().unwrap().clone();
+    let path = request
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .map(|target| target.split('?').next().unwrap_or(target).to_owned())
+        .unwrap_or_default();
+    let routed = behaviour
+        .routes
+        .iter()
+        .find(|(route, _)| *route == path)
+        .map(|(_, body)| body.clone());
+    let content_type = if path.ends_with(".m3u8") {
+        "application/vnd.apple.mpegurl"
+    } else {
+        "application/octet-stream"
+    };
+    if let Some(body) = routed {
+        behaviour.body = body;
+        behaviour.filename = None;
+    }
 
     if let Some(delay) = behaviour.response_delay {
         tokio::time::sleep(delay).await;
@@ -229,8 +256,13 @@ async fn serve(
     };
 
     if let Some((code, reason)) = status {
-        let response =
-            format!("HTTP/1.1 {code} {reason}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        let retry_after = behaviour
+            .retry_after
+            .map(|seconds| format!("Retry-After: {seconds}\r\n"))
+            .unwrap_or_default();
+        let response = format!(
+            "HTTP/1.1 {code} {reason}\r\n{retry_after}Content-Length: 0\r\nConnection: close\r\n\r\n"
+        );
         socket.write_all(response.as_bytes()).await?;
         return socket.shutdown().await;
     }
@@ -271,7 +303,7 @@ async fn serve(
     }
 
     headers.push_str(&format!("Content-Length: {}\r\n", slice.len()));
-    headers.push_str("Content-Type: application/octet-stream\r\n");
+    headers.push_str(&format!("Content-Type: {content_type}\r\n"));
 
     if behaviour.supports_range {
         headers.push_str("Accept-Ranges: bytes\r\n");

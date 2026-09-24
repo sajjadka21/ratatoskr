@@ -17,6 +17,8 @@ import {
 import { useI18n } from "../../i18n/I18n";
 import type { MessageKey } from "../../i18n/messages";
 
+import { StreamQualityPicker } from "./StreamQualityPicker";
+
 import "./AddDownloadModal.css";
 import type { DownloadQueue } from "../../types/download";
 
@@ -247,6 +249,10 @@ export function AddDownloadModal({
             <div className="add-download-modal__detection add-download-modal__detection--warning">
               {t("add.noneValid")}
             </div>
+          ) : null}
+
+          {linkCount === 1 ? (
+            <StreamQualityPicker url={url} onChoose={onUrlChange} />
           ) : null}
 
           <div className="add-download-modal__destination">

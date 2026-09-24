@@ -1,6 +1,6 @@
 use dm_common::{
-    CategoryRecord, CompletionAction, DownloadPriority, DownloadRecord, DownloadRule, QueueRecord,
-    QueueSchedule, QueueState, ScheduleKind,
+    CategoryRecord, CompletionAction, DownloadPriority, DownloadRecord, DownloadRule,
+    DownloadStatus, QueueRecord, QueueSchedule, QueueState, ScheduleKind,
 };
 use dm_core::{
     network::{NetworkSettings, ProxyMode},
@@ -21,6 +21,7 @@ use dm_ipc::{
     NetworkSettingsResponse, QueueResponse, QueueRunnerEventResponse, QueueScheduleResponse,
     TrafficSummaryResponse, TransferProgressResponse,
 };
+use dm_ipc::{EngineSettingsResponse, StreamVariantResponse};
 use dm_storage::Storage;
 use std::{
     collections::HashMap,
@@ -125,6 +126,11 @@ impl EventPublisher {
             DOWNLOAD_TASK_EVENT,
             DownloadTaskEvent::updated(download_list_item_response(record)),
         );
+    }
+
+    fn download_removed(&self, download_id: &str) {
+        self.forget(download_id);
+        self.emit(DOWNLOAD_TASK_EVENT, DownloadTaskEvent::removed(download_id));
     }
 
     /// Publishes whatever the row says now. Used when a transfer ended in a
@@ -431,36 +437,7 @@ fn start_queue(
     state: State<'_, AppState>,
     queue_id: String,
 ) -> Result<QueueResponse, String> {
-    let destination_directory = app
-        .path()
-        .download_dir()
-        .map_err(|error| error.to_string())?;
-    let queue = state
-        .queues
-        .start_queue(&queue_id)
-        .map_err(|error| error.to_string())?;
-
-    // A queue resumed at startup is already running; starting it again must
-    // reuse that runner rather than spawn a second one that immediately fails.
-    if state
-        .queues
-        .is_running(&queue_id)
-        .map_err(|error| error.to_string())?
-    {
-        info!(queue_id = %queue_id, "queue runner already active");
-        return Ok(queue_response(queue));
-    }
-
-    info!(queue_id = %queue_id, "starting queue runner");
-
-    spawn_queue_runner(
-        state.queues.clone(),
-        EventPublisher::new(app),
-        queue_id,
-        destination_directory,
-    );
-
-    Ok(queue_response(queue))
+    start_queue_now(&app, &state, &queue_id).map(queue_response)
 }
 
 #[tauri::command]
@@ -644,9 +621,26 @@ fn set_add_download_input_mode(state: State<'_, AppState>, mode: String) -> Resu
         .set_setting("add_download_input_mode", &mode)
         .map_err(|error| error.to_string())
 }
+/// Creates a download for a link typed or pasted in the window. A fresh
+/// link for a download that stopped part-way continues that download
+/// instead of starting a second copy.
 #[tauri::command]
-fn create_download_task(
+async fn create_download_task(
     state: State<'_, AppState>,
+    url: String,
+) -> Result<DownloadListItemResponse, String> {
+    let created = create_download_record(&state, url)?;
+    if state.downloads.may_adopt(&created.id) {
+        if let Ok(Some(adopted)) = state.downloads.adopt_fresh_link(&created.id).await {
+            info!(download_id = %adopted.id, "fresh link continues a stopped download");
+            return Ok(download_list_item_response(adopted));
+        }
+    }
+    Ok(created)
+}
+
+fn create_download_record(
+    state: &AppState,
     url: String,
 ) -> Result<DownloadListItemResponse, String> {
     let task = state
@@ -700,7 +694,7 @@ fn handoff_browser_download(
     .validate()
     .map_err(|error| error.to_string())?;
     let context = handoff.request_context();
-    let record = create_download_task(state.clone(), handoff.url)?;
+    let record = create_download_record(&state, handoff.url)?;
     state
         .storage
         .set_request_context(&record.id, &context)
@@ -762,23 +756,8 @@ fn resume_download(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<DownloadListItemResponse, String> {
-    let record = state
-        .storage
-        .get_download(&id)
-        .map_err(|error| error.to_string())?
-        .ok_or_else(|| format!("download not found: {id}"))?;
-
-    if let Some(queue_id) = record.queue_id.clone() {
-        info!(download_id = %id, "returning download to its queue");
-
-        return state
-            .queues
-            .enqueue_task(&id, &queue_id, Some(record.priority))
-            .map(download_list_item_response)
-            .map_err(|error| error.to_string());
-    }
-
-    start_download(app, state, id)
+    info!(download_id = %id, "resuming download");
+    resume_now(&app, &state, &id).map(download_list_item_response)
 }
 
 /// Ends a task and discards its partial transfer.
@@ -1023,6 +1002,86 @@ fn download_settings_response(
         prevent_sleep: automation::prevent_sleep_enabled(state),
         max_connections: u32::try_from(state.downloads.max_connections()).unwrap_or(u32::MAX),
     })
+}
+
+#[tauri::command]
+fn list_download_mirrors(state: State<'_, AppState>, id: String) -> Result<Vec<String>, String> {
+    state
+        .downloads
+        .mirrors(&id)
+        .map_err(|error| error.to_string())
+}
+
+/// Replaces a download's other addresses. They are checked against the file
+/// when the download next runs; a mirror of a different file is never used.
+#[tauri::command]
+fn set_download_mirrors(
+    state: State<'_, AppState>,
+    id: String,
+    urls: Vec<String>,
+) -> Result<Vec<String>, String> {
+    state
+        .downloads
+        .set_mirrors(&id, &urls)
+        .map_err(|error| error.to_string())
+}
+
+/// The qualities an HLS link offers, for choosing before downloading.
+#[tauri::command]
+async fn list_stream_variants(
+    state: State<'_, AppState>,
+    url: String,
+) -> Result<Vec<StreamVariantResponse>, String> {
+    let variants = state
+        .downloads
+        .stream_variants(&url)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(variants
+        .into_iter()
+        .map(|variant| StreamVariantResponse {
+            needs_muxing: variant.audio_group.is_some(),
+            uri: variant.uri,
+            bandwidth: variant.bandwidth,
+            width: variant.width,
+            height: variant.height,
+        })
+        .collect())
+}
+
+fn engine_settings_response(state: &AppState) -> EngineSettingsResponse {
+    EngineSettingsResponse {
+        auto_adopt_links: state.downloads.auto_adopt_links(),
+        polite_hosts: state.downloads.polite_hosts().join("\n"),
+        stream_max_height: state.downloads.stream_max_height(),
+    }
+}
+
+#[tauri::command]
+fn get_engine_settings(state: State<'_, AppState>) -> EngineSettingsResponse {
+    engine_settings_response(&state)
+}
+
+#[tauri::command]
+fn set_engine_settings(
+    state: State<'_, AppState>,
+    settings: EngineSettingsResponse,
+) -> Result<EngineSettingsResponse, String> {
+    state
+        .downloads
+        .set_auto_adopt_links(settings.auto_adopt_links)
+        .and_then(|()| {
+            state
+                .downloads
+                .set_polite_hosts(&parse_host_list(&settings.polite_hosts))
+        })
+        .and_then(|()| {
+            state
+                .downloads
+                .set_stream_max_height(settings.stream_max_height)
+        })
+        .map_err(|error| error.to_string())?;
+    Ok(engine_settings_response(&state))
 }
 
 /// Most connections one download may open (1 to 64).
@@ -1277,7 +1336,7 @@ fn completed_file(state: &AppState, id: &str) -> Result<std::path::PathBuf, Stri
         .get_download(id)
         .map_err(|error| error.to_string())?
         .ok_or_else(|| format!("download not found: {id}"))?;
-    if record.status != dm_common::DownloadStatus::Completed {
+    if record.status != DownloadStatus::Completed {
         return Err("the download has not finished yet".to_owned());
     }
     let path = record
@@ -1489,8 +1548,15 @@ enum LaunchRequest {
     BrowserUrl(String),
     /// Links from a text selection, for review in LinkGrabber.
     GrabLinks(Vec<String>),
+    /// Rows another program changed (the command-line tool); show them.
+    Refresh(Vec<String>),
+    /// An action from the command-line tool: pause, resume, cancel with
+    /// task ids; pause-all; queue-start or queue-stop with a queue id.
+    Control(String, Vec<String>),
 }
 
+const ARG_REFRESH: &str = "--refresh";
+const ARG_CONTROL: &str = "--control";
 const ARG_HANDOFF_TASK: &str = "--handoff-task";
 const ARG_BROWSER_HANDOFF: &str = "--browser-handoff";
 const ARG_GRAB_LINKS: &str = "--grab-links";
@@ -1518,6 +1584,13 @@ fn parse_launch_args(args: &[String]) -> Vec<LaunchRequest> {
                 }
             }
             ARG_GRAB_LINKS if !values.is_empty() => requests.push(LaunchRequest::GrabLinks(values)),
+            ARG_REFRESH if !values.is_empty() => requests.push(LaunchRequest::Refresh(values)),
+            ARG_CONTROL => {
+                let mut values = values.into_iter();
+                if let Some(action) = values.next() {
+                    requests.push(LaunchRequest::Control(action, values.collect()));
+                }
+            }
             _ => {}
         }
 
@@ -1574,6 +1647,17 @@ fn handle_launch_requests(app: &AppHandle, requests: Vec<LaunchRequest>) {
                 // still loading collects them with `take_pending_link_intake`.
                 let _ = app.emit(LINK_INTAKE_EVENT, ());
             }
+            LaunchRequest::Refresh(ids) => {
+                let publisher = EventPublisher::new(app.clone());
+                for id in ids {
+                    publisher.download_refreshed(&id);
+                }
+            }
+            LaunchRequest::Control(action, ids) => {
+                if let Err(error) = run_control(app, &state, &action, &ids) {
+                    warn!(action = %action, error = %error, "command-line request failed");
+                }
+            }
         }
     }
 
@@ -1582,7 +1666,173 @@ fn handle_launch_requests(app: &AppHandle, requests: Vec<LaunchRequest>) {
 
 /// Starts or queues a task that arrived from the browser, applying the same
 /// intake rules as Add Download, and shows the row immediately.
+/// Carries out a request from the command-line tool with the same rules as
+/// the buttons in the window.
+fn run_control(
+    app: &AppHandle,
+    state: &AppState,
+    action: &str,
+    ids: &[String],
+) -> Result<(), String> {
+    let publisher = EventPublisher::new(app.clone());
+    match action {
+        "pause" => {
+            for id in ids {
+                match state.downloads.pause_task(id) {
+                    Ok(record) => publisher.download_updated(record),
+                    Err(error) => warn!(download_id = %id, error = %error, "pause refused"),
+                }
+            }
+        }
+        "resume" => {
+            for id in ids {
+                match resume_now(app, state, id) {
+                    Ok(record) => publisher.download_updated(record),
+                    Err(error) => warn!(download_id = %id, error = %error, "resume refused"),
+                }
+            }
+        }
+        "cancel" => {
+            for id in ids {
+                let id = id.clone();
+                let downloads = state.downloads.clone();
+                let publisher = publisher.clone();
+                tauri::async_runtime::spawn(async move {
+                    match downloads.cancel_task(&id).await {
+                        Ok(record) => publisher.download_updated(record),
+                        Err(error) => warn!(download_id = %id, error = %error, "cancel refused"),
+                    }
+                });
+            }
+        }
+        "pause-all" => {
+            for id in state.downloads.pause_all() {
+                publisher.download_refreshed(&id);
+            }
+        }
+        "queue-start" => {
+            for id in ids {
+                start_queue_now(app, state, id)?;
+            }
+        }
+        "queue-stop" => {
+            for id in ids {
+                state
+                    .queues
+                    .stop_queue(id)
+                    .map_err(|error| error.to_string())?;
+            }
+        }
+        other => return Err(format!("unknown action {other:?}")),
+    }
+    Ok(())
+}
+
+/// Continues a task: back to its queue if it has one, otherwise now.
+fn resume_now(app: &AppHandle, state: &AppState, id: &str) -> Result<DownloadRecord, String> {
+    let record = state
+        .storage
+        .get_download(id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("download not found: {id}"))?;
+
+    if let Some(queue_id) = record.queue_id.clone() {
+        return state
+            .queues
+            .enqueue_task(id, &queue_id, Some(record.priority))
+            .map_err(|error| error.to_string());
+    }
+
+    let destination_directory = app
+        .path()
+        .download_dir()
+        .map_err(|error| error.to_string())?;
+    let claimed = state
+        .downloads
+        .claim_task(id)
+        .map_err(|error| error.to_string())?;
+    spawn_transfer(
+        state.downloads.clone(),
+        EventPublisher::new(app.clone()),
+        id.to_owned(),
+        destination_directory,
+    );
+    Ok(claimed)
+}
+
+fn start_queue_now(
+    app: &AppHandle,
+    state: &AppState,
+    queue_id: &str,
+) -> Result<QueueRecord, String> {
+    let destination_directory = app
+        .path()
+        .download_dir()
+        .map_err(|error| error.to_string())?;
+    let queue = state
+        .queues
+        .start_queue(queue_id)
+        .map_err(|error| error.to_string())?;
+
+    // A queue resumed at startup is already running; starting it again must
+    // reuse that runner rather than spawn a second one that immediately fails.
+    if state
+        .queues
+        .is_running(queue_id)
+        .map_err(|error| error.to_string())?
+    {
+        info!(queue_id = %queue_id, "queue runner already active");
+        return Ok(queue);
+    }
+
+    info!(queue_id = %queue_id, "starting queue runner");
+    spawn_queue_runner(
+        state.queues.clone(),
+        EventPublisher::new(app.clone()),
+        queue_id.to_owned(),
+        destination_directory,
+    );
+    Ok(queue)
+}
+
+/// Starts a task the browser handed over. When it is a fresh link for a
+/// download that stopped part-way, that download continues instead (see
+/// `DownloadService::adopt_fresh_link`); the check needs a request to the
+/// server, so it runs in the background.
 fn start_handoff_task(app: &AppHandle, state: &AppState, task_id: &str) -> Result<(), String> {
+    if !state.downloads.may_adopt(task_id) {
+        return start_handoff_task_now(app, state, task_id);
+    }
+    let app = app.clone();
+    let task_id = task_id.to_owned();
+    tauri::async_runtime::spawn(async move {
+        let Some(state) = app.try_state::<AppState>() else {
+            return;
+        };
+        let target = match state.downloads.adopt_fresh_link(&task_id).await {
+            Ok(Some(adopted)) => {
+                info!(download_id = %adopted.id, "fresh link continues a stopped download");
+                EventPublisher::new(app.clone()).download_removed(&task_id);
+                adopted.id
+            }
+            _ => task_id,
+        };
+        let started = match state.storage.get_download(&target) {
+            Ok(Some(record))
+                if record.queue_id.is_some() && record.status == DownloadStatus::Created =>
+            {
+                resume_now(&app, &state, &target).map(|_| ())
+            }
+            _ => start_handoff_task_now(&app, &state, &target),
+        };
+        if let Err(error) = started {
+            warn!(download_id = %target, error = %error, "browser handoff could not start");
+        }
+    });
+    Ok(())
+}
+
+fn start_handoff_task_now(app: &AppHandle, state: &AppState, task_id: &str) -> Result<(), String> {
     let task = state
         .storage
         .get_download(task_id)
@@ -1898,6 +2148,11 @@ pub fn run() {
             set_default_download_directory,
             set_global_speed_limit,
             set_max_connections,
+            list_download_mirrors,
+            set_download_mirrors,
+            list_stream_variants,
+            get_engine_settings,
+            set_engine_settings,
             get_network_settings,
             set_network_settings,
             get_traffic_summary,
@@ -1951,6 +2206,27 @@ mod tests {
                 LaunchRequest::HandoffTasks(args(&["t1"])),
             ]
         );
+    }
+
+    #[test]
+    fn parses_the_command_line_tool_switches() {
+        assert_eq!(
+            parse_launch_args(&args(&["--control", "pause", "a", "b"])),
+            vec![LaunchRequest::Control(
+                "pause".to_owned(),
+                args(&["a", "b"])
+            )]
+        );
+        assert_eq!(
+            parse_launch_args(&args(&["--control", "pause-all"])),
+            vec![LaunchRequest::Control("pause-all".to_owned(), Vec::new())]
+        );
+        assert_eq!(
+            parse_launch_args(&args(&["--refresh", "t1"])),
+            vec![LaunchRequest::Refresh(args(&["t1"]))]
+        );
+        assert!(parse_launch_args(&args(&["--control"])).is_empty());
+        assert!(parse_launch_args(&args(&["--refresh"])).is_empty());
     }
 
     #[test]

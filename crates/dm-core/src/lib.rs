@@ -1,6 +1,7 @@
 pub mod adaptive;
 pub mod browser;
 pub mod control;
+pub mod hls;
 pub mod linkgrabber;
 pub mod media;
 pub mod network;
@@ -77,6 +78,12 @@ pub enum DownloadError {
 
     #[error("server returned HTTP status {status}")]
     HttpStatus { status: u16 },
+
+    #[error("{0}")]
+    Stream(#[from] hls::HlsError),
+
+    #[error("the server sent more than {limit} bytes for one part of a stream")]
+    TooLarge { limit: usize },
 }
 
 impl DownloadError {
@@ -109,6 +116,10 @@ impl DownloadError {
             }
             Self::HttpStatus { status } => {
                 format!("the download server returned HTTP status {status}")
+            }
+            Self::Stream(error) => error.to_string(),
+            Self::TooLarge { limit } => {
+                format!("the server sent more than {limit} bytes for one part of a stream")
             }
         }
     }
@@ -211,6 +222,10 @@ pub struct TransferOutcome {
 /// Sent when a task carries no browser User-Agent. Many CDNs refuse or
 /// throttle clients that do not look like a browser, so the default matches
 /// a current desktop browser and still names this application.
+/// Longest `Retry-After` honoured, so a hostile answer cannot park a
+/// download for days.
+const MAX_RETRY_AFTER_SECONDS: u64 = 3600;
+
 pub const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
      (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 DownloadManager/1.0";
 
@@ -225,6 +240,9 @@ pub struct Downloader {
     /// The browser session of one task, attached only to requests on the
     /// origin it was captured for. Held in memory, never persisted.
     session: Option<Arc<session::BrowserSession>>,
+    /// `Retry-After` answers seen per host, in seconds, until someone reads
+    /// them. Shared by every clone of this downloader.
+    retry_hints: Arc<std::sync::Mutex<std::collections::HashMap<String, u64>>>,
 }
 
 impl Downloader {
@@ -243,6 +261,7 @@ impl Downloader {
             user_agent: HeaderValue::from_static(DEFAULT_USER_AGENT),
             limiters: Vec::new(),
             session: None,
+            retry_hints: Arc::default(),
         })
     }
 
@@ -283,6 +302,7 @@ impl Downloader {
             user_agent: valid(&context.user_agent).unwrap_or_else(|| self.user_agent.clone()),
             limiters: self.limiters.clone(),
             session: self.session.clone(),
+            retry_hints: Arc::clone(&self.retry_hints),
         }
     }
 
@@ -291,6 +311,36 @@ impl Downloader {
         let mut downloader = self.clone();
         downloader.session = session;
         downloader
+    }
+
+    /// Remembers how long a server that answered 429 or 503 asked to be
+    /// left alone. Only the delay-in-seconds form is read; the date form is
+    /// rare for downloads and ignored.
+    fn remember_retry_after(&self, response: &reqwest::Response) {
+        if !matches!(response.status().as_u16(), 429 | 503) {
+            return;
+        }
+        let Some(seconds) = header_text(response.headers(), reqwest::header::RETRY_AFTER)
+            .and_then(|value| value.trim().parse::<u64>().ok())
+        else {
+            return;
+        };
+        if let (Some(host), Ok(mut hints)) = (response.url().host_str(), self.retry_hints.lock()) {
+            hints.insert(
+                host.to_ascii_lowercase(),
+                seconds.min(MAX_RETRY_AFTER_SECONDS),
+            );
+        }
+    }
+
+    /// The wait a server asked for, if it asked; reading it clears it.
+    pub fn take_retry_after(&self, url: &str) -> Option<Duration> {
+        let host = Url::parse(url).ok()?.host_str()?.to_ascii_lowercase();
+        self.retry_hints
+            .lock()
+            .ok()?
+            .remove(&host)
+            .map(Duration::from_secs)
     }
 
     fn request(&self, method: reqwest::Method, url: Url) -> RequestBuilder {
@@ -342,8 +392,9 @@ impl Downloader {
             .request(reqwest::Method::GET, url)
             .header(RANGE, "bytes=0-0")
             .send()
-            .await?
-            .error_for_status()?;
+            .await?;
+        self.remember_retry_after(&response);
+        let response = response.error_for_status()?;
 
         let final_url = response.url().clone();
         let status = response.status();
@@ -548,6 +599,7 @@ impl Downloader {
             .send()
             .await?;
 
+        self.remember_retry_after(&response);
         if response.status() != StatusCode::PARTIAL_CONTENT
             && (response.status().is_client_error() || response.status().is_server_error())
         {
@@ -667,6 +719,72 @@ impl Downloader {
         })
     }
 
+    /// Reads a whole small resource — a playlist, a key, one stream segment
+    /// — into memory, never more than `limit` bytes. `range` is
+    /// `(length, offset)`; a server that ignores it and sends the whole
+    /// resource is handled by cutting the range out.
+    pub async fn fetch_bytes(
+        &self,
+        url: &str,
+        range: Option<(u64, u64)>,
+        limit: usize,
+        control: &TaskControl,
+    ) -> Result<Vec<u8>> {
+        let url = validate_source_url(url)?;
+        let mut builder = self.request(reqwest::Method::GET, url);
+        if let Some((length, offset)) = range
+            && length > 0
+        {
+            builder = builder.header(RANGE, format!("bytes={offset}-{}", offset + length - 1));
+        }
+        let response = builder.send().await?;
+        self.remember_retry_after(&response);
+        if !response.status().is_success() {
+            return Err(DownloadError::HttpStatus {
+                status: response.status().as_u16(),
+            });
+        }
+        let whole_resource = response.status() != StatusCode::PARTIAL_CONTENT;
+
+        let mut response = response;
+        let mut data = Vec::new();
+        loop {
+            let chunk = tokio::select! {
+                biased;
+                reason = control.stopped() => return Err(DownloadError::Stopped(reason)),
+                chunk = response.chunk() => chunk?,
+            };
+            let Some(chunk) = chunk else {
+                break;
+            };
+            if data.len() + chunk.len()
+                > limit.saturating_add(range.map_or(0, |(_, offset)| offset as usize))
+            {
+                return Err(DownloadError::TooLarge { limit });
+            }
+            data.extend_from_slice(&chunk);
+            self.throttle(chunk.len(), control).await?;
+        }
+
+        if let Some((length, offset)) = range
+            && whole_resource
+        {
+            let start = usize::try_from(offset).unwrap_or(usize::MAX);
+            let end = start.saturating_add(usize::try_from(length).unwrap_or(usize::MAX));
+            if end > data.len() {
+                return Err(DownloadError::IncompleteTransfer {
+                    expected: end as u64,
+                    actual: data.len() as u64,
+                });
+            }
+            data = data[start..end].to_vec();
+        }
+        if data.len() > limit {
+            return Err(DownloadError::TooLarge { limit });
+        }
+        Ok(data)
+    }
+
     /// Publishes a shared partial file once every range in it is complete.
     pub async fn finalize_shared_file(
         &self,
@@ -694,6 +812,7 @@ impl Downloader {
         }
 
         let response = builder.send().await?;
+        self.remember_retry_after(&response);
 
         // The stored offset no longer fits the resource; start over rather
         // than failing a transfer that can simply begin again.

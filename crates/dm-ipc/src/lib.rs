@@ -47,6 +47,9 @@ pub struct AppInfoResponse {
 pub enum DownloadTaskEventKind {
     Progress,
     Updated,
+    /// The row no longer exists, such as a new link that was folded into
+    /// the stopped download it belonged to.
+    Removed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,6 +104,45 @@ impl DownloadTaskEvent {
             download: Some(download),
         }
     }
+
+    pub fn removed(download_id: impl Into<String>) -> Self {
+        Self {
+            kind: DownloadTaskEventKind::Removed,
+            download_id: download_id.into(),
+            downloaded_bytes: 0,
+            total_bytes: None,
+            bytes_per_second: None,
+            eta_seconds: None,
+            active_connections: None,
+            max_connections: None,
+            adaptive_reason: None,
+            status: "removed".to_owned(),
+            download: None,
+        }
+    }
+}
+
+/// A quality a stream offers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamVariantResponse {
+    pub uri: String,
+    pub bandwidth: Option<u64>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    /// True when the sound is a separate track this version cannot join.
+    pub needs_muxing: bool,
+}
+
+/// Engine behaviour settings added with the second engine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineSettingsResponse {
+    pub auto_adopt_links: bool,
+    /// One domain per line.
+    pub polite_hosts: String,
+    /// Highest stream quality picked automatically; `None` for the best.
+    pub stream_max_height: Option<u32>,
 }
 
 /// Serialized transfer measurements. Every field is measured by the engine;

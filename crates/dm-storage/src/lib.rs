@@ -8,6 +8,7 @@ use std::{
 use thiserror::Error;
 
 mod categories;
+mod checks;
 mod downloads;
 mod host_profiles;
 mod mirrors;
@@ -18,9 +19,10 @@ mod segments;
 mod settings;
 mod traffic;
 
+pub use checks::DownloadChecks;
 pub use traffic::{TrafficScope, TrafficTotals};
 
-const LATEST_SCHEMA_VERSION: i32 = 11;
+const LATEST_SCHEMA_VERSION: i32 = 12;
 
 const MIGRATION_V1: &str = r#"
 BEGIN IMMEDIATE;
@@ -391,6 +393,36 @@ PRAGMA user_version = 11;
 COMMIT;
 "#;
 
+/// What was checked or done after a download finished: its checksum, a
+/// virus scan, archive extraction and the user's command.
+const MIGRATION_V12: &str = r#"
+BEGIN IMMEDIATE;
+
+CREATE TABLE download_checks (
+    download_id TEXT PRIMARY KEY NOT NULL
+        REFERENCES downloads(id) ON DELETE CASCADE,
+    state TEXT NOT NULL DEFAULT 'idle'
+        CHECK (state IN ('idle', 'running', 'done')),
+    expected_checksum TEXT,
+    algorithm TEXT
+        CHECK (algorithm IS NULL OR algorithm IN ('md5', 'sha1', 'sha256')),
+    actual_checksum TEXT,
+    integrity TEXT
+        CHECK (integrity IS NULL OR integrity IN ('verified', 'mismatch', 'error')),
+    scan TEXT
+        CHECK (scan IS NULL OR scan IN ('clean', 'threat', 'unavailable')),
+    scan_detail TEXT,
+    extracted_to TEXT,
+    extract_error TEXT,
+    command_error TEXT,
+    updated_at INTEGER NOT NULL DEFAULT 0
+);
+
+PRAGMA user_version = 12;
+
+COMMIT;
+"#;
+
 #[derive(Debug, Error)]
 pub enum StorageError {
     #[error("failed to create database directory: {0}")]
@@ -634,6 +666,12 @@ fn run_migrations(connection: &Connection) -> Result<()> {
 
     if version == 10 {
         connection.execute_batch(MIGRATION_V11)?;
+    }
+
+    let version: i32 = connection.query_row("PRAGMA user_version;", [], |row| row.get(0))?;
+
+    if version == 11 {
+        connection.execute_batch(MIGRATION_V12)?;
     }
 
     Ok(())

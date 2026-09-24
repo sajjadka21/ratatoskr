@@ -164,6 +164,40 @@ pub struct FfmpegStatusResponse {
     pub version: Option<String>,
 }
 
+/// What happened after a download finished: checksum, virus scan,
+/// unpacking and the user's command.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadChecksResponse {
+    /// `idle`, `running` or `done`.
+    pub state: String,
+    pub expected_checksum: Option<String>,
+    /// `md5`, `sha1` or `sha256`.
+    pub algorithm: Option<String>,
+    pub actual_checksum: Option<String>,
+    /// `verified`, `mismatch` or `error`; `None` when nothing was compared.
+    pub integrity: Option<String>,
+    /// `clean`, `threat` or `unavailable`.
+    pub scan: Option<String>,
+    pub scan_detail: Option<String>,
+    pub extracted_to: Option<String>,
+    pub extract_error: Option<String>,
+    pub command_error: Option<String>,
+}
+
+/// After-download steps that run for every finished download.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PostProcessSettingsResponse {
+    pub hash_always: bool,
+    pub extract_zip: bool,
+    pub scan: bool,
+    /// Empty for none.
+    pub command: String,
+    /// Whether Windows Defender was found on this computer.
+    pub scan_available: bool,
+}
+
 /// Serialized transfer measurements. Every field is measured by the engine;
 /// nothing here is interpolated by the presentation layer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

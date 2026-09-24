@@ -31,6 +31,7 @@ import {
 } from "../../utils/settingsFormat";
 
 import { Switch } from "./Switch";
+import { AfterDownloadSection } from "./AfterDownloadSection";
 import { EngineSection, NetworkSection, TrafficSection } from "./NetworkSections";
 
 import "./SettingsPage.css";
@@ -112,6 +113,8 @@ export function SettingsPage({
       />
 
       <EngineSection onError={onError} onSaved={onSaved} />
+
+      <AfterDownloadSection onError={onError} onSaved={onSaved} />
 
       <TrafficSection onError={onError} onSaved={onSaved} />
 

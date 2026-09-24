@@ -1289,3 +1289,57 @@ control calls an existing or new backend command.
 
 - FFmpeg on Windows (the creation flag that hides its console was
   type-checked only), and real DASH/HLS sites.
+
+## Review follow-up - Step 7: After the download
+
+### Integrity
+
+- `dm-core::postprocess`: MD5, SHA-1 and SHA-256 (`md-5`, `sha1`, `sha2`).
+  An expected checksum is accepted as the bare value, `sha256:<hex>` or a
+  `<hex>  <filename>` line from a checksum file; the algorithm follows
+  from the length, and case does not matter.
+- Schema v12 adds `download_checks` (one row per download, removed with
+  it): expected and actual checksum, result (`verified`, `mismatch`,
+  `error`), scan result, unpacked folder and the errors of each step.
+- The expected checksum can be set before or after the download. Set
+  before, it is checked when the download finishes; set after, it is
+  checked straight away. A mismatch keeps the file and leaves the notice
+  `integrity_failed` on the completed row, which stays visible in the list.
+
+### Other steps (Settings > After the download, all off by default)
+
+- Always compute SHA-256, to compare by hand.
+- Windows Defender scan (`MpCmdRun.exe -Scan -ScanType 3 -DisableRemediation`):
+  the scan only reports; nothing is deleted or quarantined by the
+  application. A threat leaves the notice `threat_found`, and the file is
+  then neither unpacked nor handed to the user's command. The switch is
+  disabled when Defender is not found.
+- Unpack ZIP archives (`zip`, deflate only) into a new folder beside the
+  archive (`name`, `name (2)`, …); the archive is kept. Members that would
+  escape the folder and links are skipped; encrypted archives, more than
+  100,000 entries, more than 64 GB or a compression ratio over 200× are
+  refused.
+- A user command with `{file}`, `{folder}` and `{name}`, split with double
+  quotes and run directly (never through a shell) with a 10-minute limit
+  and no console window.
+- The steps run in the background after the download is marked completed,
+  so finishing is never delayed; the window hears
+  `download-checks-changed` and refreshes the row and the details panel.
+  They can be run again from the details panel. The unpacked folder is
+  opened from the engine's own record, never from a path the window sends.
+
+### Verification
+
+- `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo check --workspace` - passed
+- `cargo test --workspace` - passed (315 Rust tests): checksum parsing and
+  hashing against known values, zip-slip, links, zip bombs and encrypted
+  archives, command splitting, storage round trip, and service tests that
+  download a file and verify it, flag a wrong checksum set afterwards,
+  unpack a downloaded archive and run a command on the finished file.
+- `tsc --noEmit`, `npm test` (62 tests), `npm run build` - passed
+
+### Not verified
+
+- The Windows Defender scan and the command's hidden console on Windows
+  (type-checked only; the test environment is Linux).

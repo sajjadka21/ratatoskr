@@ -118,6 +118,12 @@ pub enum DownloadServiceError {
     #[error("{0}")]
     Network(#[from] crate::network::NetworkError),
 
+    #[error("that is not a checksum: paste the MD5, SHA-1 or SHA-256 value")]
+    InvalidChecksum,
+
+    #[error("the command is empty or has an unclosed quote")]
+    InvalidCommand,
+
     #[error("the international traffic quota is used up ({used} of {quota} bytes)")]
     QuotaReached { used: u64, quota: u64 },
 }
@@ -144,6 +150,24 @@ pub const SETTING_STREAM_MAX_HEIGHT: &str = "stream_max_height";
 const STREAM_CONNECTIONS: usize = 4;
 /// Where FFmpeg is; empty to look for it automatically.
 pub const SETTING_FFMPEG_PATH: &str = "ffmpeg_path";
+/// After-download steps, all off by default.
+pub const SETTING_POST_HASH: &str = "post_hash_always";
+pub const SETTING_POST_EXTRACT: &str = "post_extract_zip";
+pub const SETTING_POST_SCAN: &str = "post_defender_scan";
+pub const SETTING_POST_COMMAND: &str = "post_command";
+pub const INTEGRITY_FAILED_CODE: &str = "integrity_failed";
+pub const THREAT_FOUND_CODE: &str = "threat_found";
+
+/// Which after-download steps run for every finished download.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PostProcessSettings {
+    pub hash_always: bool,
+    pub extract_zip: bool,
+    pub scan: bool,
+    /// A command such as `"C:\Tools\check.exe" {file}`; `None` for none.
+    pub command: Option<String>,
+}
+
 /// Rewrap transport streams (`.ts`) as MP4 when FFmpeg is available.
 pub const SETTING_STREAM_PREFER_MP4: &str = "stream_prefer_mp4";
 
@@ -196,6 +220,8 @@ pub struct DownloadService {
     /// Browser sessions handed over for tasks, by task id. Memory only: a
     /// session is never written to storage and is forgotten on restart.
     sessions: Arc<Mutex<HashMap<String, Arc<BrowserSession>>>>,
+    /// Ids of downloads whose after-download steps just changed.
+    post_events: tokio::sync::broadcast::Sender<String>,
 }
 
 impl DownloadService {
@@ -230,6 +256,7 @@ impl DownloadService {
             global_limiter: Arc::new(RateLimiter::new(global_limit)),
             overrides: Arc::new(Mutex::new(HashMap::new())),
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            post_events: tokio::sync::broadcast::channel(64).0,
         })
     }
 
@@ -924,7 +951,17 @@ impl DownloadService {
         match result {
             Ok(outcome) => {
                 self.storage.mark_finalizing(download_id)?;
-                self.complete_download(download_id, outcome)
+                let record = self.complete_download(download_id, outcome)?;
+                // Checks after the download run in the background, so the
+                // download is reported finished as soon as it is.
+                if self.post_process_wanted(download_id) {
+                    let service = self.clone();
+                    let id = download_id.to_owned();
+                    tokio::spawn(async move {
+                        let _ = service.post_process(&id).await;
+                    });
+                }
+                Ok(record)
             }
             Err(DownloadServiceError::Download(DownloadError::Stopped(reason))) => {
                 self.persist_stop(download_id, reason).await
@@ -1625,6 +1662,254 @@ impl DownloadService {
             if enabled { "true" } else { "false" },
         )?;
         Ok(())
+    }
+
+    // -- after the download -------------------------------------------------
+
+    /// Hears the id of every download whose after-download steps changed.
+    pub fn subscribe_post_process(&self) -> tokio::sync::broadcast::Receiver<String> {
+        self.post_events.subscribe()
+    }
+
+    pub fn post_process_settings(&self) -> PostProcessSettings {
+        let flag =
+            |key: &str| self.storage.get_setting(key).ok().flatten().as_deref() == Some("true");
+        PostProcessSettings {
+            hash_always: flag(SETTING_POST_HASH),
+            extract_zip: flag(SETTING_POST_EXTRACT),
+            scan: flag(SETTING_POST_SCAN),
+            command: self
+                .storage
+                .get_setting(SETTING_POST_COMMAND)
+                .ok()
+                .flatten()
+                .filter(|value| !value.trim().is_empty()),
+        }
+    }
+
+    pub fn set_post_process_settings(&self, settings: &PostProcessSettings) -> Result<()> {
+        let flag = |value: bool| if value { "true" } else { "false" };
+        if let Some(command) = &settings.command
+            && crate::postprocess::build_command(command, Path::new("file")).is_none()
+        {
+            return Err(DownloadServiceError::InvalidCommand);
+        }
+        self.storage
+            .set_setting(SETTING_POST_HASH, flag(settings.hash_always))?;
+        self.storage
+            .set_setting(SETTING_POST_EXTRACT, flag(settings.extract_zip))?;
+        self.storage
+            .set_setting(SETTING_POST_SCAN, flag(settings.scan))?;
+        self.storage.set_setting(
+            SETTING_POST_COMMAND,
+            settings.command.as_deref().map(str::trim).unwrap_or(""),
+        )?;
+        Ok(())
+    }
+
+    pub fn download_checks(&self, download_id: &str) -> Result<Option<dm_storage::DownloadChecks>> {
+        Ok(self.storage.get_download_checks(download_id)?)
+    }
+
+    /// Stores the checksum a download should have (`None` forgets it). A
+    /// finished download is checked straight away.
+    pub async fn set_expected_checksum(
+        &self,
+        download_id: &str,
+        text: Option<&str>,
+    ) -> Result<dm_storage::DownloadChecks> {
+        let parsed = match text.map(str::trim).filter(|text| !text.is_empty()) {
+            Some(text) => Some(
+                crate::postprocess::parse_expected_checksum(text)
+                    .ok_or(DownloadServiceError::InvalidChecksum)?,
+            ),
+            None => None,
+        };
+        let task = self.get_task(download_id)?;
+        let mut checks = self
+            .storage
+            .get_download_checks(download_id)?
+            .unwrap_or_else(|| dm_storage::DownloadChecks {
+                download_id: download_id.to_owned(),
+                ..dm_storage::DownloadChecks::default()
+            });
+        checks.expected_checksum = parsed.as_ref().map(|(_, hex)| hex.clone());
+        checks.algorithm = parsed
+            .as_ref()
+            .map(|(algorithm, _)| algorithm.as_str().to_owned());
+        checks.integrity = None;
+        checks.actual_checksum = None;
+        checks.updated_at = unix_timestamp_seconds()?;
+        self.storage.save_download_checks(&checks)?;
+
+        if task.status == dm_common::DownloadStatus::Completed && parsed.is_some() {
+            return self.verify_checksum(download_id).await;
+        }
+        let _ = self.post_events.send(download_id.to_owned());
+        Ok(checks)
+    }
+
+    fn post_process_wanted(&self, download_id: &str) -> bool {
+        let settings = self.post_process_settings();
+        settings.hash_always
+            || settings.extract_zip
+            || settings.scan
+            || settings.command.is_some()
+            || self
+                .storage
+                .get_download_checks(download_id)
+                .ok()
+                .flatten()
+                .is_some_and(|checks| checks.expected_checksum.is_some())
+    }
+
+    /// Hashes the finished file and compares it with the expected
+    /// checksum, if there is one.
+    async fn verify_checksum(&self, download_id: &str) -> Result<dm_storage::DownloadChecks> {
+        let task = self.get_task(download_id)?;
+        let path = PathBuf::from(task.destination_path.clone().unwrap_or_default());
+        let mut checks = self
+            .storage
+            .get_download_checks(download_id)?
+            .unwrap_or_else(|| dm_storage::DownloadChecks {
+                download_id: download_id.to_owned(),
+                ..dm_storage::DownloadChecks::default()
+            });
+        let algorithm = checks
+            .algorithm
+            .as_deref()
+            .and_then(crate::postprocess::HashAlgorithm::parse)
+            .unwrap_or(crate::postprocess::HashAlgorithm::Sha256);
+
+        checks.state = "running".to_owned();
+        self.storage.save_download_checks(&checks)?;
+        let _ = self.post_events.send(download_id.to_owned());
+
+        let hashed =
+            tokio::task::spawn_blocking(move || crate::postprocess::hash_file(&path, algorithm))
+                .await
+                .map_err(|_| DownloadServiceError::ExecutionUnavailable)?;
+        match hashed {
+            Ok(actual) => {
+                checks.integrity = checks.expected_checksum.as_ref().map(|expected| {
+                    if *expected == actual {
+                        "verified"
+                    } else {
+                        "mismatch"
+                    }
+                    .to_owned()
+                });
+                checks.algorithm = Some(algorithm.as_str().to_owned());
+                checks.actual_checksum = Some(actual);
+            }
+            Err(_) => {
+                checks.integrity = Some("error".to_owned());
+                checks.actual_checksum = None;
+            }
+        }
+        checks.state = "done".to_owned();
+        checks.updated_at = unix_timestamp_seconds()?;
+        self.storage.save_download_checks(&checks)?;
+        if checks.integrity.as_deref() == Some("mismatch") {
+            self.storage.record_notice(
+                download_id,
+                INTEGRITY_FAILED_CODE,
+                "The file does not match its checksum: it may be damaged or not the file that was published.",
+            )?;
+        }
+        let _ = self.post_events.send(download_id.to_owned());
+        Ok(checks)
+    }
+
+    /// Runs every after-download step that is turned on, for a finished
+    /// download. Never deletes or runs the downloaded file.
+    pub async fn post_process(&self, download_id: &str) -> Result<dm_storage::DownloadChecks> {
+        let task = self.get_task(download_id)?;
+        if task.status != dm_common::DownloadStatus::Completed {
+            return Err(DownloadServiceError::NotRunning(download_id.to_owned()));
+        }
+        let path = PathBuf::from(task.destination_path.clone().unwrap_or_default());
+        let settings = self.post_process_settings();
+        let expected = self
+            .storage
+            .get_download_checks(download_id)?
+            .is_some_and(|checks| checks.expected_checksum.is_some());
+
+        let mut checks = if expected || settings.hash_always {
+            self.verify_checksum(download_id).await?
+        } else {
+            self.storage
+                .get_download_checks(download_id)?
+                .unwrap_or_else(|| dm_storage::DownloadChecks {
+                    download_id: download_id.to_owned(),
+                    ..dm_storage::DownloadChecks::default()
+                })
+        };
+        checks.state = "running".to_owned();
+        self.storage.save_download_checks(&checks)?;
+        let _ = self.post_events.send(download_id.to_owned());
+
+        if settings.scan {
+            match crate::postprocess::defender_path() {
+                Some(scanner) => match crate::postprocess::scan_file(&scanner, &path).await {
+                    crate::postprocess::ScanResult::Clean => {
+                        checks.scan = Some("clean".to_owned());
+                        checks.scan_detail = None;
+                    }
+                    crate::postprocess::ScanResult::ThreatFound => {
+                        checks.scan = Some("threat".to_owned());
+                        self.storage.record_notice(
+                            download_id,
+                            THREAT_FOUND_CODE,
+                            "Windows Defender found a threat in this file. Do not open it.",
+                        )?;
+                    }
+                    crate::postprocess::ScanResult::Unavailable(detail) => {
+                        checks.scan = Some("unavailable".to_owned());
+                        checks.scan_detail = Some(detail);
+                    }
+                },
+                None => {
+                    checks.scan = Some("unavailable".to_owned());
+                    checks.scan_detail = Some("Windows Defender was not found".to_owned());
+                }
+            }
+        }
+
+        // A file flagged by the scan is not unpacked.
+        if settings.extract_zip && checks.scan.as_deref() != Some("threat") {
+            let archive = path.clone();
+            if tokio::task::spawn_blocking(move || crate::postprocess::is_zip(&archive))
+                .await
+                .unwrap_or(false)
+            {
+                let archive = path.clone();
+                match tokio::task::spawn_blocking(move || crate::postprocess::extract_zip(&archive))
+                    .await
+                {
+                    Ok(Ok(report)) => {
+                        checks.extracted_to = Some(report.folder.to_string_lossy().into_owned());
+                        checks.extract_error = None;
+                    }
+                    Ok(Err(error)) => checks.extract_error = Some(error.to_string()),
+                    Err(_) => {
+                        checks.extract_error = Some("extraction stopped unexpectedly".to_owned())
+                    }
+                }
+            }
+        }
+
+        if let Some(command) = &settings.command
+            && checks.scan.as_deref() != Some("threat")
+        {
+            checks.command_error = crate::postprocess::run_command(command, &path).await.err();
+        }
+
+        checks.state = "done".to_owned();
+        checks.updated_at = unix_timestamp_seconds()?;
+        self.storage.save_download_checks(&checks)?;
+        let _ = self.post_events.send(download_id.to_owned());
+        Ok(checks)
     }
 
     /// Highest stream quality picked automatically; `None` for the best.
@@ -5135,5 +5420,210 @@ mod tests {
         );
         harness.service.set_ffmpeg_path(None).unwrap();
         assert_eq!(harness.service.ffmpeg_path_setting(), None);
+    }
+
+    fn sha256_hex(body: &[u8]) -> String {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("body");
+        std::fs::write(&path, body).unwrap();
+        crate::postprocess::hash_file(&path, crate::postprocess::HashAlgorithm::Sha256).unwrap()
+    }
+
+    /// Waits for the background after-download steps to finish.
+    async fn await_checks_done(storage: &Storage, id: &str) -> dm_storage::DownloadChecks {
+        for _ in 0..400 {
+            if let Some(checks) = storage.get_download_checks(id).unwrap()
+                && checks.state == "done"
+            {
+                return checks;
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+        panic!("after-download steps never finished");
+    }
+
+    #[tokio::test]
+    async fn a_download_is_verified_against_its_expected_checksum() {
+        let server = TestServer::start(ServerBehaviour::default()).await;
+        let harness = harness();
+        let created = harness
+            .service
+            .create_task(&server.url("file.bin"))
+            .unwrap();
+        let expected = sha256_hex(DEFAULT_BODY);
+        harness
+            .service
+            .set_expected_checksum(
+                &created.id,
+                Some(&format!("SHA256: {}", expected.to_uppercase())),
+            )
+            .await
+            .unwrap();
+
+        harness
+            .service
+            .start_task(&created.id, &harness.destination)
+            .await
+            .unwrap();
+
+        let checks = await_checks_done(&harness.storage, &created.id).await;
+        assert_eq!(checks.integrity.as_deref(), Some("verified"));
+        assert_eq!(checks.actual_checksum.as_deref(), Some(expected.as_str()));
+        assert_eq!(checks.algorithm.as_deref(), Some("sha256"));
+    }
+
+    #[tokio::test]
+    async fn a_wrong_checksum_leaves_a_notice_and_keeps_the_file() {
+        let server = TestServer::start(ServerBehaviour::default()).await;
+        let harness = harness();
+        let created = harness
+            .service
+            .create_task(&server.url("file.bin"))
+            .unwrap();
+        let record = harness
+            .service
+            .start_task(&created.id, &harness.destination)
+            .await
+            .unwrap();
+        let mut events = harness.service.subscribe_post_process();
+
+        // Set after the download finished: checked straight away.
+        let checks = harness
+            .service
+            .set_expected_checksum(&created.id, Some(&"0".repeat(32)))
+            .await
+            .unwrap();
+
+        assert_eq!(checks.integrity.as_deref(), Some("mismatch"));
+        assert_eq!(checks.algorithm.as_deref(), Some("md5"));
+        assert_eq!(events.recv().await.unwrap(), created.id);
+        let task = harness.storage.get_download(&created.id).unwrap().unwrap();
+        assert_eq!(task.status, DownloadStatus::Completed);
+        assert_eq!(task.error_code.as_deref(), Some(INTEGRITY_FAILED_CODE));
+        assert!(Path::new(record.destination_path.as_ref().unwrap()).exists());
+    }
+
+    #[tokio::test]
+    async fn a_checksum_that_is_not_one_is_refused() {
+        let harness = harness();
+        let created = harness
+            .service
+            .create_task("https://example.com/a.bin")
+            .unwrap();
+        assert!(matches!(
+            harness
+                .service
+                .set_expected_checksum(&created.id, Some("not a hash"))
+                .await,
+            Err(DownloadServiceError::InvalidChecksum)
+        ));
+        let cleared = harness
+            .service
+            .set_expected_checksum(&created.id, None)
+            .await
+            .unwrap();
+        assert_eq!(cleared.expected_checksum, None);
+    }
+
+    #[tokio::test]
+    async fn finished_archives_are_unpacked_when_turned_on() {
+        let scratch = tempdir().unwrap();
+        let archive = scratch.path().join("bundle.zip");
+        crate::postprocess::tests::zip_with(&archive, &[("docs/readme.txt", b"hello")]);
+        let server = TestServer::start(ServerBehaviour {
+            body: std::fs::read(&archive).unwrap(),
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+        harness
+            .service
+            .set_post_process_settings(&PostProcessSettings {
+                extract_zip: true,
+                ..PostProcessSettings::default()
+            })
+            .unwrap();
+        let created = harness
+            .service
+            .create_task(&server.url("bundle.zip"))
+            .unwrap();
+        let record = harness
+            .service
+            .start_task(&created.id, &harness.destination)
+            .await
+            .unwrap();
+
+        let checks = await_checks_done(&harness.storage, &created.id).await;
+        let folder = PathBuf::from(checks.extracted_to.expect("unpacked"));
+        assert_eq!(
+            std::fs::read(folder.join("docs").join("readme.txt")).unwrap(),
+            b"hello"
+        );
+        assert!(Path::new(record.destination_path.as_ref().unwrap()).exists());
+        assert_eq!(checks.integrity, None);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_users_command_runs_on_the_finished_file() {
+        let server = TestServer::start(ServerBehaviour::default()).await;
+        let harness = harness();
+        harness
+            .service
+            .set_post_process_settings(&PostProcessSettings {
+                hash_always: true,
+                command: Some("cp {file} {folder}/copy-of-{name}".to_owned()),
+                ..PostProcessSettings::default()
+            })
+            .unwrap();
+        let created = harness
+            .service
+            .create_task(&server.url("file.bin"))
+            .unwrap();
+        let record = harness
+            .service
+            .start_task(&created.id, &harness.destination)
+            .await
+            .unwrap();
+
+        let checks = await_checks_done(&harness.storage, &created.id).await;
+        assert_eq!(checks.command_error, None);
+        assert_eq!(checks.integrity, None);
+        assert_eq!(checks.actual_checksum, Some(sha256_hex(DEFAULT_BODY)));
+        let file = PathBuf::from(record.destination_path.unwrap());
+        let copy = file.parent().unwrap().join(format!(
+            "copy-of-{}",
+            file.file_name().unwrap().to_string_lossy()
+        ));
+        assert_eq!(std::fs::read(copy).unwrap(), DEFAULT_BODY);
+    }
+
+    #[test]
+    fn after_download_settings_round_trip_and_refuse_broken_commands() {
+        let harness = harness();
+        assert_eq!(
+            harness.service.post_process_settings(),
+            PostProcessSettings::default()
+        );
+        let settings = PostProcessSettings {
+            hash_always: true,
+            extract_zip: true,
+            scan: true,
+            command: Some("\"C:\\Tools\\check.exe\" {file}".to_owned()),
+        };
+        harness
+            .service
+            .set_post_process_settings(&settings)
+            .unwrap();
+        assert_eq!(harness.service.post_process_settings(), settings);
+        assert!(matches!(
+            harness
+                .service
+                .set_post_process_settings(&PostProcessSettings {
+                    command: Some("\"unclosed {file}".to_owned()),
+                    ..PostProcessSettings::default()
+                }),
+            Err(DownloadServiceError::InvalidCommand)
+        ));
     }
 }

@@ -195,3 +195,26 @@ export type FfmpegStatus = {
   foundPath: string | null;
   version: string | null;
 };
+
+/** What happened after a download finished. */
+export type DownloadChecks = {
+  state: "idle" | "running" | "done";
+  expectedChecksum: string | null;
+  algorithm: "md5" | "sha1" | "sha256" | null;
+  actualChecksum: string | null;
+  integrity: "verified" | "mismatch" | "error" | null;
+  scan: "clean" | "threat" | "unavailable" | null;
+  scanDetail: string | null;
+  extractedTo: string | null;
+  extractError: string | null;
+  commandError: string | null;
+};
+
+/** After-download steps for every finished download. */
+export type PostProcessSettings = {
+  hashAlways: boolean;
+  extractZip: boolean;
+  scan: boolean;
+  command: string;
+  scanAvailable: boolean;
+};

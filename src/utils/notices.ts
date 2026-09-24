@@ -12,7 +12,17 @@ const TRANSLATED_NOTICES = new Set([
   "needs_muxing",
   "unsupported_stream",
   "ffmpeg_failed",
+  "integrity_failed",
+  "threat_found",
 ]);
+
+/**
+ * Notices about a finished file that must stay visible: the file is
+ * damaged or dangerous even though the download itself completed.
+ */
+export function isAlarm(code: string | null): boolean {
+  return code === "integrity_failed" || code === "threat_found";
+}
 
 /**
  * The text shown for a task's notice. The engine writes its notices in

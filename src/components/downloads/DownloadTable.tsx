@@ -19,7 +19,7 @@ import {
 } from "react";
 
 import { useI18n } from "../../i18n/I18n";
-import { noticeText } from "../../utils/notices";
+import { isAlarm, noticeText } from "../../utils/notices";
 import type { MessageKey } from "../../i18n/messages";
 import type { DownloadListItem, TaskAction, TransferMetrics } from "../../types/download";
 import { displayName } from "../../utils/fileKind";
@@ -300,9 +300,9 @@ const DownloadTableRow = memo(function DownloadTableRow({
             </span>
           ) : null}
           {connections ? <span className="download-table__chip download-table__chip--accent num">{connections}</span> : null}
-          {notice && status !== "completed" ? (
+          {notice && (status !== "completed" || isAlarm(item.errorCode)) ? (
             <span
-              className={`download-table__message download-table__message--${status === "failed" ? "error" : "notice"}`}
+              className={`download-table__message download-table__message--${status === "failed" || isAlarm(item.errorCode) ? "error" : "notice"}`}
               title={notice}
             >
               {notice}

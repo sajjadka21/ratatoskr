@@ -290,8 +290,7 @@ pub fn defender_path() -> Option<PathBuf> {
         .map(|base| PathBuf::from(base).join("Microsoft\\Windows Defender\\Platform"))
         .and_then(|folder| std::fs::read_dir(folder).ok())
         .and_then(|entries| {
-            let mut versions: Vec<PathBuf> =
-                entries.flatten().map(|entry| entry.path()).collect();
+            let mut versions: Vec<PathBuf> = entries.flatten().map(|entry| entry.path()).collect();
             versions.sort();
             versions
                 .into_iter()
@@ -374,16 +373,16 @@ pub fn build_command(template: &str, file: &Path) -> Option<(OsString, Vec<OsStr
         while let Some(start) = rest.find('{') {
             output.push(&rest[..start]);
             let after = &rest[start..];
-            let (value, length): (Option<&std::ffi::OsStr>, usize) =
-                if after.starts_with("{file}") {
-                    (Some(file.as_os_str()), 6)
-                } else if after.starts_with("{folder}") {
-                    (Some(folder.as_os_str()), 8)
-                } else if after.starts_with("{name}") {
-                    (Some(name), 6)
-                } else {
-                    (None, 1)
-                };
+            let (value, length): (Option<&std::ffi::OsStr>, usize) = if after.starts_with("{file}")
+            {
+                (Some(file.as_os_str()), 6)
+            } else if after.starts_with("{folder}") {
+                (Some(folder.as_os_str()), 8)
+            } else if after.starts_with("{name}") {
+                (Some(name), 6)
+            } else {
+                (None, 1)
+            };
             match value {
                 Some(value) => output.push(value),
                 None => output.push("{"),
@@ -430,7 +429,7 @@ fn hide_window(command: &mut tokio::process::Command) {
 fn hide_window(_command: &mut tokio::process::Command) {}
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::io::Write;
     use tempfile::tempdir;

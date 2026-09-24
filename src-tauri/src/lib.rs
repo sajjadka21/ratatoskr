@@ -21,6 +21,7 @@ use dm_ipc::{
     NetworkSettingsResponse, QueueResponse, QueueRunnerEventResponse, QueueScheduleResponse,
     TrafficSummaryResponse, TransferProgressResponse,
 };
+use dm_ipc::{DownloadChecksResponse, PostProcessSettingsResponse};
 use dm_ipc::{EngineSettingsResponse, FfmpegStatusResponse, StreamVariantResponse};
 use dm_storage::Storage;
 use std::{
@@ -1093,6 +1094,106 @@ async fn set_ffmpeg_path(
     Ok(ffmpeg_status(&state).await)
 }
 
+/// Tells the window that a download's after-download results changed.
+const DOWNLOAD_CHECKS_EVENT: &str = "download-checks-changed";
+
+fn download_checks_response(checks: Option<dm_storage::DownloadChecks>) -> DownloadChecksResponse {
+    let Some(checks) = checks else {
+        return DownloadChecksResponse {
+            state: "idle".to_owned(),
+            ..DownloadChecksResponse::default()
+        };
+    };
+    DownloadChecksResponse {
+        state: checks.state,
+        expected_checksum: checks.expected_checksum,
+        algorithm: checks.algorithm,
+        actual_checksum: checks.actual_checksum,
+        integrity: checks.integrity,
+        scan: checks.scan,
+        scan_detail: checks.scan_detail,
+        extracted_to: checks.extracted_to,
+        extract_error: checks.extract_error,
+        command_error: checks.command_error,
+    }
+}
+
+#[tauri::command]
+fn get_download_checks(
+    state: State<'_, AppState>,
+    download_id: String,
+) -> Result<DownloadChecksResponse, String> {
+    state
+        .downloads
+        .download_checks(&download_id)
+        .map(download_checks_response)
+        .map_err(|error| error.to_string())
+}
+
+/// Stores the checksum the download should have; an empty value forgets
+/// it. A finished download is checked at once.
+#[tauri::command]
+async fn set_expected_checksum(
+    state: State<'_, AppState>,
+    download_id: String,
+    checksum: Option<String>,
+) -> Result<DownloadChecksResponse, String> {
+    state
+        .downloads
+        .set_expected_checksum(&download_id, checksum.as_deref())
+        .await
+        .map(|checks| download_checks_response(Some(checks)))
+        .map_err(|error| error.to_string())
+}
+
+/// Runs the after-download steps again for a finished download.
+#[tauri::command]
+async fn run_post_process(
+    state: State<'_, AppState>,
+    download_id: String,
+) -> Result<DownloadChecksResponse, String> {
+    state
+        .downloads
+        .post_process(&download_id)
+        .await
+        .map(|checks| download_checks_response(Some(checks)))
+        .map_err(|error| error.to_string())
+}
+
+fn post_process_settings_response(state: &AppState) -> PostProcessSettingsResponse {
+    let settings = state.downloads.post_process_settings();
+    PostProcessSettingsResponse {
+        hash_always: settings.hash_always,
+        extract_zip: settings.extract_zip,
+        scan: settings.scan,
+        command: settings.command.unwrap_or_default(),
+        scan_available: dm_core::postprocess::defender_path().is_some(),
+    }
+}
+
+#[tauri::command]
+fn get_post_process_settings(state: State<'_, AppState>) -> PostProcessSettingsResponse {
+    post_process_settings_response(&state)
+}
+
+#[tauri::command]
+fn set_post_process_settings(
+    state: State<'_, AppState>,
+    settings: PostProcessSettingsResponse,
+) -> Result<PostProcessSettingsResponse, String> {
+    let command = settings.command.trim();
+    state
+        .downloads
+        .set_post_process_settings(&dm_core::service::PostProcessSettings {
+            hash_always: settings.hash_always,
+            extract_zip: settings.extract_zip,
+            scan: settings.scan,
+            command: (!command.is_empty()).then(|| command.to_owned()),
+        })
+        .map_err(|error| error.to_string())?;
+    Ok(post_process_settings_response(&state))
+}
+
 #[tauri::command]
 fn get_engine_settings(state: State<'_, AppState>) -> EngineSettingsResponse {
     engine_settings_response(&state)
@@ -1411,6 +1512,27 @@ fn reveal_download_file(
     let path = completed_file(&state, &id)?;
     app.opener()
         .reveal_item_in_dir(path)
+        .map_err(|error| error.to_string())
+}
+
+/// Opens the folder an archive was unpacked into. The path comes from the
+/// engine's own record, never from the window.
+#[tauri::command]
+fn open_extracted_folder(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    let folder = state
+        .downloads
+        .download_checks(&id)
+        .map_err(|error| error.to_string())?
+        .and_then(|checks| checks.extracted_to)
+        .map(std::path::PathBuf::from)
+        .filter(|folder| folder.is_dir())
+        .ok_or_else(|| "the unpacked folder was moved or deleted".to_owned())?;
+    app.opener()
+        .open_path(folder.to_string_lossy(), None::<&str>)
         .map_err(|error| error.to_string())
 }
 
@@ -2132,6 +2254,24 @@ pub fn run() {
                 destination_directory.clone(),
             ));
 
+            // After-download results arrive from the engine in the
+            // background; the row (for notices) and the details panel follow.
+            let mut post_events = downloads.subscribe_post_process();
+            let checks_publisher = publisher.clone();
+            let checks_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    match post_events.recv().await {
+                        Ok(id) => {
+                            checks_publisher.download_refreshed(&id);
+                            let _ = checks_app.emit(DOWNLOAD_CHECKS_EVENT, id);
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                }
+            });
+
             info!("application state initialized");
 
             Ok(())
@@ -2195,6 +2335,11 @@ pub fn run() {
             get_engine_settings,
             get_ffmpeg_status,
             set_ffmpeg_path,
+            get_download_checks,
+            set_expected_checksum,
+            run_post_process,
+            get_post_process_settings,
+            set_post_process_settings,
             set_engine_settings,
             get_network_settings,
             set_network_settings,
@@ -2206,6 +2351,7 @@ pub fn run() {
             delete_download_rule,
             cancel_completion_action,
             open_download_file,
+            open_extracted_folder,
             reveal_download_file,
             pause_all_downloads,
             get_ui_preferences,

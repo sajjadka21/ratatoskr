@@ -34,4 +34,4 @@ tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
 dm-system = { version = "0.1.0", path = "../crates/dm-system" }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
-tokio = { version = "1.53.1", features = ["time"] }
+tokio = { version = "1.53.1", features = ["sync", "time"] }

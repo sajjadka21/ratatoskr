@@ -921,3 +921,23 @@
   margin: 0;
   color: var(--text-secondary);
 }
+
+.settings-page__ffmpeg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-inline-size: 420px;
+  color: var(--warning);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.settings-page__ffmpeg--found {
+  color: var(--success);
+}
+
+.settings-page__button-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

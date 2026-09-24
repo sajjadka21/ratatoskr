@@ -23,7 +23,7 @@ pub enum HlsError {
     #[error("this is a live stream; only complete (video-on-demand) streams can be downloaded")]
     Live,
     #[error(
-        "every quality of this stream keeps its sound in a separate track, which needs FFmpeg to join; that is not supported yet"
+        "this stream keeps its sound in a separate track; FFmpeg is needed to join it (set its location in Settings)"
     )]
     NeedsMuxing,
     #[error("the playlist lists no playable streams")]
@@ -44,6 +44,8 @@ pub struct Variant {
     pub height: Option<u32>,
     /// Set when the sound is a separate rendition that would need muxing.
     pub audio_group: Option<String>,
+    /// The playlist of that separate sound, when there is one.
+    pub audio_uri: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -123,6 +125,39 @@ pub fn parse_playlist(base: &Url, text: &str) -> Result<Playlist, HlsError> {
 }
 
 fn parse_master(base: &Url, lines: &[&str]) -> Result<Vec<Variant>, HlsError> {
+    // Separate sound tracks by group: the default one with an address first.
+    let mut audio_by_group: Vec<(String, bool, Option<String>)> = Vec::new();
+    for line in lines {
+        if let Some(attributes) = line.strip_prefix("#EXT-X-MEDIA:") {
+            let attributes = parse_attributes(attributes);
+            if !attribute(&attributes, "TYPE")
+                .is_some_and(|kind| kind.eq_ignore_ascii_case("AUDIO"))
+            {
+                continue;
+            }
+            let Some(group) = attribute(&attributes, "GROUP-ID") else {
+                continue;
+            };
+            let default = attribute(&attributes, "DEFAULT")
+                .is_some_and(|value| value.eq_ignore_ascii_case("YES"));
+            let uri = attribute(&attributes, "URI")
+                .map(|uri| {
+                    base.join(&uri)
+                        .map(|url| url.to_string())
+                        .map_err(|_| HlsError::Malformed("bad audio address".to_owned()))
+                })
+                .transpose()?;
+            audio_by_group.push((group, default, uri));
+        }
+    }
+    let audio_for = |group: &str| -> Option<String> {
+        let in_group = || audio_by_group.iter().filter(|(name, _, _)| name == group);
+        in_group()
+            .find(|(_, default, uri)| *default && uri.is_some())
+            .or_else(|| in_group().find(|(_, _, uri)| uri.is_some()))
+            .and_then(|(_, _, uri)| uri.clone())
+    };
+
     let mut variants = Vec::new();
     let mut pending: Option<Vec<(String, String)>> = None;
     for line in lines {
@@ -146,12 +181,16 @@ fn parse_master(base: &Url, lines: &[&str]) -> Result<Vec<Variant>, HlsError> {
                     Some((width.parse().ok(), height.parse().ok()))
                 })
                 .unwrap_or((None, None));
+            // A group whose renditions have no address carries its sound
+            // inside the variant itself: nothing to join.
+            let audio_uri = value("AUDIO").and_then(|group| audio_for(&group));
             variants.push(Variant {
                 uri: uri.to_string(),
                 bandwidth: value("BANDWIDTH").and_then(|value| value.parse().ok()),
                 width,
                 height,
-                audio_group: value("AUDIO"),
+                audio_group: audio_uri.as_ref().and(value("AUDIO")),
+                audio_uri,
             });
         }
     }
@@ -256,11 +295,16 @@ fn parse_media(base: &Url, lines: &[&str]) -> Result<MediaPlaylist, HlsError> {
 }
 
 /// The quality to download: the highest resolution (then bandwidth) at or
-/// below `max_height`, among streams that carry their own sound.
-pub fn choose_variant(variants: &[Variant], max_height: Option<u32>) -> Result<&Variant, HlsError> {
+/// below `max_height`. Without FFmpeg (`can_join` false) only streams that
+/// carry their own sound qualify.
+pub fn choose_variant(
+    variants: &[Variant],
+    max_height: Option<u32>,
+    can_join: bool,
+) -> Result<&Variant, HlsError> {
     let muxed: Vec<&Variant> = variants
         .iter()
-        .filter(|variant| variant.audio_group.is_none())
+        .filter(|variant| can_join || variant.audio_uri.is_none())
         .collect();
     if muxed.is_empty() {
         return Err(HlsError::NeedsMuxing);
@@ -386,6 +430,8 @@ pub struct ResolvedStream {
     pub media_url: String,
     pub playlist: MediaPlaylist,
     pub variant: Option<Variant>,
+    /// The separate sound track, when the chosen quality has one.
+    pub audio: Option<(String, MediaPlaylist)>,
 }
 
 /// Fetches `url` and, when it is a master playlist, the best quality at or
@@ -394,6 +440,7 @@ pub async fn resolve_stream(
     downloader: &crate::Downloader,
     url: &str,
     max_height: Option<u32>,
+    can_join: bool,
     control: &crate::control::TaskControl,
 ) -> crate::Result<ResolvedStream> {
     let first = fetch_playlist(downloader, url, control).await?;
@@ -402,21 +449,36 @@ pub async fn resolve_stream(
             media_url: url.to_owned(),
             playlist,
             variant: None,
+            audio: None,
         }),
         Playlist::Master(variants) => {
-            let variant = choose_variant(&variants, max_height)?.clone();
-            match fetch_playlist(downloader, &variant.uri, control).await? {
-                Playlist::Media(playlist) => Ok(ResolvedStream {
-                    media_url: variant.uri.clone(),
-                    playlist,
-                    variant: Some(variant),
-                }),
-                Playlist::Master(_) => Err(HlsError::Malformed(
-                    "a quality points at another list of qualities".to_owned(),
-                )
-                .into()),
-            }
+            let variant = choose_variant(&variants, max_height, can_join)?.clone();
+            let (media_url, playlist) = fetch_media(downloader, &variant.uri, control).await?;
+            let audio = match variant.audio_uri.clone() {
+                Some(audio_url) => Some(fetch_media(downloader, &audio_url, control).await?),
+                None => None,
+            };
+            Ok(ResolvedStream {
+                media_url,
+                playlist,
+                variant: Some(variant),
+                audio,
+            })
         }
+    }
+}
+
+async fn fetch_media(
+    downloader: &crate::Downloader,
+    url: &str,
+    control: &crate::control::TaskControl,
+) -> crate::Result<(String, MediaPlaylist)> {
+    match fetch_playlist(downloader, url, control).await? {
+        Playlist::Media(playlist) => Ok((url.to_owned(), playlist)),
+        Playlist::Master(_) => Err(HlsError::Malformed(
+            "a quality points at another list of qualities".to_owned(),
+        )
+        .into()),
     }
 }
 
@@ -435,6 +497,7 @@ pub async fn list_variants(
             width: None,
             height: None,
             audio_group: None,
+            audio_uri: None,
         }]),
     }
 }
@@ -522,27 +585,56 @@ mod tests {
             variants[1].uri,
             "https://cdn.example.com/show/ep1/720/index.m3u8"
         );
-        assert_eq!(choose_variant(&variants, None).unwrap().height, Some(720));
         assert_eq!(
-            choose_variant(&variants, Some(480)).unwrap().height,
+            choose_variant(&variants, None, false).unwrap().height,
+            Some(720)
+        );
+        assert_eq!(
+            choose_variant(&variants, Some(480), false).unwrap().height,
             Some(360)
         );
         assert_eq!(
-            choose_variant(&variants, Some(144)).unwrap().height,
+            choose_variant(&variants, Some(144), false).unwrap().height,
             Some(360)
         );
     }
 
     #[test]
-    fn qualities_with_a_separate_sound_track_are_not_chosen() {
+    fn a_separate_sound_track_is_found_and_needs_ffmpeg() {
         let text = "#EXTM3U\n\
-            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"en\",URI=\"audio.m3u8\"\n\
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"fa\",URI=\"fa.m3u8\"\n\
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"en\",DEFAULT=YES,URI=\"en.m3u8\"\n\
             #EXT-X-STREAM-INF:BANDWIDTH=2400000,RESOLUTION=1280x720,AUDIO=\"aud\"\n\
             720.m3u8\n";
         let Playlist::Master(variants) = parse_playlist(&base(), text).unwrap() else {
             panic!("expected a master playlist");
         };
-        assert_eq!(choose_variant(&variants, None), Err(HlsError::NeedsMuxing));
+        assert_eq!(
+            variants[0].audio_uri.as_deref(),
+            Some("https://cdn.example.com/show/ep1/en.m3u8"),
+            "the default rendition is preferred"
+        );
+        assert_eq!(
+            choose_variant(&variants, None, false),
+            Err(HlsError::NeedsMuxing)
+        );
+        assert_eq!(
+            choose_variant(&variants, None, true).unwrap().height,
+            Some(720)
+        );
+    }
+
+    #[test]
+    fn a_sound_group_without_addresses_is_already_in_the_picture() {
+        let text = "#EXTM3U\n\
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"main\",DEFAULT=YES\n\
+            #EXT-X-STREAM-INF:BANDWIDTH=2400000,RESOLUTION=1280x720,AUDIO=\"aud\"\n\
+            720.m3u8\n";
+        let Playlist::Master(variants) = parse_playlist(&base(), text).unwrap() else {
+            panic!("expected a master playlist");
+        };
+        assert_eq!(variants[0].audio_uri, None);
+        assert!(choose_variant(&variants, None, false).is_ok());
     }
 
     #[test]

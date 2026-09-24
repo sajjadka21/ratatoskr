@@ -5,10 +5,19 @@ import type { StreamVariant } from "../types/download";
 export function isStreamLink(url: string): boolean {
   try {
     const parsed = new URL(url.trim());
-    return /^https?:$/.test(parsed.protocol) && /\.m3u8$/i.test(parsed.pathname);
+    return /^https?:$/.test(parsed.protocol) && /\.(m3u8|mpd)$/i.test(parsed.pathname);
   } catch {
     return false;
   }
+}
+
+/**
+ * The link with a chosen quality attached. The engine reads it from the
+ * fragment, which is never sent to the server.
+ */
+export function withQuality(url: string, height: number): string {
+  const base = url.trim().split("#")[0];
+  return `${base}#rud-quality=${height}`;
 }
 
 /** `1080p`, with Persian digits in Persian and no thousands separator. */

@@ -185,4 +185,13 @@ export type EngineSettings = {
   autoAdoptLinks: boolean;
   politeHosts: string;
   streamMaxHeight: number | null;
+  /// Rewrap .ts streams as .mp4 when FFmpeg is available.
+  streamPreferMp4: boolean;
+};
+
+/// Where FFmpeg is, as far as the engine can tell.
+export type FfmpegStatus = {
+  configuredPath: string | null;
+  foundPath: string | null;
+  version: string | null;
 };

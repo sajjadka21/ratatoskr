@@ -143,6 +143,25 @@ pub struct EngineSettingsResponse {
     pub polite_hosts: String,
     /// Highest stream quality picked automatically; `None` for the best.
     pub stream_max_height: Option<u32>,
+    /// Rewrap transport streams as MP4 when FFmpeg is there.
+    #[serde(default = "default_true")]
+    pub stream_prefer_mp4: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Where FFmpeg is and what it is, for Settings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FfmpegStatusResponse {
+    /// The path chosen in Settings, if any.
+    pub configured_path: Option<String>,
+    /// The program that will be used, if one was found.
+    pub found_path: Option<String>,
+    /// First line of `ffmpeg -version`.
+    pub version: Option<String>,
 }
 
 /// Serialized transfer measurements. Every field is measured by the engine;

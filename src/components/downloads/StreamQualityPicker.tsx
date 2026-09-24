@@ -3,25 +3,28 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import { useI18n } from "../../i18n/I18n";
-import type { StreamVariant } from "../../types/download";
-import { isStreamLink, variantLabel } from "../../utils/streams";
+import type { FfmpegStatus, StreamVariant } from "../../types/download";
+import { isStreamLink, variantLabel, withQuality } from "../../utils/streams";
 
 /**
- * Shown under the link when it is an HLS playlist: lists the qualities it
- * offers and swaps the link for the chosen one. Qualities whose sound is a
- * separate track are shown but cannot be picked.
+ * Shown under the link when it is an HLS or DASH stream: lists the
+ * qualities it offers and names the chosen one in the link. Qualities
+ * whose sound is a separate track need FFmpeg; without it they are shown
+ * but cannot be picked.
  */
 export function StreamQualityPicker({
   url,
   onChoose,
 }: {
   url: string;
-  onChoose: (variantUrl: string) => void;
+  onChoose: (nextUrl: string) => void;
 }) {
   const { t, fmt } = useI18n();
   const [variants, setVariants] = useState<StreamVariant[] | null>(null);
+  const [canJoin, setCanJoin] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const stream = isStreamLink(url);
+  const address = url.trim().split("#")[0];
 
   useEffect(() => {
     setVariants(null);
@@ -29,9 +32,14 @@ export function StreamQualityPicker({
     if (!stream) return;
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      invoke<StreamVariant[]>("list_stream_variants", { url: url.trim() })
-        .then((found) => {
-          if (!cancelled) setVariants(found);
+      Promise.all([
+        invoke<StreamVariant[]>("list_stream_variants", { url: address }),
+        invoke<FfmpegStatus>("get_ffmpeg_status").catch(() => null),
+      ])
+        .then(([found, ffmpeg]) => {
+          if (cancelled) return;
+          setVariants(found);
+          setCanJoin(Boolean(ffmpeg?.foundPath));
         })
         .catch((reason: unknown) => {
           if (!cancelled) setFailed(String(reason));
@@ -41,7 +49,7 @@ export function StreamQualityPicker({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [stream, url]);
+  }, [stream, address]);
 
   if (!stream) return null;
 
@@ -60,16 +68,21 @@ export function StreamQualityPicker({
           <select
             value=""
             onChange={(event) => {
-              if (event.target.value) onChoose(event.target.value);
+              const chosen = variants[Number(event.target.value)];
+              if (!chosen) return;
+              onChoose(chosen.height ? withQuality(address, chosen.height) : chosen.uri);
             }}
           >
             <option value="">{t("stream.best")}</option>
-            {variants.map((variant) => (
-              <option key={variant.uri} value={variant.uri} disabled={variant.needsMuxing}>
-                {variantLabel(variant, fmt)}
-                {variant.needsMuxing ? ` — ${t("stream.needsMuxing")}` : ""}
-              </option>
-            ))}
+            {variants.map((variant, index) => {
+              const blocked = variant.needsMuxing && !canJoin;
+              return (
+                <option key={`${variant.uri}-${index}`} value={index} disabled={blocked}>
+                  {variantLabel(variant, fmt)}
+                  {blocked ? ` — ${t("stream.needsMuxing")}` : ""}
+                </option>
+              );
+            })}
           </select>
         </label>
       )}

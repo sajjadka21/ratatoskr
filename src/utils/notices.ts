@@ -11,6 +11,7 @@ const TRANSLATED_NOTICES = new Set([
   "live_stream",
   "needs_muxing",
   "unsupported_stream",
+  "ffmpeg_failed",
 ]);
 
 /**

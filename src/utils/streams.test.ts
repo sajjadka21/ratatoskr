@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createFormatter } from "../i18n/format";
-import { heightLabel, isStreamLink, variantLabel } from "./streams";
+import { heightLabel, isStreamLink, variantLabel, withQuality } from "./streams";
 
 describe("streams", () => {
   it("recognises playlist links only by their path", () => {
@@ -9,7 +9,13 @@ describe("streams", () => {
     expect(isStreamLink("https://cdn.example.com/show/master.M3U8?token=a")).toBe(true);
     expect(isStreamLink("https://cdn.example.com/video.mp4?format=m3u8")).toBe(false);
     expect(isStreamLink("ftp://example.com/a.m3u8")).toBe(false);
+    expect(isStreamLink("https://cdn.example.com/movie/manifest.mpd")).toBe(true);
     expect(isStreamLink("not a link")).toBe(false);
+  });
+
+  it("names the chosen quality in the fragment only", () => {
+    expect(withQuality("https://x.test/m.m3u8?t=1", 720)).toBe("https://x.test/m.m3u8?t=1#rud-quality=720");
+    expect(withQuality("https://x.test/m.mpd#rud-quality=1080", 480)).toBe("https://x.test/m.mpd#rud-quality=480");
   });
 
   it("writes heights without a thousands separator", () => {

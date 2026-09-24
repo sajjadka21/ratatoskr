@@ -1,6 +1,8 @@
 pub mod adaptive;
 pub mod browser;
 pub mod control;
+pub mod dash;
+pub mod ffmpeg;
 pub mod hls;
 pub mod linkgrabber;
 pub mod media;
@@ -84,6 +86,9 @@ pub enum DownloadError {
 
     #[error("the server sent more than {limit} bytes for one part of a stream")]
     TooLarge { limit: usize },
+
+    #[error("{0}")]
+    Ffmpeg(String),
 }
 
 impl DownloadError {
@@ -118,6 +123,7 @@ impl DownloadError {
                 format!("the download server returned HTTP status {status}")
             }
             Self::Stream(error) => error.to_string(),
+            Self::Ffmpeg(message) => message.clone(),
             Self::TooLarge { limit } => {
                 format!("the server sent more than {limit} bytes for one part of a stream")
             }

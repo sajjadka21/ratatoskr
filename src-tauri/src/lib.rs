@@ -21,7 +21,7 @@ use dm_ipc::{
     NetworkSettingsResponse, QueueResponse, QueueRunnerEventResponse, QueueScheduleResponse,
     TrafficSummaryResponse, TransferProgressResponse,
 };
-use dm_ipc::{EngineSettingsResponse, StreamVariantResponse};
+use dm_ipc::{EngineSettingsResponse, FfmpegStatusResponse, StreamVariantResponse};
 use dm_storage::Storage;
 use std::{
     collections::HashMap,
@@ -1054,7 +1054,43 @@ fn engine_settings_response(state: &AppState) -> EngineSettingsResponse {
         auto_adopt_links: state.downloads.auto_adopt_links(),
         polite_hosts: state.downloads.polite_hosts().join("\n"),
         stream_max_height: state.downloads.stream_max_height(),
+        stream_prefer_mp4: state.downloads.stream_prefer_mp4(),
     }
+}
+
+async fn ffmpeg_status(state: &AppState) -> FfmpegStatusResponse {
+    let found = state.downloads.ffmpeg();
+    let version = match &found {
+        Some(ffmpeg) => ffmpeg.version().await,
+        None => None,
+    };
+    FfmpegStatusResponse {
+        configured_path: state.downloads.ffmpeg_path_setting(),
+        found_path: found.map(|ffmpeg| ffmpeg.path().to_string_lossy().into_owned()),
+        version,
+    }
+}
+
+#[tauri::command]
+async fn get_ffmpeg_status(state: State<'_, AppState>) -> Result<FfmpegStatusResponse, String> {
+    Ok(ffmpeg_status(&state).await)
+}
+
+/// `None` looks for FFmpeg next to the application and on `PATH`.
+#[tauri::command]
+async fn set_ffmpeg_path(
+    state: State<'_, AppState>,
+    path: Option<String>,
+) -> Result<FfmpegStatusResponse, String> {
+    let path = path
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from);
+    state
+        .downloads
+        .set_ffmpeg_path(path.as_deref())
+        .map_err(|_| "choose the FFmpeg program itself (ffmpeg.exe)".to_owned())?;
+    Ok(ffmpeg_status(&state).await)
 }
 
 #[tauri::command]
@@ -1079,6 +1115,11 @@ fn set_engine_settings(
             state
                 .downloads
                 .set_stream_max_height(settings.stream_max_height)
+        })
+        .and_then(|()| {
+            state
+                .downloads
+                .set_stream_prefer_mp4(settings.stream_prefer_mp4)
         })
         .map_err(|error| error.to_string())?;
     Ok(engine_settings_response(&state))
@@ -2152,6 +2193,8 @@ pub fn run() {
             set_download_mirrors,
             list_stream_variants,
             get_engine_settings,
+            get_ffmpeg_status,
+            set_ffmpeg_path,
             set_engine_settings,
             get_network_settings,
             set_network_settings,

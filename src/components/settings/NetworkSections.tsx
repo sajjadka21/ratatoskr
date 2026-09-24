@@ -1,10 +1,11 @@
-import { CalendarClock, Globe2, Save } from "lucide-react";
+import { CalendarClock, Clapperboard, FolderOpen, Globe2, RotateCcw, Save } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import { useI18n } from "../../i18n/I18n";
 import type { MessageKey } from "../../i18n/messages";
-import type { EngineSettings, NetworkSettings, ProxyMode, TrafficSummary } from "../../types/download";
+import type { EngineSettings, FfmpegStatus, NetworkSettings, ProxyMode, TrafficSummary } from "../../types/download";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   bytesToGigabytes,
   domesticShare,
@@ -432,9 +433,15 @@ export function EngineSection({
 }) {
   const { t, fmt } = useI18n();
   const [draft, setDraft] = useState<EngineSettings | null>(null);
+  const [ffmpeg, setFfmpeg] = useState<FfmpegStatus | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    invoke<FfmpegStatus>("get_ffmpeg_status")
+      .then((status) => {
+        if (!cancelled) setFfmpeg(status);
+      })
+      .catch(() => {});
     invoke<EngineSettings>("get_engine_settings")
       .then((settings) => {
         if (!cancelled) setDraft(settings);
@@ -448,6 +455,30 @@ export function EngineSection({
   }, [onError]);
 
   if (!draft) return null;
+
+  async function chooseFfmpeg() {
+    try {
+      const selected = await openDialog({
+        multiple: false,
+        directory: false,
+        title: t("ffmpeg.pickTitle"),
+        filters: [{ name: "FFmpeg", extensions: ["exe", "*"] }],
+      });
+      if (typeof selected === "string") {
+        setFfmpeg(await invoke<FfmpegStatus>("set_ffmpeg_path", { path: selected }));
+      }
+    } catch (reason) {
+      onError(String(reason));
+    }
+  }
+
+  async function automaticFfmpeg() {
+    try {
+      setFfmpeg(await invoke<FfmpegStatus>("set_ffmpeg_path", { path: null }));
+    } catch (reason) {
+      onError(String(reason));
+    }
+  }
 
   async function save(next: EngineSettings, announce: boolean) {
     try {
@@ -504,6 +535,50 @@ export function EngineSection({
                 </button>
               ))}
             </div>
+          </div>
+        </div>
+
+        <div className="settings-page__row">
+          <div className="settings-page__row-label">
+            <strong>{t("ffmpeg.title")}</strong>
+            <span>{t("ffmpeg.hint")}</span>
+          </div>
+          <div className="settings-page__row-control settings-page__row-control--stack">
+            <span className={`settings-page__ffmpeg ${ffmpeg?.foundPath ? "settings-page__ffmpeg--found" : ""}`}>
+              <Clapperboard size={14} aria-hidden="true" />
+              {ffmpeg?.foundPath ? (
+                <span title={ffmpeg.version ?? undefined}>
+                  {t("ffmpeg.found")} <bdi className="ltr">{ffmpeg.foundPath}</bdi>
+                </span>
+              ) : (
+                <span>{t("ffmpeg.missing")}</span>
+              )}
+            </span>
+            <span className="settings-page__button-row">
+              <button type="button" className="settings-page__secondary-button" onClick={() => void chooseFfmpeg()}>
+                <FolderOpen size={14} /> {t("ffmpeg.choose")}
+              </button>
+              {ffmpeg?.configuredPath ? (
+                <button type="button" className="settings-page__secondary-button" onClick={() => void automaticFfmpeg()}>
+                  <RotateCcw size={14} /> {t("ffmpeg.automatic")}
+                </button>
+              ) : null}
+            </span>
+          </div>
+        </div>
+
+        <div className="settings-page__row">
+          <div className="settings-page__row-label">
+            <strong>{t("ffmpeg.preferMp4")}</strong>
+            <span>{t("ffmpeg.preferMp4Hint")}</span>
+          </div>
+          <div className="settings-page__row-control">
+            <Switch
+              id="stream-prefer-mp4"
+              checked={draft.streamPreferMp4}
+              label={t("ffmpeg.preferMp4")}
+              onChange={(streamPreferMp4) => void save({ ...draft, streamPreferMp4 }, false)}
+            />
           </div>
         </div>
 

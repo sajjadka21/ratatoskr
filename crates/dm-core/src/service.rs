@@ -142,6 +142,10 @@ const POLITE_CONNECTIONS: usize = 2;
 pub const SETTING_STREAM_MAX_HEIGHT: &str = "stream_max_height";
 /// Stream segments fetched at the same time.
 const STREAM_CONNECTIONS: usize = 4;
+/// Where FFmpeg is; empty to look for it automatically.
+pub const SETTING_FFMPEG_PATH: &str = "ffmpeg_path";
+/// Rewrap transport streams (`.ts`) as MP4 when FFmpeg is available.
+pub const SETTING_STREAM_PREFER_MP4: &str = "stream_prefer_mp4";
 
 /// What the intake rules decided for one running transfer, after probing
 /// told the engine the file's type and size.
@@ -1003,23 +1007,20 @@ impl DownloadService {
             );
         }
 
-        match crate::media::classify_source(&probe.final_url, probe.content_type.as_deref()) {
-            Some(crate::media::MediaKind::Hls) => {
-                return self
-                    .run_stream_transfer(
-                        task,
-                        &probe,
-                        decision.as_ref(),
-                        destination_directory,
-                        control,
-                        on_progress,
-                    )
-                    .await;
-            }
-            Some(crate::media::MediaKind::Dash) => {
-                return Err(DownloadError::Stream(crate::hls::HlsError::Dash).into());
-            }
-            _ => {}
+        if let Some(kind @ (crate::media::MediaKind::Hls | crate::media::MediaKind::Dash)) =
+            crate::media::classify_source(&probe.final_url, probe.content_type.as_deref())
+        {
+            return self
+                .run_stream_transfer(
+                    task,
+                    &probe,
+                    kind,
+                    decision.as_ref(),
+                    destination_directory,
+                    control,
+                    on_progress,
+                )
+                .await;
         }
 
         // Paths are reserved once and then kept, so a resumed task writes to
@@ -1223,17 +1224,24 @@ impl DownloadService {
         Ok(outcome?)
     }
 
-    /// Downloads an unprotected HLS stream: the best quality (or the one
-    /// the link already names), its segments fetched a few at a time and
-    /// appended in order, decrypted when they use plain AES-128.
+    /// Downloads an unprotected HLS or DASH stream.
     ///
-    /// Progress survives a pause or a restart: a small record next to the
-    /// partial file says how many segments are in it, and the file is cut
-    /// back to that point before continuing.
+    /// The quality is the best at or below the automatic limit, or the one
+    /// the link names with `#rud-quality=<height>`. Each track (picture, and
+    /// sound when it is separate) is fetched a few parts at a time and
+    /// appended in order into its own file, decrypted when it uses plain
+    /// AES-128. Separate tracks are joined, and transport streams rewrapped
+    /// as MP4 when asked, by FFmpeg, copying the streams without re-encoding.
+    ///
+    /// Progress survives a pause or a restart: a small record next to each
+    /// track file says how many parts are in it, and the file is cut back to
+    /// that point before continuing.
+    #[allow(clippy::too_many_arguments)]
     async fn run_stream_transfer<F>(
         &self,
         task: &DownloadRecord,
         probe: &crate::SourceProbe,
+        kind: crate::media::MediaKind,
         decision: Option<&RuleDecision>,
         destination_directory: &Path,
         control: Arc<TaskControl>,
@@ -1243,15 +1251,26 @@ impl DownloadService {
         F: FnMut(&str, TransferProgress) + Send,
     {
         let downloader = self.downloader_for(&task.id)?;
-        let stream = crate::hls::resolve_stream(
+        let ffmpeg = self.ffmpeg();
+        let max_height = quality_from_link(&task.source_url).or_else(|| self.stream_max_height());
+        let plan = resolve_stream_plan(
             &downloader,
             &probe.final_url,
-            self.stream_max_height(),
+            kind,
+            max_height,
+            ffmpeg.is_some(),
             control.as_ref(),
         )
         .await?;
-        let playlist = &stream.playlist;
-        let extension = playlist.extension();
+
+        let joining = plan.tracks.len() > 1;
+        let rewrapping =
+            !joining && plan.extension == "ts" && ffmpeg.is_some() && self.stream_prefer_mp4();
+        let extension = if joining || rewrapping {
+            "mp4"
+        } else {
+            plan.extension
+        };
 
         let (destination_path, temp_path) = match (&task.destination_path, &task.temp_path) {
             (Some(destination), Some(temp)) => (PathBuf::from(destination), PathBuf::from(temp)),
@@ -1270,7 +1289,7 @@ impl DownloadService {
         self.storage.set_transfer_plan(
             &task.id,
             &TransferPlan {
-                resolved_url: stream.media_url.clone(),
+                resolved_url: plan.tracks[0].identity.clone(),
                 filename,
                 destination_path: destination_path.to_string_lossy().into_owned(),
                 temp_path: temp_path.to_string_lossy().into_owned(),
@@ -1288,19 +1307,128 @@ impl DownloadService {
                 range_supported: false,
             },
         )?;
-        let scope = self.traffic_scope_of(&stream.media_url);
+        let scope = self.traffic_scope_of(&plan.tracks[0].identity);
         self.ensure_quota_allows(scope)?;
         self.storage
             .mark_downloading(&task.id, unix_timestamp_seconds()?)?;
 
-        // Where a previous attempt stopped.
-        let record_path = stream_record_path(&temp_path);
-        let total_parts = playlist.segments.len() + usize::from(playlist.init.is_some());
+        // With FFmpeg afterwards, each track goes to its own file; otherwise
+        // the only track is the partial file itself.
+        let track_files: Vec<PathBuf> = if joining || rewrapping {
+            (0..plan.tracks.len())
+                .map(|index| {
+                    let mut name = temp_path.as_os_str().to_owned();
+                    name.push(format!(".track{index}"));
+                    PathBuf::from(name)
+                })
+                .collect()
+        } else {
+            vec![temp_path.clone()]
+        };
+
+        let mut progress = StreamProgress {
+            parts_total: plan.tracks.iter().map(|track| track.parts.len()).sum(),
+            ..StreamProgress::default()
+        };
+        progress.meter = Some(ThroughputMeter::new(Instant::now(), 0));
+        for (track, file) in plan.tracks.iter().zip(&track_files) {
+            self.download_stream_track(
+                task,
+                &downloader,
+                track,
+                file,
+                scope,
+                &control,
+                &mut progress,
+                on_progress,
+            )
+            .await?;
+        }
+
+        if joining || rewrapping {
+            let ffmpeg = ffmpeg.ok_or(DownloadError::Stream(crate::hls::HlsError::NeedsMuxing))?;
+            on_progress(
+                &task.id,
+                TransferProgress {
+                    downloaded_bytes: progress.written,
+                    total_bytes: Some(progress.written),
+                    bytes_per_second: None,
+                    eta_seconds: None,
+                    active_connections: Some(1),
+                    max_connections: Some(1),
+                    adaptive_reason: Some(if joining {
+                        "joining picture and sound"
+                    } else {
+                        "rewrapping as mp4"
+                    }),
+                },
+            );
+            let result = if joining {
+                ffmpeg
+                    .join(
+                        &track_files[0],
+                        &track_files[1],
+                        &temp_path,
+                        control.as_ref(),
+                    )
+                    .await
+            } else {
+                ffmpeg
+                    .remux(&track_files[0], &temp_path, control.as_ref())
+                    .await
+            };
+            match result {
+                Ok(()) => {}
+                Err(crate::ffmpeg::FfmpegError::Stopped) => {
+                    return Err(DownloadError::Stopped(
+                        control.stop_reason().unwrap_or(StopReason::Pause),
+                    )
+                    .into());
+                }
+                Err(error) => return Err(DownloadError::Ffmpeg(error.to_string()).into()),
+            }
+            for file in &track_files {
+                let _ = tokio::fs::remove_file(file).await;
+                let _ = tokio::fs::remove_file(stream_record_path(file)).await;
+            }
+        } else {
+            let _ = tokio::fs::remove_file(stream_record_path(&temp_path)).await;
+        }
+
+        let size = partial_file_size(&temp_path).await.unwrap_or(0);
+        self.storage.update_progress(&task.id, size, Some(size))?;
+        let outcome = self
+            .base_downloader()
+            .finalize_shared_file(&temp_path, &destination_path, size)
+            .await?;
+        Ok(outcome)
+    }
+
+    /// Fetches one track's parts into `file`, continuing from its record.
+    #[allow(clippy::too_many_arguments)]
+    async fn download_stream_track<F>(
+        &self,
+        task: &DownloadRecord,
+        downloader: &Downloader,
+        track: &StreamTrack,
+        file_path: &Path,
+        scope: TrafficScope,
+        control: &Arc<TaskControl>,
+        progress: &mut StreamProgress,
+        on_progress: &mut F,
+    ) -> Result<()>
+    where
+        F: FnMut(&str, TransferProgress) + Send,
+    {
+        use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+
+        let record_path = stream_record_path(file_path);
+        let total_parts = track.parts.len();
         let (mut done_parts, mut written) = match read_stream_record(&record_path).await {
             Some(record)
-                if record.media_url == stream.media_url
+                if record.media_url == track.identity
                     && record.parts == total_parts
-                    && partial_file_size(&temp_path)
+                    && partial_file_size(file_path)
                         .await
                         .is_some_and(|size| size >= record.bytes) =>
             {
@@ -1308,33 +1436,24 @@ impl DownloadService {
             }
             _ => (0, 0),
         };
+        progress.written += written;
+        progress.parts_done += done_parts;
+        progress.parts_skipped += done_parts;
+        progress.bytes_skipped += written;
+
         let mut file = tokio::fs::OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(false)
-            .open(&temp_path)
+            .open(file_path)
             .await
             .map_err(DownloadError::Io)?;
         file.set_len(written).await.map_err(DownloadError::Io)?;
-        use tokio::io::{AsyncSeekExt, AsyncWriteExt};
         file.seek(std::io::SeekFrom::Start(written))
             .await
             .map_err(DownloadError::Io)?;
-        self.storage.update_progress(&task.id, written, None)?;
-
-        // Every part in order: the initialisation section first, if any.
-        let mut parts: Vec<StreamPart> = Vec::with_capacity(total_parts);
-        if let Some((uri, range)) = &playlist.init {
-            parts.push((uri.clone(), *range, None, 0));
-        }
-        for segment in &playlist.segments {
-            parts.push((
-                segment.uri.clone(),
-                segment.byte_range,
-                segment.key.clone(),
-                segment.sequence,
-            ));
-        }
+        self.storage
+            .update_progress(&task.id, progress.written, None)?;
 
         let mut keys: HashMap<String, Arc<Vec<u8>>> = HashMap::new();
         let mut in_flight: JoinSet<std::result::Result<(usize, Vec<u8>), DownloadError>> =
@@ -1342,17 +1461,14 @@ impl DownloadService {
         let mut ready: std::collections::BTreeMap<usize, Vec<u8>> =
             std::collections::BTreeMap::new();
         let mut next_to_fetch = done_parts;
-        let mut meter = ThroughputMeter::new(Instant::now(), written);
-        let mut last_counted = written;
-        let started_written = written;
-        let started_done = done_parts;
+        let mut last_counted = progress.written;
 
         while done_parts < total_parts {
             while in_flight.len() < STREAM_CONNECTIONS
                 && next_to_fetch < total_parts
                 && ready.len() < STREAM_CONNECTIONS * 2
             {
-                let (uri, range, key, sequence) = parts[next_to_fetch].clone();
+                let (uri, range, key, sequence) = track.parts[next_to_fetch].clone();
                 let key_bytes = match &key {
                     Some(key) => {
                         if !keys.contains_key(&key.uri) {
@@ -1366,7 +1482,7 @@ impl DownloadService {
                     None => None,
                 };
                 let downloader = downloader.clone();
-                let control = Arc::clone(&control);
+                let control = Arc::clone(control);
                 let index = next_to_fetch;
                 in_flight.spawn(async move {
                     let mut data = downloader
@@ -1389,7 +1505,7 @@ impl DownloadService {
                     in_flight.abort_all();
                     file.flush().await.map_err(DownloadError::Io)?;
                     file.sync_data().await.map_err(DownloadError::Io)?;
-                    self.count_traffic(scope, written.saturating_sub(last_counted));
+                    self.count_traffic(scope, progress.written.saturating_sub(last_counted));
                     return Err(error.into());
                 }
                 Err(_) => return Err(DownloadServiceError::ExecutionUnavailable),
@@ -1401,65 +1517,114 @@ impl DownloadService {
             while let Some(data) = ready.remove(&done_parts) {
                 file.write_all(&data).await.map_err(DownloadError::Io)?;
                 written += data.len() as u64;
+                progress.written += data.len() as u64;
                 done_parts += 1;
+                progress.parts_done += 1;
                 appended = true;
             }
-            if appended {
-                let now = Instant::now();
-                // Parts take seconds each, so recording after every one is
-                // cheap and loses nothing on a pause or a crash.
-                {
-                    file.flush().await.map_err(DownloadError::Io)?;
-                    file.sync_data().await.map_err(DownloadError::Io)?;
-                    write_stream_record(
-                        &record_path,
-                        &StreamRecord {
-                            media_url: stream.media_url.clone(),
-                            parts: total_parts,
-                            done: done_parts,
-                            bytes: written,
-                        },
-                    )
-                    .await;
-                    self.storage.update_progress(&task.id, written, None)?;
-                    self.count_traffic(scope, written.saturating_sub(last_counted));
-                    last_counted = written;
-                }
-
-                // The total is estimated from the parts fetched so far.
-                let fetched_now = done_parts - started_done;
-                let estimate = (fetched_now > 0).then(|| {
-                    let average = (written - started_written) / fetched_now as u64;
-                    written + average * (total_parts - done_parts) as u64
-                });
-                let bytes_per_second = meter.sample(written, now);
-                on_progress(
-                    &task.id,
-                    TransferProgress {
-                        downloaded_bytes: written,
-                        total_bytes: estimate,
-                        bytes_per_second,
-                        eta_seconds: meter.eta_seconds(written, estimate),
-                        active_connections: Some(in_flight.len().max(1) as u32),
-                        max_connections: Some(STREAM_CONNECTIONS as u32),
-                        adaptive_reason: Some("stream segments"),
-                    },
-                );
+            if !appended {
+                continue;
             }
+
+            // Parts take seconds each, so recording after every one is cheap
+            // and loses nothing on a pause or a crash.
+            file.flush().await.map_err(DownloadError::Io)?;
+            file.sync_data().await.map_err(DownloadError::Io)?;
+            write_stream_record(
+                &record_path,
+                &StreamRecord {
+                    media_url: track.identity.clone(),
+                    parts: total_parts,
+                    done: done_parts,
+                    bytes: written,
+                },
+            )
+            .await;
+            self.storage
+                .update_progress(&task.id, progress.written, None)?;
+            self.count_traffic(scope, progress.written.saturating_sub(last_counted));
+            last_counted = progress.written;
+
+            let now = Instant::now();
+            let estimate = progress.estimated_total();
+            let meter = progress
+                .meter
+                .get_or_insert_with(|| ThroughputMeter::new(now, 0));
+            let bytes_per_second = meter.sample(progress.written, now);
+            let eta_seconds = meter.eta_seconds(progress.written, estimate);
+            on_progress(
+                &task.id,
+                TransferProgress {
+                    downloaded_bytes: progress.written,
+                    total_bytes: estimate,
+                    bytes_per_second,
+                    eta_seconds,
+                    active_connections: Some(in_flight.len().max(1) as u32),
+                    max_connections: Some(STREAM_CONNECTIONS as u32),
+                    adaptive_reason: Some("stream segments"),
+                },
+            );
         }
 
         file.flush().await.map_err(DownloadError::Io)?;
         file.sync_all().await.map_err(DownloadError::Io)?;
-        drop(file);
-        self.count_traffic(scope, written.saturating_sub(last_counted));
-        let _ = tokio::fs::remove_file(&record_path).await;
+        self.count_traffic(scope, progress.written.saturating_sub(last_counted));
+        Ok(())
+    }
+
+    /// FFmpeg, from Settings or found next to the application or on `PATH`.
+    pub fn ffmpeg(&self) -> Option<crate::ffmpeg::Ffmpeg> {
+        let configured = self
+            .storage
+            .get_setting(SETTING_FFMPEG_PATH)
+            .ok()
+            .flatten()
+            .filter(|value| !value.trim().is_empty())
+            .map(PathBuf::from);
+        crate::ffmpeg::Ffmpeg::locate(configured.as_deref())
+    }
+
+    pub fn ffmpeg_path_setting(&self) -> Option<String> {
         self.storage
-            .update_progress(&task.id, written, Some(written))?;
-        let outcome = self
-            .base_downloader()
-            .finalize_shared_file(&temp_path, &destination_path, written)
-            .await?;
-        Ok(outcome)
+            .get_setting(SETTING_FFMPEG_PATH)
+            .ok()
+            .flatten()
+            .filter(|value| !value.trim().is_empty())
+    }
+
+    /// Where FFmpeg is; `None` to look for it automatically. A path that
+    /// does not name a file is refused.
+    pub fn set_ffmpeg_path(&self, path: Option<&Path>) -> Result<()> {
+        if let Some(path) = path
+            && (!path.is_absolute() || !path.is_file())
+        {
+            return Err(DownloadServiceError::RelativeDirectory);
+        }
+        self.storage.set_setting(
+            SETTING_FFMPEG_PATH,
+            &path
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+        )?;
+        Ok(())
+    }
+
+    /// Whether transport streams are rewrapped as MP4 when FFmpeg is there.
+    pub fn stream_prefer_mp4(&self) -> bool {
+        self.storage
+            .get_setting(SETTING_STREAM_PREFER_MP4)
+            .ok()
+            .flatten()
+            .as_deref()
+            != Some("false")
+    }
+
+    pub fn set_stream_prefer_mp4(&self, enabled: bool) -> Result<()> {
+        self.storage.set_setting(
+            SETTING_STREAM_PREFER_MP4,
+            if enabled { "true" } else { "false" },
+        )?;
+        Ok(())
     }
 
     /// Highest stream quality picked automatically; `None` for the best.
@@ -1486,7 +1651,33 @@ impl DownloadService {
     /// The qualities a stream link offers, for the user to choose from.
     pub async fn stream_variants(&self, url: &str) -> Result<Vec<crate::hls::Variant>> {
         validate_source_url(url)?;
-        Ok(crate::hls::list_variants(&self.base_downloader(), url).await?)
+        let downloader = self.base_downloader();
+        if crate::media::classify_source(url, None) != Some(crate::media::MediaKind::Dash) {
+            return Ok(crate::hls::list_variants(&downloader, url).await?);
+        }
+        let control = TaskControl::new();
+        let bytes = downloader
+            .fetch_bytes(url, None, crate::hls::MAX_PLAYLIST_BYTES, &control)
+            .await?;
+        let base = reqwest::Url::parse(url)
+            .map_err(|error| DownloadError::InvalidUrl(error.to_string()))?;
+        let manifest = crate::dash::parse_manifest(&base, &String::from_utf8_lossy(&bytes))
+            .map_err(DownloadError::Stream)?;
+        let separate_sound = !manifest.audio.is_empty();
+        Ok(manifest
+            .video
+            .iter()
+            .chain(&manifest.muxed)
+            .map(|representation| crate::hls::Variant {
+                uri: url.to_owned(),
+                bandwidth: representation.bandwidth,
+                width: representation.width,
+                height: representation.height,
+                audio_group: None,
+                audio_uri: (separate_sound && representation.kind == crate::dash::TrackKind::Video)
+                    .then(|| "separate".to_owned()),
+            })
+            .collect())
     }
 
     /// The addresses a segmented transfer may read from: the resolved
@@ -2009,6 +2200,134 @@ type StreamPart = (
     u64,
 );
 
+/// One track of a stream: its parts in order, and the address that
+/// identifies it for resuming.
+struct StreamTrack {
+    identity: String,
+    parts: Vec<StreamPart>,
+}
+
+/// What a stream link turned into: one track, or picture and sound.
+struct StreamPlan {
+    tracks: Vec<StreamTrack>,
+    /// The container the parts make as they are: `ts` or `mp4`.
+    extension: &'static str,
+}
+
+#[derive(Default)]
+struct StreamProgress {
+    written: u64,
+    parts_done: usize,
+    parts_total: usize,
+    /// Parts already on disk when this attempt started; they tell nothing
+    /// about the size of the parts still to come.
+    parts_skipped: usize,
+    bytes_skipped: u64,
+    meter: Option<ThroughputMeter>,
+}
+
+impl StreamProgress {
+    /// The total, estimated from the average size of the parts fetched.
+    fn estimated_total(&self) -> Option<u64> {
+        let fetched = self.parts_done.saturating_sub(self.parts_skipped);
+        let bytes = self.written.saturating_sub(self.bytes_skipped);
+        (fetched > 0).then(|| {
+            let average = bytes / fetched as u64;
+            self.written + average * self.parts_total.saturating_sub(self.parts_done) as u64
+        })
+    }
+}
+
+/// A quality named in the link itself: `...#rud-quality=720`. The fragment
+/// never reaches the server.
+fn quality_from_link(url: &str) -> Option<u32> {
+    let fragment = url.split_once('#')?.1;
+    fragment
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("rud-quality="))
+        .and_then(|value| value.parse().ok())
+        .filter(|height| *height > 0)
+}
+
+async fn resolve_stream_plan(
+    downloader: &Downloader,
+    url: &str,
+    kind: crate::media::MediaKind,
+    max_height: Option<u32>,
+    can_join: bool,
+    control: &TaskControl,
+) -> Result<StreamPlan> {
+    let hls_parts = |playlist: &crate::hls::MediaPlaylist| -> Vec<StreamPart> {
+        let mut parts: Vec<StreamPart> = Vec::new();
+        if let Some((uri, range)) = &playlist.init {
+            parts.push((uri.clone(), *range, None, 0));
+        }
+        parts.extend(playlist.segments.iter().map(|segment| {
+            (
+                segment.uri.clone(),
+                segment.byte_range,
+                segment.key.clone(),
+                segment.sequence,
+            )
+        }));
+        parts
+    };
+
+    if kind == crate::media::MediaKind::Hls {
+        let stream =
+            crate::hls::resolve_stream(downloader, url, max_height, can_join, control).await?;
+        let mut tracks = vec![StreamTrack {
+            identity: stream.media_url.clone(),
+            parts: hls_parts(&stream.playlist),
+        }];
+        if let Some((audio_url, audio)) = &stream.audio {
+            tracks.push(StreamTrack {
+                identity: audio_url.clone(),
+                parts: hls_parts(audio),
+            });
+        }
+        return Ok(StreamPlan {
+            tracks,
+            extension: stream.playlist.extension(),
+        });
+    }
+
+    let bytes = downloader
+        .fetch_bytes(url, None, crate::hls::MAX_PLAYLIST_BYTES, control)
+        .await?;
+    let base =
+        reqwest::Url::parse(url).map_err(|error| DownloadError::InvalidUrl(error.to_string()))?;
+    let manifest = crate::dash::parse_manifest(&base, &String::from_utf8_lossy(&bytes))
+        .map_err(DownloadError::Stream)?;
+    let chosen = manifest.choose(max_height).map_err(DownloadError::Stream)?;
+    if chosen.len() > 1 && !can_join {
+        return Err(DownloadError::Stream(crate::hls::HlsError::NeedsMuxing).into());
+    }
+    let tracks = chosen
+        .into_iter()
+        .map(|representation| {
+            let mut parts: Vec<StreamPart> = Vec::new();
+            if let Some((uri, range)) = &representation.init {
+                parts.push((uri.clone(), *range, None, 0));
+            }
+            parts.extend(
+                representation
+                    .segments
+                    .iter()
+                    .map(|(uri, range)| (uri.clone(), *range, None, 0)),
+            );
+            StreamTrack {
+                identity: format!("{url}#representation={}", representation.id),
+                parts,
+            }
+        })
+        .collect();
+    Ok(StreamPlan {
+        tracks,
+        extension: "mp4",
+    })
+}
+
 /// Where a stream download records how far it got.
 struct StreamRecord {
     media_url: String,
@@ -2340,6 +2659,7 @@ fn error_code_for(error: &DownloadError) -> &'static str {
         DownloadError::Stream(crate::hls::HlsError::Dash) => "unsupported_stream",
         DownloadError::Stream(_) => "stream_error",
         DownloadError::TooLarge { .. } => "stream_error",
+        DownloadError::Ffmpeg(_) => "ffmpeg_failed",
     }
 }
 
@@ -4375,6 +4695,8 @@ mod tests {
         let (behaviour, expected) = stream_server(None);
         let server = TestServer::start(behaviour).await;
         let harness = harness();
+        // These parts are not real video, so FFmpeg must stay out of it.
+        harness.service.set_stream_prefer_mp4(false).unwrap();
         let task = harness
             .service
             .create_task(&server.url("show/episode-12/master.m3u8"))
@@ -4401,6 +4723,8 @@ mod tests {
         let (behaviour, expected) = stream_server(Some(Duration::from_millis(30)));
         let server = TestServer::start(behaviour).await;
         let harness = harness();
+        // These parts are not real video, so FFmpeg must stay out of it.
+        harness.service.set_stream_prefer_mp4(false).unwrap();
         let task = harness
             .service
             .create_task(&server.url("show/episode-12/master.m3u8"))
@@ -4456,7 +4780,7 @@ mod tests {
         for (path, code) in [
             ("drm.m3u8", "protected_stream"),
             ("live.m3u8", "live_stream"),
-            ("movie.mpd", "unsupported_stream"),
+            ("movie.mpd", "stream_error"),
         ] {
             let task = harness.service.create_task(&server.url(path)).unwrap();
             let _ = harness
@@ -4484,5 +4808,332 @@ mod tests {
 
         harness.service.set_stream_max_height(Some(480)).unwrap();
         assert_eq!(harness.service.stream_max_height(), Some(480));
+    }
+
+    /// Every file in `directory`, served under `prefix`.
+    fn routes_from(directory: &Path, prefix: &str) -> Vec<(String, Vec<u8>)> {
+        std::fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| {
+                let entry = entry.unwrap();
+                (
+                    format!("{prefix}/{}", entry.file_name().to_string_lossy()),
+                    std::fs::read(entry.path()).unwrap(),
+                )
+            })
+            .collect()
+    }
+
+    async fn run_ffmpeg(ffmpeg: &crate::ffmpeg::Ffmpeg, directory: &Path, arguments: &[&str]) {
+        let status = tokio::process::Command::new(ffmpeg.path())
+            .current_dir(directory)
+            .args(["-hide_banner", "-loglevel", "error", "-y"])
+            .args(arguments)
+            .status()
+            .await
+            .unwrap();
+        assert!(status.success(), "ffmpeg {arguments:?}");
+    }
+
+    #[tokio::test]
+    async fn an_hls_stream_with_separate_sound_is_joined_into_one_mp4() {
+        let Some(ffmpeg) = crate::ffmpeg::tests::real_ffmpeg() else {
+            return;
+        };
+        let media = tempdir().unwrap();
+        run_ffmpeg(
+            &ffmpeg,
+            media.path(),
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=duration=2:size=64x48:rate=10",
+                "-c:v",
+                "mpeg2video",
+                "-f",
+                "hls",
+                "-hls_time",
+                "1",
+                "-hls_list_size",
+                "0",
+                "-hls_segment_filename",
+                "v%d.ts",
+                "video.m3u8",
+            ],
+        )
+        .await;
+        run_ffmpeg(
+            &ffmpeg,
+            media.path(),
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=duration=2",
+                "-c:a",
+                "aac",
+                "-f",
+                "hls",
+                "-hls_time",
+                "1",
+                "-hls_list_size",
+                "0",
+                "-hls_segment_filename",
+                "a%d.ts",
+                "audio.m3u8",
+            ],
+        )
+        .await;
+        std::fs::write(
+            media.path().join("master.m3u8"),
+            "#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"en\",DEFAULT=YES,URI=\"audio.m3u8\"\n\
+             #EXT-X-STREAM-INF:BANDWIDTH=300000,RESOLUTION=64x48,AUDIO=\"aud\"\nvideo.m3u8\n",
+        )
+        .unwrap();
+        let server = TestServer::start(ServerBehaviour {
+            routes: routes_from(media.path(), "/lecture-09"),
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+        let task = harness
+            .service
+            .create_task(&server.url("lecture-09/master.m3u8"))
+            .unwrap();
+
+        let finished = harness
+            .service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+
+        assert_eq!(finished.status, DownloadStatus::Completed);
+        let path = PathBuf::from(finished.destination_path.unwrap());
+        assert!(path.to_string_lossy().ends_with("lecture-09.mp4"));
+        let streams = crate::ffmpeg::tests::probe_streams(&path).await;
+        assert!(
+            streams.contains("video") && streams.contains("audio"),
+            "{streams}"
+        );
+        let leftovers: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name != "lecture-09.mp4")
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "track files are cleaned up: {leftovers:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_dash_stream_is_downloaded_and_joined() {
+        let Some(ffmpeg) = crate::ffmpeg::tests::real_ffmpeg() else {
+            return;
+        };
+        let media = tempdir().unwrap();
+        run_ffmpeg(
+            &ffmpeg,
+            media.path(),
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=duration=3:size=64x48:rate=10",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=duration=3",
+                "-map",
+                "0:v",
+                "-map",
+                "1:a",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-c:a",
+                "aac",
+                "-f",
+                "dash",
+                "-seg_duration",
+                "1",
+                "-use_timeline",
+                "1",
+                "-use_template",
+                "1",
+                "manifest.mpd",
+            ],
+        )
+        .await;
+        let server = TestServer::start(ServerBehaviour {
+            routes: routes_from(media.path(), "/talk"),
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+        let task = harness
+            .service
+            .create_task(&server.url("talk/manifest.mpd"))
+            .unwrap();
+
+        let finished = harness
+            .service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            finished.status,
+            DownloadStatus::Completed,
+            "{:?}",
+            finished.error_message
+        );
+        let path = PathBuf::from(finished.destination_path.unwrap());
+        assert!(path.to_string_lossy().ends_with(".mp4"));
+        let streams = crate::ffmpeg::tests::probe_streams(&path).await;
+        assert!(
+            streams.contains("video") && streams.contains("audio"),
+            "{streams}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_transport_stream_is_rewrapped_as_mp4_when_asked() {
+        let Some(ffmpeg) = crate::ffmpeg::tests::real_ffmpeg() else {
+            return;
+        };
+        let media = tempdir().unwrap();
+        run_ffmpeg(
+            &ffmpeg,
+            media.path(),
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=duration=2:size=64x48:rate=10",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=duration=2",
+                "-c:v",
+                "mpeg2video",
+                "-c:a",
+                "aac",
+                "-f",
+                "hls",
+                "-hls_time",
+                "1",
+                "-hls_list_size",
+                "0",
+                "-hls_segment_filename",
+                "s%d.ts",
+                "index.m3u8",
+            ],
+        )
+        .await;
+        let server = TestServer::start(ServerBehaviour {
+            routes: routes_from(media.path(), "/clip"),
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+
+        let task = harness
+            .service
+            .create_task(&server.url("clip/index.m3u8"))
+            .unwrap();
+        let finished = harness
+            .service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+        let path = PathBuf::from(finished.destination_path.unwrap());
+        assert!(
+            path.to_string_lossy().ends_with("clip.mp4"),
+            "{}",
+            path.display()
+        );
+        let streams = crate::ffmpeg::tests::probe_streams(&path).await;
+        assert!(streams.contains("video") && streams.contains("audio"));
+
+        harness.service.set_stream_prefer_mp4(false).unwrap();
+        let task = harness
+            .service
+            .create_task(&server.url("clip/index.m3u8"))
+            .unwrap();
+        let finished = harness
+            .service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+        assert!(finished.destination_path.unwrap().ends_with(".ts"));
+    }
+
+    #[tokio::test]
+    async fn without_ffmpeg_separate_sound_is_refused_with_a_reason() {
+        let media = "#EXTM3U\n#EXTINF:1,\nv0.ts\n#EXT-X-ENDLIST\n";
+        let master = "#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"a\",NAME=\"en\",URI=\"audio.m3u8\"\n\
+            #EXT-X-STREAM-INF:BANDWIDTH=1,AUDIO=\"a\"\nvideo.m3u8\n";
+        let server = TestServer::start(ServerBehaviour {
+            routes: vec![
+                ("/s/master.m3u8".to_owned(), master.as_bytes().to_vec()),
+                ("/s/video.m3u8".to_owned(), media.as_bytes().to_vec()),
+                ("/s/audio.m3u8".to_owned(), media.as_bytes().to_vec()),
+            ],
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+        // A configured path that does not exist means "no FFmpeg".
+        harness
+            .storage
+            .set_setting(SETTING_FFMPEG_PATH, "/nowhere/ffmpeg")
+            .unwrap();
+        assert!(harness.service.ffmpeg().is_none());
+
+        let task = harness
+            .service
+            .create_task(&server.url("s/master.m3u8"))
+            .unwrap();
+        let _ = harness
+            .service
+            .start_task(&task.id, &harness.destination)
+            .await;
+        let row = harness.storage.get_download(&task.id).unwrap().unwrap();
+        assert_eq!(row.error_code.as_deref(), Some("needs_muxing"));
+    }
+
+    #[test]
+    fn a_quality_can_be_named_in_the_link() {
+        assert_eq!(
+            quality_from_link("https://x.test/master.m3u8#rud-quality=720"),
+            Some(720)
+        );
+        assert_eq!(quality_from_link("https://x.test/master.m3u8"), None);
+        assert_eq!(
+            quality_from_link("https://x.test/a.mpd#other&rud-quality=0"),
+            None
+        );
+    }
+
+    #[test]
+    fn an_ffmpeg_path_must_be_an_existing_file() {
+        let harness = harness();
+        assert!(
+            harness
+                .service
+                .set_ffmpeg_path(Some(Path::new("relative/ffmpeg")))
+                .is_err()
+        );
+        assert!(
+            harness
+                .service
+                .set_ffmpeg_path(Some(Path::new("/nowhere/ffmpeg")))
+                .is_err()
+        );
+        harness.service.set_ffmpeg_path(None).unwrap();
+        assert_eq!(harness.service.ffmpeg_path_setting(), None);
     }
 }

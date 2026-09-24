@@ -1231,3 +1231,61 @@ control calls an existing or new backend command.
 - Real HLS sites, real mirrors, and the CLI talking to a running Windows
   build.
 - DASH and streams whose sound is a separate track need FFmpeg; not done.
+
+## Review follow-up - Step 6: FFmpeg, DASH, separate sound
+
+### FFmpeg
+
+- `dm-core::ffmpeg`: FFmpeg is used only where the user has it: a path set
+  in Settings (`ffmpeg_path`, must be an existing absolute file), otherwise
+  next to the application, otherwise on `PATH`. It is never downloaded or
+  bundled. It runs with an argument list, never through a shell, on local
+  files only, with `-c copy` (no re-encoding), no console window on
+  Windows, and is killed when the download is paused or cancelled. Its
+  error output (trimmed) becomes the task's message, code `ffmpeg_failed`.
+- Settings shows whether FFmpeg was found, where and which version, lets
+  the user choose the program or go back to finding it automatically.
+
+### Streams with separate picture and sound
+
+- HLS: `EXT-X-MEDIA` audio renditions are read; the default rendition with
+  an address is preferred. With FFmpeg every quality can be chosen, and the
+  sound track is downloaded next to the picture and joined into an MP4.
+  Without FFmpeg only qualities that carry their own sound are chosen, and
+  a stream that has none fails with `needs_muxing`, which says to choose
+  FFmpeg in Settings.
+- DASH (`dm-core::dash`, `roxmltree`): static single-period manifests,
+  `BaseURL` chains, `SegmentTemplate` with `$Number$`/`$Time$`/widths and
+  `SegmentTimeline` (including `r="-1"`), `SegmentList` with byte ranges,
+  and single-file representations. `ContentProtection` is refused
+  (`protected_stream`), `dynamic` manifests are live (`live_stream`),
+  several periods are not supported. The best picture at or below the
+  quality limit and the best sound are downloaded and joined.
+- Each track downloads into its own file with its own resume record; after
+  joining, the track files and records are removed. A pause during the join
+  keeps the finished tracks, and the next start only joins them.
+- Transport streams (`.ts`) are rewrapped as `.mp4` when FFmpeg is there
+  (`stream_prefer_mp4`, default on).
+- A quality chosen in the Add dialog travels in the link as
+  `#rud-quality=<height>`; the fragment never reaches the server. The
+  picker lists DASH qualities too, and disables qualities with separate
+  sound only when FFmpeg is missing.
+
+### Verification
+
+- `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo check --workspace` - passed
+- `cargo test --workspace` - passed (300 Rust tests). With a
+  real FFmpeg 6.1 in the test environment, end-to-end tests generate real
+  media and download it through the engine: an HLS stream with separate
+  sound joined into an MP4 (both streams checked with ffprobe), a DASH
+  stream made by FFmpeg's own DASH muxer (SegmentTemplate + timeline)
+  downloaded and joined, and a transport stream rewrapped as MP4 and, with
+  the setting off, kept as `.ts`. Where FFmpeg is missing these tests say
+  so and skip; the parser and refusal tests always run.
+- `tsc --noEmit`, `npm test` (59 tests), `npm run build` - passed
+
+### Not verified
+
+- FFmpeg on Windows (the creation flag that hides its console was
+  type-checked only), and real DASH/HLS sites.

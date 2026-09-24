@@ -2,10 +2,10 @@
 name = "dm-cli"
 version = "1.0.0"
 edition = "2024"
-description = "rud: the Download Manager from the command line"
+description = "tosk: Ratatosk from the command line"
 
 [[bin]]
-name = "rud"
+name = "tosk"
 path = "src/main.rs"
 
 [dependencies]

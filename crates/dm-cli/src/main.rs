@@ -1,4 +1,4 @@
-//! `rud`: the Download Manager from the command line.
+//! `tosk`: Ratatosk from the command line.
 //!
 //! It works on the application's own database and hands anything that
 //! changes a running transfer to the application itself, so there is one
@@ -19,20 +19,20 @@ use std::{
 };
 
 const USAGE: &str = "\
-rud - Download Manager from the command line
+tosk - Ratatosk from the command line
 
 Usage:
-  rud add <url>... [--later]      add downloads (start now, or keep for later)
-  rud list [--status <status>] [--json]
-  rud status <id> [--json]
-  rud pause <id>...               pause downloads
-  rud resume <id>...              continue paused or failed downloads
-  rud retry <id>...               same as resume
-  rud cancel <id>...              cancel downloads and delete their partial files
-  rud pause-all                   pause everything that is running
-  rud queue start <queue>         start a queue (by name or id)
-  rud queue stop <queue>          stop a queue
-  rud help | version
+  tosk add <url>... [--later]     add downloads (start now, or keep for later)
+  tosk list [--status <status>] [--json]
+  tosk status <id> [--json]
+  tosk pause <id>...              pause downloads
+  tosk resume <id>...             continue paused or failed downloads
+  tosk retry <id>...              same as resume
+  tosk cancel <id>...             cancel downloads and delete their partial files
+  tosk pause-all                  pause everything that is running
+  tosk queue start <queue>        start a queue (by name or id)
+  tosk queue stop <queue>         stop a queue
+  tosk help | version
 
 An <id> may be shortened to its first characters when that is unambiguous.
 DOWNLOAD_MANAGER_DATA_DIR and DOWNLOAD_MANAGER_APP_PATH override where the
@@ -76,7 +76,7 @@ impl Environment {
             Ok(())
         } else {
             Err(Failure::Runtime(
-                "the application was not found next to rud; set DOWNLOAD_MANAGER_APP_PATH"
+                "the application was not found next to tosk; set DOWNLOAD_MANAGER_APP_PATH"
                     .to_owned(),
             ))
         }
@@ -96,11 +96,11 @@ fn main() -> ExitCode {
     match run(&arguments, &environment, &mut output) {
         Ok(()) => ExitCode::SUCCESS,
         Err(Failure::Usage(message)) => {
-            eprintln!("rud: {message}\n\n{USAGE}");
+            eprintln!("tosk: {message}\n\n{USAGE}");
             ExitCode::from(2)
         }
         Err(Failure::Runtime(message)) => {
-            eprintln!("rud: {message}");
+            eprintln!("tosk: {message}");
             ExitCode::FAILURE
         }
     }
@@ -120,7 +120,9 @@ fn run(
 
     match command.as_str() {
         "help" | "--help" | "-h" => write(output, USAGE),
-        "version" | "--version" | "-V" => write(output, concat!("rud ", env!("CARGO_PKG_VERSION"))),
+        "version" | "--version" | "-V" => {
+            write(output, concat!("tosk ", env!("CARGO_PKG_VERSION")))
+        }
         "add" => {
             let later = rest.iter().any(|argument| argument == "--later");
             let urls: Vec<&String> = rest
@@ -270,7 +272,7 @@ fn run(
                 [action, name, ..] if action == "start" || action == "stop" => (action, name),
                 _ => {
                     return Err(Failure::Usage(
-                        "use: rud queue start|stop <queue>".to_owned(),
+                        "use: tosk queue start|stop <queue>".to_owned(),
                     ));
                 }
             };

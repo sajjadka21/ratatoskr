@@ -5,7 +5,7 @@ Promise.all([
   chrome.runtime.sendMessage({ type: "status" })
 ]).then(([{ takeoverEnabled }, host]) => {
   const connection = host?.accepted
-    ? host.appFound ? "Connected to Download Manager" : "Host found, application not found"
+    ? host.appFound ? "Connected to Ratatosk" : "Host found, application not found"
     : "Native host not installed";
   status.textContent = `${connection} · Takeover ${takeoverEnabled ? "on" : "off"}`;
 });

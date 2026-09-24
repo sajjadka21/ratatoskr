@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Download Manager",
+  "productName": "Ratatosk",
   "version": "1.0.0",
   "identifier": "com.downloadmanager.desktop",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Rud",
+        "title": "Ratatosk",
         "width": 1280,
         "height": 820,
         "minWidth": 960,

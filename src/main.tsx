@@ -16,7 +16,7 @@ function applyToDocument(preferences: UiPreferences) {
   root.lang = preferences.language;
   root.dir = preferences.language === "fa" ? "rtl" : "ltr";
   root.dataset.theme = preferences.theme;
-  document.title = preferences.language === "fa" ? "رود" : "Rud";
+  document.title = preferences.language === "fa" ? "راتاتوسک" : "Ratatosk";
 }
 
 function Root() {

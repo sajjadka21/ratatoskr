@@ -239,7 +239,7 @@ fn publish(
 
 fn action_label(action: CompletionAction) -> &'static str {
     match action {
-        CompletionAction::ExitApp => "close Download Manager",
+        CompletionAction::ExitApp => "close Ratatosk",
         CompletionAction::Sleep => "sleep",
         CompletionAction::Hibernate => "hibernate",
         CompletionAction::Shutdown => "shut down",

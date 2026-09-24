@@ -68,8 +68,8 @@ async function sendLink(url, referrer) {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({ id: "download-manager-link", title: "Download with Download Manager", contexts: ["link"] });
-  chrome.contextMenus.create({ id: "download-manager-selection", title: "Send selected links to Download Manager", contexts: ["selection"] });
+  chrome.contextMenus.create({ id: "download-manager-link", title: "Download with Ratatosk", contexts: ["link"] });
+  chrome.contextMenus.create({ id: "download-manager-selection", title: "Send selected links to Ratatosk", contexts: ["selection"] });
 });
 
 chrome.contextMenus.onClicked.addListener(async (info) => {

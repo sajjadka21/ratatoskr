@@ -262,7 +262,16 @@ impl Downloader {
     /// A downloader whose connections follow `settings`: direct, through the
     /// system proxy, or through the user's proxy with direct exceptions.
     pub fn with_network(settings: &network::NetworkSettings) -> Result<Self> {
-        let client = settings.build_client()?;
+        Self::with_network_and_stall(settings, network::DEFAULT_STALL_TIMEOUT)
+    }
+
+    /// As [`Downloader::with_network`], giving up on a connection that
+    /// delivers nothing for `stall_timeout`.
+    pub fn with_network_and_stall(
+        settings: &network::NetworkSettings,
+        stall_timeout: std::time::Duration,
+    ) -> Result<Self> {
+        let client = settings.build_client_with(stall_timeout)?;
 
         Ok(Self {
             client,

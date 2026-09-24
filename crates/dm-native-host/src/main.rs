@@ -150,7 +150,7 @@ fn handle_download(request: NativeRequest, environment: &Environment) -> NativeR
         return rejected("browser handoff validation failed");
     };
     let Some(database_path) = environment.database_path.as_ref() else {
-        return rejected("Download Manager data folder was not found");
+        return rejected("Ratatosk data folder was not found");
     };
 
     // Persist first. Every failure before this point leaves the browser's
@@ -196,11 +196,7 @@ fn hand_over_with_session(
     // The session goes only to the program this host was installed with; if
     // that program cannot be identified, nothing is sent.
     let Some(application) = environment.application.as_ref() else {
-        return withdraw(
-            database_path,
-            task_id,
-            "Download Manager executable was not found",
-        );
+        return withdraw(database_path, task_id, "Ratatosk executable was not found");
     };
 
     let handoff = SessionHandoff::new(task_id, cookie);
@@ -247,7 +243,7 @@ fn handle_inspect(request: NativeRequest, environment: &Environment) -> NativeRe
         return rejected("no HTTP links found");
     }
     let Some(application) = environment.application.as_ref() else {
-        return rejected("Download Manager executable was not found");
+        return rejected("Ratatosk executable was not found");
     };
 
     let mut arguments = vec![ARG_GRAB_LINKS.to_owned()];
@@ -264,7 +260,7 @@ fn handle_inspect(request: NativeRequest, environment: &Environment) -> NativeRe
     // Links go to LinkGrabber for review; nothing starts downloading on its
     // own from a text selection.
     if !(environment.launch)(application, &arguments) {
-        return rejected("Download Manager could not be started");
+        return rejected("Ratatosk could not be started");
     }
 
     NativeResponse {
@@ -326,6 +322,7 @@ fn application_path() -> Option<PathBuf> {
     }
     let current = env::current_exe().ok()?.parent()?.to_owned();
     [
+        "Ratatosk.exe",
         "download-manager.exe",
         "Download Manager.exe",
         "tauri-app.exe",

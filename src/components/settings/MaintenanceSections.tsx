@@ -26,7 +26,9 @@ type SectionProps = {
   onSaved: (message: string) => void;
 };
 
-const BACKUP_EXTENSION = "rudbackup";
+const BACKUP_EXTENSION = "tosk";
+/** Backups made before the rename still open. */
+const OLD_BACKUP_EXTENSION = "rudbackup";
 
 function today(): string {
   const now = new Date();
@@ -50,7 +52,7 @@ export function BackupSection({ onError, onSaved }: SectionProps) {
     try {
       const path = await saveDialog({
         title: t("backup.createButton"),
-        defaultPath: `rud-backup-${today()}.${BACKUP_EXTENSION}`,
+        defaultPath: `ratatosk-backup-${today()}.${BACKUP_EXTENSION}`,
         filters: [{ name: t("backup.fileKind"), extensions: [BACKUP_EXTENSION] }],
       });
       if (!path) return;
@@ -70,7 +72,7 @@ export function BackupSection({ onError, onSaved }: SectionProps) {
         multiple: false,
         directory: false,
         title: t("backup.restoreButton"),
-        filters: [{ name: t("backup.fileKind"), extensions: [BACKUP_EXTENSION, "db"] }],
+        filters: [{ name: t("backup.fileKind"), extensions: [BACKUP_EXTENSION, OLD_BACKUP_EXTENSION, "db"] }],
       });
       if (typeof path !== "string") return;
       setPending(await invoke<BackupInfo>("stage_restore", { path }));
@@ -94,7 +96,7 @@ export function BackupSection({ onError, onSaved }: SectionProps) {
       const extension = format === "csv" ? "csv" : "txt";
       const path = await saveDialog({
         title: t(format === "csv" ? "export.csv" : "export.links"),
-        defaultPath: `rud-downloads-${today()}.${extension}`,
+        defaultPath: `ratatosk-downloads-${today()}.${extension}`,
         filters: [{ name: t(format === "csv" ? "export.csv" : "export.links"), extensions: [extension] }],
       });
       if (!path) return;
@@ -242,7 +244,7 @@ export function DiagnosticsSection({ onError, onSaved }: SectionProps) {
     try {
       const path = await saveDialog({
         title: t("diag.report"),
-        defaultPath: `rud-diagnostics-${today()}.txt`,
+        defaultPath: `ratatosk-diagnostics-${today()}.txt`,
         filters: [{ name: "Text", extensions: ["txt"] }],
       });
       if (!path) return;

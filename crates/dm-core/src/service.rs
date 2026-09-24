@@ -49,6 +49,9 @@ const DEFAULT_MIN_SPLIT_BYTES: u64 = 512 * 1024;
 const CHECKPOINT_BYTES: u64 = 8 * 1024 * 1024;
 const CHECKPOINT_INTERVAL: Duration = Duration::from_secs(1);
 /// How long the connection count is held before its throughput is judged.
+/// Lost connections in a row, with no progress between them, before the
+/// whole download stops and waits to retry.
+const MAX_RANGE_RETRIES: u32 = 5;
 const DEFAULT_EVALUATION_WINDOW: Duration = Duration::from_secs(1);
 /// Progress is reported to the interface at most this often.
 const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(150);
@@ -222,6 +225,8 @@ pub struct TrafficSummary {
 pub struct DownloadService {
     /// Rebuilt when the network settings change; clones share it.
     downloader: Arc<RwLock<Downloader>>,
+    /// How long a connection may deliver nothing before it is dropped.
+    stall_timeout: Duration,
     storage: Arc<Storage>,
     execution_slots: Arc<Semaphore>,
     /// Handles for transfers running in this process, so pause and cancel
@@ -281,6 +286,7 @@ impl DownloadService {
             overrides: Arc::new(Mutex::new(HashMap::new())),
             sessions: Arc::new(Mutex::new(HashMap::new())),
             post_events: tokio::sync::broadcast::channel(64).0,
+            stall_timeout: crate::network::DEFAULT_STALL_TIMEOUT,
         })
     }
 
@@ -422,6 +428,16 @@ impl DownloadService {
         self
     }
 
+    /// Drops a connection that delivers nothing for `timeout` (30 seconds
+    /// unless changed), so its range goes to another connection.
+    pub fn with_stall_timeout(mut self, timeout: Duration) -> Result<Self> {
+        self.stall_timeout = timeout;
+        let downloader =
+            Downloader::with_network_and_stall(&NetworkSettings::load(&self.storage), timeout)?;
+        self.downloader = Arc::new(RwLock::new(downloader));
+        Ok(self)
+    }
+
     pub fn with_segmented_threshold(mut self, threshold: u64) -> Self {
         self.segmented_threshold = threshold;
         self
@@ -477,7 +493,7 @@ impl DownloadService {
     /// route.
     pub fn set_network_settings(&self, settings: &NetworkSettings) -> Result<()> {
         settings.validate()?;
-        let downloader = Downloader::with_network(settings)?;
+        let downloader = Downloader::with_network_and_stall(settings, self.stall_timeout)?;
         settings.save(&self.storage)?;
         *self
             .downloader
@@ -2347,6 +2363,9 @@ impl DownloadService {
         let mut last_persisted_bytes = initial_bytes;
         let mut last_emitted_at: Option<Instant> = None;
         let mut window = EvaluationWindow::start(pool.workers.len(), downloaded);
+        // Connections lost in a row with no progress in between.
+        let mut range_retries = 0_u32;
+        let mut bytes_at_last_failure = downloaded;
 
         let outcome: Result<()> = loop {
             if pool.workers.is_empty() {
@@ -2378,10 +2397,26 @@ impl DownloadService {
                             }
                         }
                         Ok(Err(failure)) => {
-                            if pool.healthy_sources() > 1 && is_source_failure(&failure.error) {
-                                // One address failed; the others carry on and
-                                // this range goes back to be picked up again.
-                                pool.healthy[failure.source] = false;
+                            let mirror_failed =
+                                pool.healthy_sources() > 1 && is_source_failure(&failure.error);
+                            // A dropped or stalled connection costs only its
+                            // own range, which goes back to be picked up
+                            // again, as long as the download keeps moving.
+                            if downloaded > bytes_at_last_failure {
+                                range_retries = 0;
+                            }
+                            let connection_dropped = !mirror_failed
+                                && range_retries < MAX_RANGE_RETRIES
+                                && matches!(&failure.error, DownloadServiceError::Download(error)
+                                    if classify_failure(error) == FailureClass::Retryable);
+                            if mirror_failed || connection_dropped {
+                                if mirror_failed {
+                                    pool.healthy[failure.source] = false;
+                                } else {
+                                    range_retries += 1;
+                                }
+                                downloaded = downloaded.saturating_sub(failure.lost_bytes);
+                                bytes_at_last_failure = downloaded;
                                 pool.active.remove(&failure.segment_index);
                                 let requeued = self
                                     .storage
@@ -2935,6 +2970,9 @@ struct RangeFailure {
     segment_index: u32,
     source: usize,
     error: DownloadServiceError,
+    /// Bytes this connection reported that were not yet durable, and so
+    /// will be downloaded again: they come off the running total.
+    lost_bytes: u64,
 }
 
 /// The ranges of one transfer: those waiting for a connection and those
@@ -3039,9 +3077,13 @@ impl SegmentPool {
         let checkpoint_interval = context.checkpoint_interval;
         let events = context.events.clone();
 
+        let reported = Arc::new(std::sync::atomic::AtomicU64::new(segment.downloaded_bytes));
+        let durable = Arc::new(std::sync::atomic::AtomicU64::new(segment.downloaded_bytes));
+
         self.workers.spawn(async move {
             let download_id = segment.download_id.clone();
             let index = segment.segment_index;
+            let (reported_seen, durable_seen) = (Arc::clone(&reported), Arc::clone(&durable));
             let outcome = downloader
                 .transfer_range(
                     RangeTransferRequest {
@@ -3055,14 +3097,16 @@ impl SegmentPool {
                     control.as_ref(),
                     |progress: RangeProgress| {
                         if progress.written > 0 {
+                            reported.fetch_add(progress.written, Ordering::Relaxed);
                             let _ = events.send(progress.written);
                         }
-                        if let Some(durable) = progress.durable_bytes {
+                        if let Some(bytes) = progress.durable_bytes {
                             storage
-                                .update_download_segment_progress(&download_id, index, durable)
+                                .update_download_segment_progress(&download_id, index, bytes)
                                 .map_err(|error| {
                                     DownloadError::ProgressCallback(error.to_string())
                                 })?;
+                            durable.store(bytes, Ordering::Relaxed);
                         }
                         Ok(())
                     },
@@ -3072,6 +3116,9 @@ impl SegmentPool {
                     segment_index: index,
                     source,
                     error: error.into(),
+                    lost_bytes: reported_seen
+                        .load(Ordering::Relaxed)
+                        .saturating_sub(durable_seen.load(Ordering::Relaxed)),
                 })?;
             Ok(FinishedRange {
                 segment_index: index,
@@ -5959,5 +6006,154 @@ mod tests {
             .await;
         assert!(!failed.reachable);
         assert!(!failed.error.unwrap_or_default().contains("secret"));
+    }
+
+    fn patterned_body(length: usize) -> Vec<u8> {
+        (0..length).map(|index| (index % 251) as u8).collect()
+    }
+
+    fn fault_tolerant_service(harness: &Harness) -> DownloadService {
+        harness
+            .service
+            .clone()
+            .with_segment_connections(4)
+            .with_segmented_threshold(1)
+            .with_segment_sizes(64 * 1024, 32 * 1024)
+            .with_stall_timeout(Duration::from_millis(300))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_connection_that_goes_silent_is_replaced_instead_of_hanging() {
+        let body = patterned_body(512 * 1024);
+        let server = TestServer::start(ServerBehaviour {
+            body: body.clone(),
+            chunk_size: 16 * 1024,
+            stall_first_bodies: 1,
+            stall_for: Duration::from_secs(120),
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+        let service = fault_tolerant_service(&harness);
+        let created = service.create_task(&server.url("silent.bin")).unwrap();
+
+        let record = tokio::time::timeout(
+            Duration::from_secs(20),
+            service.start_task(&created.id, &harness.destination),
+        )
+        .await
+        .expect("the download hung on a silent connection")
+        .unwrap();
+
+        assert_eq!(record.status, DownloadStatus::Completed);
+        assert_eq!(
+            std::fs::read(record.destination_path.unwrap()).unwrap(),
+            body
+        );
+    }
+
+    #[tokio::test]
+    async fn a_dropped_connection_costs_only_its_own_range() {
+        let body = patterned_body(512 * 1024);
+        let server = TestServer::start(ServerBehaviour {
+            body: body.clone(),
+            chunk_size: 16 * 1024,
+            drop_first_bodies: 3,
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+        let service = fault_tolerant_service(&harness);
+        let created = service.create_task(&server.url("flaky.bin")).unwrap();
+
+        let record = service
+            .start_task(&created.id, &harness.destination)
+            .await
+            .unwrap();
+
+        // Finished in the same run: no whole-download retry was needed.
+        assert_eq!(record.status, DownloadStatus::Completed);
+        assert_eq!(record.attempts, 0);
+        assert_eq!(
+            std::fs::read(record.destination_path.unwrap()).unwrap(),
+            body
+        );
+        assert_eq!(
+            harness
+                .storage
+                .get_download(&created.id)
+                .unwrap()
+                .unwrap()
+                .downloaded_bytes,
+            body.len() as u64
+        );
+    }
+
+    #[tokio::test]
+    async fn a_connection_that_keeps_delivering_something_is_kept_going() {
+        // Every connection drops after one chunk, but each chunk is kept, so
+        // the download is still moving and should finish.
+        let body = patterned_body(256 * 1024);
+        let server = TestServer::start(ServerBehaviour {
+            body: body.clone(),
+            chunk_size: 16 * 1024,
+            drop_first_bodies: usize::MAX,
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+        let service = fault_tolerant_service(&harness);
+        let created = service.create_task(&server.url("trickle.bin")).unwrap();
+
+        let record = service
+            .start_task(&created.id, &harness.destination)
+            .await
+            .unwrap();
+
+        assert_eq!(record.status, DownloadStatus::Completed);
+        assert_eq!(
+            std::fs::read(record.destination_path.unwrap()).unwrap(),
+            body
+        );
+    }
+
+    #[tokio::test]
+    async fn a_server_that_sends_nothing_is_not_retried_forever() {
+        let server = TestServer::start(ServerBehaviour {
+            body: patterned_body(512 * 1024),
+            chunk_size: 16 * 1024,
+            truncate_after: Some(0),
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+        let service = fault_tolerant_service(&harness);
+        let created = service.create_task(&server.url("broken.bin")).unwrap();
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(20),
+            service.start_task(&created.id, &harness.destination),
+        )
+        .await
+        .expect("kept retrying a broken server");
+
+        let status = match result {
+            Ok(record) => record.status,
+            Err(_) => {
+                harness
+                    .storage
+                    .get_download(&created.id)
+                    .unwrap()
+                    .unwrap()
+                    .status
+            }
+        };
+        assert_ne!(status, DownloadStatus::Completed);
+        assert!(
+            server.request_count() < 40,
+            "{} requests",
+            server.request_count()
+        );
     }
 }

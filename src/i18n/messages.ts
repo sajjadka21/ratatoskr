@@ -10,8 +10,8 @@ import { pageEn, pageFa } from "./pageMessages";
  * locale's digits (use `fmt.number`).
  */
 const en = {
-  "app.name": "Rud",
-  "app.fullName": "Rud Download Manager",
+  "app.name": "Ratatosk",
+  "app.fullName": "Ratatosk Download Manager",
 
   "nav.all": "All downloads",
   "nav.active": "Downloading",
@@ -212,7 +212,7 @@ const en = {
   "toast.openFailed": "Could not open the file: {reason}",
   "toast.revealFailed": "Could not show the file: {reason}",
 
-  "completion.exit_app": "Rud will close",
+  "completion.exit_app": "Ratatosk will close",
   "completion.sleep": "The computer will sleep",
   "completion.hibernate": "The computer will hibernate",
   "completion.shutdown": "The computer will shut down",
@@ -220,11 +220,11 @@ const en = {
   "completion.finished": "“{queue}” finished.",
   "completion.cancel": "Cancel",
 
-  "tray.show": "Show Rud",
+  "tray.show": "Show Ratatosk",
   "tray.pauseAll": "Pause all",
   "tray.quit": "Quit",
-  "tray.idle": "Rud — idle",
-  "tray.active": "Rud — {speed} · {count} downloading",
+  "tray.idle": "Ratatosk — idle",
+  "tray.active": "Ratatosk — {speed} · {count} downloading",
 
   "shortcuts.hint": "Ctrl+K commands · Ctrl+N add · Ctrl+F search · Space pause/resume · Del remove",
 } as const;
@@ -232,8 +232,8 @@ const en = {
 type CoreKey = keyof typeof en;
 
 const coreFa: Record<CoreKey, string> = {
-  "app.name": "رود",
-  "app.fullName": "مدیر دانلود رود",
+  "app.name": "راتاتوسک",
+  "app.fullName": "مدیر دانلود راتاتوسک",
 
   "nav.all": "همه دانلودها",
   "nav.active": "در حال دریافت",
@@ -434,7 +434,7 @@ const coreFa: Record<CoreKey, string> = {
   "toast.openFailed": "فایل باز نشد: {reason}",
   "toast.revealFailed": "فایل نمایش داده نشد: {reason}",
 
-  "completion.exit_app": "رود بسته می‌شود",
+  "completion.exit_app": "راتاتوسک بسته می‌شود",
   "completion.sleep": "کامپیوتر به خواب می‌رود",
   "completion.hibernate": "کامپیوتر به حالت هایبرنیت می‌رود",
   "completion.shutdown": "کامپیوتر خاموش می‌شود",
@@ -442,11 +442,11 @@ const coreFa: Record<CoreKey, string> = {
   "completion.finished": "صف «{queue}» تمام شد.",
   "completion.cancel": "لغو",
 
-  "tray.show": "نمایش رود",
+  "tray.show": "نمایش راتاتوسک",
   "tray.pauseAll": "توقف همه",
   "tray.quit": "خروج",
-  "tray.idle": "رود — بیکار",
-  "tray.active": "رود — {speed} · {count} در حال دریافت",
+  "tray.idle": "راتاتوسک — بیکار",
+  "tray.active": "راتاتوسک — {speed} · {count} در حال دریافت",
 
   "shortcuts.hint": "Ctrl+K فرمان‌ها · Ctrl+N افزودن · Ctrl+F جستجو · Space توقف/ادامه · Del حذف",
 };

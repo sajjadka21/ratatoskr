@@ -57,22 +57,25 @@ const PAGES: Array<{
   { id: "stats", label: "nav.stats", icon: BarChart3 },
 ];
 
-/** The brand mark: two currents flowing down into a download arrow. */
-export function RudMark({ size = 34 }: { size?: number }) {
+/**
+ * The brand mark: Ratatosk, the squirrel of Norse myth who runs up and
+ * down the world tree carrying messages, bringing a file down.
+ */
+export function RatatoskMark({ size = 34 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 34 34" aria-hidden="true" className="rud-mark">
+    <svg width={size} height={size} viewBox="0 0 34 34" aria-hidden="true" className="brand-mark">
       <rect width="34" height="34" rx="10" fill="var(--accent)" />
+      <g fill="var(--accent-ink)">
+        <path d="M19.5 27.5c6.5-.2 9.6-5.4 8.6-11.2-.8-4.6-4.9-7.6-8.6-6.3-2.7.9-3.4 4.1-1.5 5.8 1.4 1.3 3.6.9 4.2-.8.3 2.5-.6 5.4-2.7 7.4z" />
+        <path d="M9.4 27.5c-.6-3.6.4-7.4 3.3-9.3 2.4-1.6 5.6-1 6.9 1.4 1.3 2.4.8 5.6-.6 7.9z" />
+        <ellipse cx="12" cy="14.8" rx="4.3" ry="3.8" />
+        <path d="M12.2 11.8c.1-1.6.8-3.1 1.9-3.9.5 1.4.5 3-.1 4.4z" />
+      </g>
+      <circle cx="10.4" cy="14.2" r=".95" fill="var(--accent)" />
       <path
-        d="M8 12.5c3-3 6 3 9 0s6-3 9 0M8 18c3-3 6 3 9 0s6-3 9 0"
+        d="M7.6 20.2v5.6m-2-2 2 2 2-2"
         stroke="var(--accent-ink)"
-        strokeWidth="2.2"
-        fill="none"
-        strokeLinecap="round"
-      />
-      <path
-        d="M17 22v5.5m-3-3 3 3 3-3"
-        stroke="var(--accent-ink)"
-        strokeWidth="2.2"
+        strokeWidth="1.9"
         fill="none"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -98,7 +101,7 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <div className="sidebar__brand">
-        <RudMark />
+        <RatatoskMark />
         <div className="sidebar__brand-copy">
           <strong>{t("app.name")}</strong>
           <span>{t("app.fullName")}</span>

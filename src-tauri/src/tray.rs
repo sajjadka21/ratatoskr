@@ -36,14 +36,14 @@ pub struct TrayLabels {
 }
 
 pub fn create(app: &AppHandle) -> tauri::Result<TrayMenu> {
-    let show = MenuItem::with_id(app, MENU_SHOW, "Show Download Manager", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, MENU_SHOW, "Show Ratatosk", true, None::<&str>)?;
     let pause_all = MenuItem::with_id(app, MENU_PAUSE_ALL, "Pause all", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, MENU_QUIT, "Quit", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(app, &[&show, &pause_all, &separator, &quit])?;
 
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
-        .tooltip("Download Manager")
+        .tooltip("Ratatosk")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {

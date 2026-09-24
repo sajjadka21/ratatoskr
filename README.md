@@ -1,6 +1,10 @@
-﻿# Download Manager
+﻿# Ratatosk
 
-A modern local-first download manager for Windows.
+A modern local-first download manager for Windows, Persian first and bilingual.
+
+Named after Ratatosk, the squirrel of Norse myth who runs up and down the
+world tree carrying messages between its top and its roots: this one brings
+files down. The command-line tool is `tosk`.
 
 ## Current Status
 
@@ -23,7 +27,7 @@ Main crates:
 - dm-ipc - IPC contracts
 - dm-native-host - Chrome/Edge/Firefox Native Messaging stdio host
 - dm-system - Windows power, sleep, sparse files, locating the app
-- dm-cli - `rud`, the command-line tool
+- dm-cli - `tosk`, the command-line tool
 - src-tauri - desktop application host
 
 ## Development
@@ -67,21 +71,21 @@ place it next to the application, replace the extension ID in
 Native Messaging registry/directory. Takeover is disabled by default and all
 cookies, credentials, authorization headers, and access tokens are excluded.
 
-## Command line (`rud`)
+## Command line (`tosk`)
 
-Build with `cargo build --release -p dm-cli` and place `rud.exe` next to the
+Build with `cargo build --release -p dm-cli` and place `tosk.exe` next to the
 application. It uses the application's own database and hands every action to
 the running application (starting it when needed), so there is one engine and
 one record of every download:
 
 ```text
-rud add https://example.com/file.iso          # add and start
-rud add --later https://example.com/big.zip   # add, start later
-rud list [--status downloading] [--json]
-rud status 3f2a9c1e
-rud pause|resume|cancel <id>...               # ids may be shortened
-rud pause-all
-rud queue start "Default Queue"
+tosk add https://example.com/file.iso          # add and start
+tosk add --later https://example.com/big.zip   # add, start later
+tosk list [--status downloading] [--json]
+tosk status 3f2a9c1e
+tosk pause|resume|cancel <id>...               # ids may be shortened
+tosk pause-all
+tosk queue start "Default Queue"
 ```
 
 ## Principles

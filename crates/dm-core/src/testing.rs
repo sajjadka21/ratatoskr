@@ -53,6 +53,14 @@ pub struct ServerBehaviour {
     /// Other bodies served by path (without the query), for tests that need
     /// several resources from one server, such as a stream's playlists.
     pub routes: Vec<(String, Vec<u8>)>,
+    /// The first this many body transfers send their first chunk and then
+    /// go silent for `stall_for` with the connection still open, the way a
+    /// filtered or VPN-broken connection behaves.
+    pub stall_first_bodies: usize,
+    pub stall_for: Duration,
+    /// The first this many body transfers send their first chunk and then
+    /// close the connection.
+    pub drop_first_bodies: usize,
 }
 
 impl Default for ServerBehaviour {
@@ -72,6 +80,9 @@ impl Default for ServerBehaviour {
             response_delay: None,
             retry_after: None,
             routes: Vec::new(),
+            stall_first_bodies: 0,
+            stall_for: Duration::from_secs(60),
+            drop_first_bodies: 0,
         }
     }
 }
@@ -93,6 +104,8 @@ pub struct ServerStats {
     /// Requests being handled right now, and the most there ever were.
     pub active_requests: AtomicUsize,
     pub peak_concurrent_requests: AtomicUsize,
+    /// Body transfers begun, for the faults that affect only the first few.
+    pub bodies_started: AtomicUsize,
 }
 
 #[derive(Debug)]
@@ -346,6 +359,14 @@ async fn serve(
             .fetch_max(active, Ordering::SeqCst);
     }
 
+    let body_number = if counts_as_body {
+        stats.bodies_started.fetch_add(1, Ordering::SeqCst)
+    } else {
+        usize::MAX
+    };
+    let stalls = body_number < behaviour.stall_first_bodies;
+    let drops = !stalls && body_number < behaviour.drop_first_bodies;
+
     // The delay goes before each chunk but the first, so a finished body is
     // never still counted as active while the next transfer starts.
     for (index, chunk) in slice[..limit]
@@ -360,6 +381,20 @@ async fn serve(
 
         socket.write_all(chunk).await?;
         socket.flush().await?;
+
+        if index == 0 && stalls {
+            tokio::time::sleep(behaviour.stall_for).await;
+            if counts_as_body {
+                stats.active_bodies.fetch_sub(1, Ordering::SeqCst);
+            }
+            return Ok(());
+        }
+        if index == 0 && drops {
+            if counts_as_body {
+                stats.active_bodies.fetch_sub(1, Ordering::SeqCst);
+            }
+            return socket.shutdown().await;
+        }
     }
 
     if counts_as_body {

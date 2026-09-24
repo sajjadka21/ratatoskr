@@ -46,7 +46,7 @@ pub struct DiagnosticsFacts {
 pub fn render_report(facts: &DiagnosticsFacts) -> String {
     let yes = |value: bool| if value { "yes" } else { "no" };
     let mut text = String::new();
-    let _ = writeln!(text, "Rud diagnostics report");
+    let _ = writeln!(text, "Ratatosk diagnostics report");
     let _ = writeln!(text, "Created: {}", facts.created_at);
     let _ = writeln!(text);
     let _ = writeln!(text, "Application: {}", facts.app_version);

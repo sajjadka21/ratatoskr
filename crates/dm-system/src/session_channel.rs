@@ -102,11 +102,11 @@ impl fmt::Display for DeliveryError {
             Self::Unsupported => {
                 formatter.write_str("browser sessions cannot be handed over on this system")
             }
-            Self::Unavailable => formatter.write_str("Download Manager did not answer in time"),
+            Self::Unavailable => formatter.write_str("Ratatosk did not answer in time"),
             Self::UntrustedServer => formatter
                 .write_str("the session channel is held by another program, so nothing was sent"),
             Self::Refused(reason) => {
-                write!(formatter, "Download Manager refused the session: {reason}")
+                write!(formatter, "Ratatosk refused the session: {reason}")
             }
             Self::Io(error) => write!(formatter, "session channel error: {error}"),
         }

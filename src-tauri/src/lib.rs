@@ -249,7 +249,7 @@ fn init_logging() {
 #[tauri::command]
 fn get_app_info() -> AppInfoResponse {
     AppInfoResponse {
-        name: "Download Manager".to_owned(),
+        name: "Ratatosk".to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
     }
 }
@@ -2280,7 +2280,7 @@ fn receive_browser_session(
     use dm_system::session_channel::HandoffReply;
 
     let Some(state) = app.try_state::<AppState>() else {
-        return HandoffReply::refused("Download Manager is still starting");
+        return HandoffReply::refused("Ratatosk is still starting");
     };
 
     if let Err(error) = state.downloads.attach_browser_session(task_id, cookie) {
@@ -2349,7 +2349,7 @@ pub fn run() {
 
     let launch_requests = parse_launch_args(&std::env::args().skip(1).collect::<Vec<_>>());
 
-    info!("starting Download Manager");
+    info!("starting Ratatosk");
 
     tauri::Builder::default()
         // Registered first so a second launch exits before it opens a window
@@ -2607,7 +2607,7 @@ pub fn run() {
             parse_hls_manifest
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Download Manager");
+        .expect("error while running Ratatosk");
 }
 
 #[cfg(test)]

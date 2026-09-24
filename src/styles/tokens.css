@@ -1,5 +1,5 @@
 /*
- * Rud design tokens.
+ * Ratatosk design tokens.
  *
  * Dark is the default; `data-theme="light"` on <html> switches to light and
  * `data-theme="system"` follows Windows. Components use only these tokens so

@@ -40,6 +40,7 @@ pub fn application_path() -> Option<PathBuf> {
     }
     let current = env::current_exe().ok()?.parent()?.to_owned();
     [
+        "Ratatosk.exe",
         "download-manager.exe",
         "Download Manager.exe",
         "tauri-app.exe",

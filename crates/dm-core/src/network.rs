@@ -13,6 +13,12 @@ use reqwest::{Client, Proxy, Url};
 use std::time::Duration;
 use thiserror::Error;
 
+/// How long a connection may stay silent before it counts as dead. A
+/// connection that stays open but stops delivering (common behind
+/// filtering and VPNs) otherwise holds its range forever, and the
+/// download stops at 99%.
+pub const DEFAULT_STALL_TIMEOUT: Duration = Duration::from_secs(30);
+
 pub const SETTING_PROXY_MODE: &str = "network_proxy_mode";
 pub const SETTING_PROXY_URL: &str = "network_proxy_url";
 pub const SETTING_DIRECT_HOSTS: &str = "network_direct_hosts";
@@ -155,8 +161,22 @@ impl NetworkSettings {
 
     /// Builds the HTTP client these settings describe.
     pub fn build_client(&self) -> Result<Client, reqwest::Error> {
+        self.build_client_with(DEFAULT_STALL_TIMEOUT)
+    }
+
+    /// The client, with `stall_timeout` as the longest a connection may go
+    /// without delivering a byte.
+    ///
+    /// HTTP/1.1 only: over HTTP/2 every range request to a server would
+    /// share one TCP connection, and the point of several connections is
+    /// several TCP connections. On long, lossy routes each connection's
+    /// window, not the line, limits the speed, and HTTP/2 would quietly
+    /// turn eight connections back into one.
+    pub fn build_client_with(&self, stall_timeout: Duration) -> Result<Client, reqwest::Error> {
         let builder = Client::builder()
             .connect_timeout(Duration::from_secs(20))
+            .read_timeout(stall_timeout)
+            .http1_only()
             .no_gzip()
             .no_brotli()
             .no_deflate()

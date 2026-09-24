@@ -1417,3 +1417,56 @@ control calls an existing or new backend command.
 - Free space and the restart on Windows (the Windows call was checked
   against the `windows-sys` signature only; the test environment is Linux
   and cannot fetch the Windows toolchain).
+
+## Review follow-up - Step 9: Ratatosk, and three engine fixes
+
+### New name
+
+- The application is now **Ratatosk** (راتاتوسک): the squirrel of Norse
+  myth who runs up and down the world tree carrying messages. The mark is a
+  squirrel bringing a file down, on the same saffron; the app icons were
+  regenerated from it.
+- Renamed where people see it: window, tray, notifications, interface
+  (both languages), browser extension, installer name (`productName`), the
+  diagnostics report and the backup file (`.tosk`; `.rudbackup` files still
+  open). The command-line tool is now `tosk`.
+- **Kept on purpose:** the bundle identifier (`com.downloadmanager.desktop`),
+  so the existing database, and the native-messaging and pipe names, are
+  found where they were. The helpers look for `Ratatosk.exe` first and still
+  find the old program names.
+
+### Engine fixes
+
+1. **HTTP/1.1 for transfers.** reqwest negotiates HTTP/2 by default; over
+   HTTP/2 every range request to a server shares one TCP connection, so on
+   the CDNs that speak it (most large ones) several connections were
+   quietly one. The client now uses HTTP/1.1, so each connection is its own
+   TCP connection.
+2. **Silent connections are dropped.** A read timeout of 30 seconds
+   (`DEFAULT_STALL_TIMEOUT`) ends a connection that stays open but delivers
+   nothing, which otherwise held its range forever and left the download at
+   99%.
+3. **A lost connection costs only its range.** With a single source, one
+   dropped or timed-out connection used to fail the whole download and wait
+   for a retry. Now the range goes back to be picked up again while the
+   other connections carry on. Bytes that connection reported but had not
+   made durable come off the running total, so progress never counts twice.
+   Five lost connections in a row with no progress in between still stop
+   the download, which then waits and retries as before.
+
+### Verification
+
+- `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo check --workspace` - passed
+- `cargo test --workspace` - passed (336 Rust tests). New: a connection that
+  goes silent is replaced and the download finishes; dropped connections
+  finish in the same run without a whole-download retry; a server that
+  drops every connection after one chunk still finishes because each chunk
+  is kept; a server that sends nothing is not retried forever. The first
+  two were checked to fail with the fix switched off.
+- `tsc --noEmit`, `npm test` (65 tests), `npm run build` - passed
+
+### Not verified
+
+- HTTP/1.1 against a real HTTP/2 server: the test server speaks HTTP/1.1
+  only, so this rests on reqwest's `http1_only`.

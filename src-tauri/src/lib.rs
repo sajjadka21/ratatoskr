@@ -8,8 +8,10 @@ use dm_core::{
     CoreService, TransferProgress,
 };
 mod automation;
+mod tray;
 
 use automation::Automation;
+use dm_ipc::UiPreferencesResponse;
 use dm_ipc::{
     AppInfoResponse, CategoryResponse, ComponentHealth, DownloadListItemResponse,
     DownloadRuleResponse, DownloadSettingsResponse, DownloadTaskEvent, HealthCheckResponse,
@@ -50,6 +52,7 @@ pub struct AppState {
     /// Links a browser sent before the window could receive them.
     pending_link_intake: Mutex<Vec<String>>,
     automation: Automation,
+    tray_menu: Mutex<Option<tray::TrayMenu>>,
 }
 
 /// Publishes engine events to the UI and enforces the per-task event rate.
@@ -1206,6 +1209,83 @@ fn reveal_download_file(
         .map_err(|error| error.to_string())
 }
 
+/// Pauses every running transfer; each persists its own pause.
+#[tauri::command]
+fn pause_all_downloads(state: State<'_, AppState>) -> usize {
+    state.downloads.pause_all().len()
+}
+
+const SETTING_UI_LANGUAGE: &str = "ui_language";
+const SETTING_UI_THEME: &str = "ui_theme";
+
+fn ui_preferences(state: &AppState) -> Result<UiPreferencesResponse, String> {
+    let setting = |key: &str| {
+        state
+            .storage
+            .get_setting(key)
+            .map_err(|error| error.to_string())
+    };
+    let language = setting(SETTING_UI_LANGUAGE)?
+        .filter(|value| matches!(value.as_str(), "fa" | "en"))
+        .unwrap_or_else(|| "fa".to_owned());
+    let theme = setting(SETTING_UI_THEME)?
+        .filter(|value| matches!(value.as_str(), "dark" | "light" | "system"))
+        .unwrap_or_else(|| "system".to_owned());
+    Ok(UiPreferencesResponse {
+        language,
+        theme,
+        close_to_tray: tray::close_to_tray_enabled(state),
+    })
+}
+
+#[tauri::command]
+fn get_ui_preferences(state: State<'_, AppState>) -> Result<UiPreferencesResponse, String> {
+    ui_preferences(&state)
+}
+
+#[tauri::command]
+fn set_ui_preferences(
+    state: State<'_, AppState>,
+    preferences: UiPreferencesResponse,
+) -> Result<UiPreferencesResponse, String> {
+    if !matches!(preferences.language.as_str(), "fa" | "en") {
+        return Err("unsupported language".to_owned());
+    }
+    if !matches!(preferences.theme.as_str(), "dark" | "light" | "system") {
+        return Err("unsupported theme".to_owned());
+    }
+    let save = |key: &str, value: &str| {
+        state
+            .storage
+            .set_setting(key, value)
+            .map_err(|error| error.to_string())
+    };
+    save(SETTING_UI_LANGUAGE, &preferences.language)?;
+    save(SETTING_UI_THEME, &preferences.theme)?;
+    save(
+        tray::SETTING_CLOSE_TO_TRAY,
+        if preferences.close_to_tray {
+            "true"
+        } else {
+            "false"
+        },
+    )?;
+    ui_preferences(&state)
+}
+
+/// The window reports the overall speed in the user's language; the tray
+/// shows it as its tooltip. Menu labels follow the language too.
+#[tauri::command]
+fn set_tray_status(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    tooltip: String,
+    labels: Option<tray::TrayLabels>,
+) {
+    let tooltip: String = tooltip.chars().take(120).collect();
+    tray::update(&app, &state.tray_menu, &tooltip, labels.as_ref());
+}
+
 #[tauri::command]
 fn inspect_links(input: String) -> Vec<LinkCandidateResponse> {
     dm_core::linkgrabber::extract_links(&input)
@@ -1342,15 +1422,6 @@ fn parse_launch_args(args: &[String]) -> Vec<LaunchRequest> {
     requests
 }
 
-/// Brings the main window forward so the user sees what the browser sent.
-fn reveal_main_window(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
-}
-
 fn handle_launch_requests(app: &AppHandle, requests: Vec<LaunchRequest>) {
     if requests.is_empty() {
         return;
@@ -1401,7 +1472,7 @@ fn handle_launch_requests(app: &AppHandle, requests: Vec<LaunchRequest>) {
         }
     }
 
-    reveal_main_window(app);
+    tray::show_main_window(app);
 }
 
 /// Starts or queues a task that arrived from the browser, applying the same
@@ -1503,7 +1574,7 @@ fn receive_browser_session(
     }
 
     info!(download_id = %task_id, "browser handoff started with a browser session");
-    reveal_main_window(app);
+    tray::show_main_window(app);
     HandoffReply::accepted()
 }
 
@@ -1565,7 +1636,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             let requests = parse_launch_args(args.get(1..).unwrap_or_default());
             if requests.is_empty() {
-                reveal_main_window(app);
+                tray::show_main_window(app);
             } else {
                 handle_launch_requests(app, requests);
             }
@@ -1616,7 +1687,19 @@ pub fn run() {
                 queues: queues.clone(),
                 pending_link_intake: Mutex::new(Vec::new()),
                 automation: Automation::new(),
+                tray_menu: Mutex::new(None),
             });
+
+            // A missing notification area (some Linux desktops) must not stop
+            // the application from starting.
+            match tray::create(app.handle()) {
+                Ok(menu) => {
+                    if let Ok(mut slot) = app.state::<AppState>().tray_menu.lock() {
+                        *slot = Some(menu);
+                    }
+                }
+                Err(error) => warn!(error = %error, "tray icon unavailable"),
+            }
 
             tauri::async_runtime::spawn(automation::run_keep_awake(app.handle().clone()));
             tauri::async_runtime::spawn(serve_browser_sessions(app.handle().clone()));
@@ -1655,6 +1738,21 @@ pub fn run() {
             info!("application state initialized");
 
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Closing hides to the tray so downloads keep running; Quit in
+            // the tray menu really exits.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let app = window.app_handle();
+                let hide = app.try_state::<AppState>().is_some_and(|state| {
+                    tray::close_to_tray_enabled(&state)
+                        && state.tray_menu.lock().is_ok_and(|menu| menu.is_some())
+                });
+                if hide {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_app_info,
@@ -1700,6 +1798,10 @@ pub fn run() {
             cancel_completion_action,
             open_download_file,
             reveal_download_file,
+            pause_all_downloads,
+            get_ui_preferences,
+            set_ui_preferences,
+            set_tray_status,
             classify_media_source,
             parse_hls_manifest
         ])

@@ -32,10 +32,9 @@ import type {
   TaskAction,
 } from "../../types/download";
 
-import {
-  ACTION_LABELS,
-  availableActions,
-} from "../../utils/taskActions";
+import { availableActions } from "../../utils/taskActions";
+import { useI18n } from "../../i18n/I18n";
+import type { MessageKey } from "../../i18n/messages";
 
 import "./DownloadContextMenu.css";
 
@@ -81,15 +80,7 @@ const ACTION_ICONS = {
 /// never grows past the window on a small screen.
 type OpenGroup = "queue" | "priority" | null;
 
-const PRIORITIES: Array<{
-  value: DownloadPriority;
-  label: string;
-}> = [
-  { value: "very_high", label: "Very high" },
-  { value: "high", label: "High" },
-  { value: "normal", label: "Normal" },
-  { value: "low", label: "Low" },
-];
+const PRIORITIES: DownloadPriority[] = ["very_high", "high", "normal", "low"];
 
 export function DownloadContextMenu({
   item,
@@ -106,6 +97,7 @@ export function DownloadContextMenu({
   onRefreshSource,
   onError,
 }: DownloadContextMenuProps) {
+  const { t } = useI18n();
   const menuRef = useRef<HTMLDivElement>(null);
 
   const [position, setPosition] = useState({
@@ -293,7 +285,7 @@ export function DownloadContextMenu({
                 }}
               >
                 <ActionIcon size={15} />
-                <span>{ACTION_LABELS[action]}</span>
+                <span>{t(`action.${action}` as MessageKey)}</span>
               </button>
             );
           })}
@@ -309,7 +301,7 @@ export function DownloadContextMenu({
         onClick={() => void handleOpenFile()}
       >
         <ExternalLink size={15} />
-        <span>Open File</span>
+        <span>{t("action.open")}</span>
       </button>
 
       <button
@@ -319,7 +311,7 @@ export function DownloadContextMenu({
         onClick={() => void handleReveal()}
       >
         <FolderOpen size={15} />
-        <span>Show in Folder</span>
+        <span>{t("action.reveal")}</span>
       </button>
 
       <button
@@ -332,7 +324,7 @@ export function DownloadContextMenu({
         }}
       >
         <RefreshCw size={15} />
-        <span>Refresh Source URL</span>
+        <span>{t("action.refreshSource")}</span>
       </button>
 
       <div className="download-context-menu__divider" />
@@ -347,9 +339,7 @@ export function DownloadContextMenu({
         <Link2 size={15} />
 
         <span>
-          {copied === "url"
-            ? "URL Copied"
-            : "Copy URL"}
+          {copied === "url" ? t("action.copied") : t("action.copyUrl")}
         </span>
       </button>
 
@@ -369,9 +359,7 @@ export function DownloadContextMenu({
         <Copy size={15} />
 
         <span>
-          {copied === "path"
-            ? "Path Copied"
-            : "Copy Path"}
+          {copied === "path" ? t("action.copied") : t("action.copyPath")}
         </span>
       </button>
 
@@ -392,9 +380,7 @@ export function DownloadContextMenu({
             <Layers3 size={15} />
 
             <span>
-              {item.queueId
-                ? "Change Queue"
-                : "Add to Queue"}
+              {item.queueId ? t("action.changeQueue") : t("action.addToQueue")}
             </span>
 
             <ChevronRight
@@ -426,7 +412,7 @@ export function DownloadContextMenu({
                 ))
               ) : (
                 <span className="download-context-menu__empty">
-                  No queues yet
+                  {t("action.noQueues")}
                 </span>
               )}
             </div>
@@ -443,7 +429,7 @@ export function DownloadContextMenu({
             }
           >
             <SignalHigh size={15} />
-            <span>Change Priority</span>
+            <span>{t("action.changePriority")}</span>
 
             <ChevronRight
               size={14}
@@ -459,16 +445,16 @@ export function DownloadContextMenu({
             <div className="download-context-menu__group">
               {PRIORITIES.map((priority) => (
                 <button
-                  key={priority.value}
+                  key={priority}
                   type="button"
                   role="menuitem"
-                  disabled={priority.value === item.priority}
+                  disabled={priority === item.priority}
                   onClick={() => {
-                    onChangePriority(item, priority.value);
+                    onChangePriority(item, priority);
                     onClose();
                   }}
                 >
-                  <span>{priority.label}</span>
+                  <span>{t(`priority.${priority}` as MessageKey)}</span>
                 </button>
               ))}
             </div>
@@ -484,7 +470,7 @@ export function DownloadContextMenu({
               }}
             >
               <ListX size={15} />
-              <span>Remove from Queue</span>
+              <span>{t("action.removeFromQueue")}</span>
             </button>
           ) : null}
 
@@ -501,7 +487,7 @@ export function DownloadContextMenu({
         }}
       >
         <FileText size={15} />
-        <span>Details</span>
+        <span>{t("action.details")}</span>
       </button>
       <div className="download-context-menu__divider" />
 
@@ -517,9 +503,7 @@ export function DownloadContextMenu({
         <Trash2 size={15} />
 
         <span>
-          {hasFile || status === "completed"
-            ? "Remove from History..."
-            : "Remove Task..."}
+          {hasFile || status === "completed" ? t("action.removeHistory") : t("action.remove")}…
         </span>
       </button>
     </div>

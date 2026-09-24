@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { FolderOpen, HardDrive, RotateCcw, Tag } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 
+import { useI18n } from "../../i18n/I18n";
+import type { MessageKey } from "../../i18n/messages";
 import type { DownloadCategory } from "../../types/download";
 import { pickFolder } from "../settings/SettingsPage";
 import "./CategoriesPage.css";
@@ -10,16 +12,23 @@ type CategoriesPageProps = {
   onError: (message: string) => void;
 };
 
+const BUILT_IN = new Set(["applications", "archives", "documents", "video", "audio", "images", "other"]);
+
 export function CategoriesPage({ onError }: CategoriesPageProps) {
+  const { t, fmt } = useI18n();
   const [categories, setCategories] = useState<DownloadCategory[]>([]);
   const [loaded, setLoaded] = useState(false);
+
+  /** Built-in categories are named in the UI language; custom ones as typed. */
+  const nameOf = (category: DownloadCategory) =>
+    BUILT_IN.has(category.id) ? t(`category.${category.id}` as MessageKey) : category.name;
 
   useEffect(() => {
     void invoke<DownloadCategory[]>("list_categories")
       .then(setCategories)
-      .catch((reason) => onError(`Could not load categories: ${String(reason)}`))
+      .catch((reason) => onError(t("categories.loadFailed", { reason: String(reason) })))
       .finally(() => setLoaded(true));
-  }, [onError]);
+  }, [onError, t]);
 
   async function setDirectory(category: DownloadCategory, directory: string | null) {
     try {
@@ -27,23 +36,18 @@ export function CategoriesPage({ onError }: CategoriesPageProps) {
         id: category.id,
         directory,
       });
-      setCategories((current) =>
-        current.map((item) => (item.id === saved.id ? saved : item)),
-      );
+      setCategories((current) => current.map((item) => (item.id === saved.id ? saved : item)));
     } catch (reason) {
-      onError(`Could not change the folder: ${String(reason)}`);
+      onError(t("categories.changeFailed", { reason: String(reason) }));
     }
   }
 
   async function chooseDirectory(category: DownloadCategory) {
     try {
-      const folder = await pickFolder(
-        `Folder for ${category.name}`,
-        category.defaultDirectory,
-      );
+      const folder = await pickFolder(t("categories.folderFor", { name: nameOf(category) }), category.defaultDirectory);
       if (folder) await setDirectory(category, folder);
     } catch (reason) {
-      onError(`Could not open the folder picker: ${String(reason)}`);
+      onError(t("settings.pickerFailed", { reason: String(reason) }));
     }
   }
 
@@ -54,18 +58,14 @@ export function CategoriesPage({ onError }: CategoriesPageProps) {
       <header className="categories-page__intro">
         <div>
           <span className="eyebrow">
-            <Tag size={14} /> Filing system
+            <Tag size={14} /> {t("categories.eyebrow")}
           </span>
-          <h2>Every kind of file in its own folder</h2>
-          <p>
-            A download is sorted by its type once the server says what it is.
-            Give a category a folder and its files go there; without one they
-            go to the default folder from Settings. Rules can override both.
-          </p>
+          <h2>{t("categories.title")}</h2>
+          <p>{t("categories.hint")}</p>
         </div>
         <div className="categories-page__summary">
-          <strong>{withFolder}</strong>
-          <span>of {categories.length} categories have their own folder</span>
+          <strong className="num">{fmt.number(withFolder)}</strong>
+          <span>{t("categories.summary", { total: fmt.number(categories.length) })}</span>
         </div>
       </header>
 
@@ -76,37 +76,32 @@ export function CategoriesPage({ onError }: CategoriesPageProps) {
               <FolderOpen size={18} />
             </div>
             <div className="category-card__body">
-              <h3>{category.name}</h3>
-              <p>
+              <h3>{nameOf(category)}</h3>
+              <p className="ltr">
                 {category.extensions.length
                   ? category.extensions.map((extension) => `.${extension}`).join("  ")
-                  : "Anything no other category matches"}
+                  : null}
               </p>
+              {category.extensions.length === 0 ? <p>{t("categories.anything")}</p> : null}
               <span
-                className={
-                  category.defaultDirectory
-                    ? "category-card__folder category-card__folder--set"
-                    : "category-card__folder"
-                }
+                className={category.defaultDirectory ? "category-card__folder category-card__folder--set" : "category-card__folder"}
                 title={category.defaultDirectory ?? undefined}
               >
                 <HardDrive size={13} />
-                {category.defaultDirectory ?? "Default folder"}
+                <span className={category.defaultDirectory ? "ltr" : undefined}>
+                  {category.defaultDirectory ?? t("categories.defaultFolder")}
+                </span>
               </span>
               <div className="category-card__actions">
-                <button
-                  type="button"
-                  className="category-card__button"
-                  onClick={() => void chooseDirectory(category)}
-                >
-                  {category.defaultDirectory ? "Change folder…" : "Choose folder…"}
+                <button type="button" className="category-card__button" onClick={() => void chooseDirectory(category)}>
+                  {category.defaultDirectory ? t("categories.change") : t("categories.choose")}
                 </button>
                 {category.defaultDirectory ? (
                   <button
                     type="button"
                     className="category-card__button category-card__button--quiet"
-                    aria-label={`Use the default folder for ${category.name}`}
-                    title="Use the default folder"
+                    aria-label={t("categories.reset", { name: nameOf(category) })}
+                    title={t("categories.resetShort")}
                     onClick={() => void setDirectory(category, null)}
                   >
                     <RotateCcw size={13} />
@@ -116,9 +111,7 @@ export function CategoriesPage({ onError }: CategoriesPageProps) {
             </div>
           </article>
         ))}
-        {loaded && categories.length === 0 ? (
-          <div className="categories-page__empty">No categories configured yet.</div>
-        ) : null}
+        {loaded && categories.length === 0 ? <div className="categories-page__empty">{t("categories.empty")}</div> : null}
       </div>
     </div>
   );

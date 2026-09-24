@@ -1,0 +1,120 @@
+.refresh-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  padding: 16px;
+  display: grid;
+  place-items: center;
+  background: var(--backdrop);
+}
+
+.refresh-dialog {
+  width: min(520px, 100%);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  box-shadow: var(--shadow-modal);
+}
+
+.refresh-dialog header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.refresh-dialog header > svg {
+  margin-top: 4px;
+  color: var(--accent-text);
+}
+
+.refresh-dialog header div {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.refresh-dialog h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.refresh-dialog header span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.refresh-dialog header button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.refresh-dialog p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.8;
+}
+
+.refresh-dialog label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.refresh-dialog input {
+  height: 40px;
+  padding: 0 12px;
+  color: var(--text-primary);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.refresh-dialog__error {
+  color: var(--danger-text);
+  font-size: 12.5px;
+}
+
+.refresh-dialog footer {
+  margin-top: 6px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.refresh-dialog footer button {
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.refresh-dialog__secondary {
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--border-strong) !important;
+}
+
+.refresh-dialog__primary {
+  color: var(--accent-ink);
+  background: var(--accent);
+}

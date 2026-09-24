@@ -135,3 +135,10 @@ export type DownloadRule = {
   speedCap: number | null;
   browserTakeoverAllowed: boolean | null;
 };
+
+/// Appearance and window behaviour, stored by the backend.
+export type UiPreferences = {
+  language: "fa" | "en";
+  theme: "dark" | "light" | "system";
+  closeToTray: boolean;
+};

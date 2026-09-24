@@ -179,6 +179,18 @@ pub struct QueueScheduleResponse {
     pub window_end_minute: Option<u16>,
 }
 
+/// Appearance and window behaviour, stored by the backend so the window
+/// opens in the right language and theme.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UiPreferencesResponse {
+    /// `fa` or `en`.
+    pub language: String,
+    /// `dark`, `light` or `system`.
+    pub theme: String,
+    pub close_to_tray: bool,
+}
+
 /// Engine-wide download preferences shown in Settings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

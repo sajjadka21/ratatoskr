@@ -1,0 +1,155 @@
+.throughput-band {
+  position: relative;
+  min-height: 112px;
+  margin: 0 24px;
+
+  display: grid;
+  grid-template-columns: minmax(200px, auto) minmax(0, 1fr) auto;
+  align-items: stretch;
+
+  overflow: hidden;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.throughput-band__figure {
+  z-index: 1;
+  padding: 14px 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
+.throughput-band__caption {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.throughput-band__value {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.throughput-band__value strong {
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--text-secondary);
+}
+
+.throughput-band--moving .throughput-band__value strong {
+  color: var(--text-primary);
+}
+
+.throughput-band__value span {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.throughput-band__summary {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.throughput-band__chart {
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  color: var(--text-muted);
+}
+
+.throughput-band--moving .throughput-band__chart {
+  color: var(--accent);
+}
+
+.throughput-band__chart svg {
+  display: block;
+}
+
+.throughput-band__controls {
+  z-index: 1;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  border-inline-start: 1px solid var(--border-subtle);
+}
+
+.throughput-band__limit {
+  height: 32px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  background: var(--bg-sunken);
+  border-radius: 9px;
+}
+
+.throughput-band__limit select {
+  min-width: 0;
+  flex: 1;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.throughput-band__limit select option {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+
+.throughput-band__buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.throughput-band__buttons button {
+  height: 32px;
+  padding: 0 12px;
+  flex: 1;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+
+  font-size: 12.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.throughput-band__buttons button:hover:not(:disabled) {
+  background: var(--bg-surface-hover);
+}
+
+.throughput-band__buttons button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+@media (max-width: 1000px) {
+  .throughput-band {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .throughput-band__chart {
+    position: absolute;
+    inset: auto 0 0 0;
+    opacity: 0.5;
+    pointer-events: none;
+  }
+}

@@ -10,6 +10,9 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
+import { useI18n, type Translate } from "../../i18n/I18n";
+import type { MessageKey } from "../../i18n/messages";
+import type { Formatter } from "../../i18n/format";
 import type {
   CompletionAction,
   DownloadCategory,
@@ -18,6 +21,7 @@ import type {
   DownloadRule,
   DownloadSettings,
   QueueSchedule,
+  UiPreferences,
 } from "../../types/download";
 import {
   formatMinuteOfDay,
@@ -40,6 +44,8 @@ type SettingsPageProps = {
   onDownloadSettingsChange: (settings: DownloadSettings) => void;
   onError: (message: string) => void;
   onSaved: (message: string) => void;
+  uiPreferences: UiPreferences;
+  onUiPreferencesChange: (preferences: UiPreferences) => void;
 };
 
 /// Opens the system folder picker. Returns null when the user cancels.
@@ -63,7 +69,10 @@ export function SettingsPage({
   onDownloadSettingsChange,
   onError,
   onSaved,
+  uiPreferences,
+  onUiPreferencesChange,
 }: SettingsPageProps) {
+  const { t, fmt } = useI18n();
   const [schedules, setSchedules] = useState<QueueSchedule[]>([]);
   const [categories, setCategories] = useState<DownloadCategory[]>([]);
   const [rules, setRules] = useState<DownloadRule[]>([]);
@@ -82,15 +91,17 @@ export function SettingsPage({
         setRules(nextRules);
       })
       .catch((cause: unknown) => {
-        if (!cancelled) onError(`Could not load settings: ${String(cause)}`);
+        if (!cancelled) onError(t("settings.loadFailed", { reason: String(cause) }));
       });
     return () => {
       cancelled = true;
     };
-  }, [onError]);
+  }, [onError, t]);
 
   return (
     <section className="settings-page">
+      <AppearanceSection preferences={uiPreferences} onChange={onUiPreferencesChange} />
+
       <DownloadsSection
         settings={downloadSettings}
         onChange={onDownloadSettingsChange}
@@ -99,8 +110,8 @@ export function SettingsPage({
 
       <div className="settings-page__section">
         <div className="settings-page__section-heading">
-          <h2>Add Download</h2>
-          <p>Choose how Add Download gets its initial links.</p>
+          <h2>{t("settings.addDownload")}</h2>
+          <p>{t("settings.addDownloadHint")}</p>
         </div>
 
         <div className="settings-page__group">
@@ -109,22 +120,21 @@ export function SettingsPage({
               active={inputMode === "clipboard"}
               disabled={saving}
               icon={<ClipboardPaste size={19} />}
-              title="Clipboard"
-              description="Extract valid HTTP and HTTPS links from the clipboard when Add Download opens."
+              title={t("settings.clipboard")}
+              description={t("settings.clipboardHint")}
               onSelect={() => onInputModeChange("clipboard")}
             />
             <InputModeOption
               active={inputMode === "manual"}
               disabled={saving}
               icon={<Keyboard size={19} />}
-              title="Manual"
-              description="Open Add Download empty and paste or type the links yourself."
+              title={t("settings.manual")}
+              description={t("settings.manualHint")}
               onSelect={() => onInputModeChange("manual")}
             />
           </div>
           <div className="settings-page__hint">
-            In both modes, one valid link becomes a single download and several
-            unique links become a batch.
+            {t("settings.inputHint")}
           </div>
           {error ? <div className="settings-page__error">{error}</div> : null}
         </div>
@@ -132,15 +142,12 @@ export function SettingsPage({
 
       <div className="settings-page__section">
         <div className="settings-page__section-heading">
-          <h2>Queue schedules</h2>
-          <p>
-            Start a queue at a time of day and choose what happens when it
-            finishes. Times use this computer&apos;s clock.
-          </p>
+          <h2>{t("settings.schedules")}</h2>
+          <p>{t("settings.schedulesHint")}</p>
         </div>
         {queues.length === 0 ? (
           <div className="settings-page__hint">
-            Create a queue first to give it a schedule.
+            {t("settings.noQueues")}
           </div>
         ) : (
           <div className="settings-page__stack">
@@ -156,9 +163,10 @@ export function SettingsPage({
                     ...current.filter((item) => item.queueId !== saved.queueId),
                     saved,
                   ]);
-                  onSaved(`Schedule for “${queue.name}” saved`);
+                  onSaved(t("settings.scheduleSaved", { name: queue.name }));
                 }}
                 onError={onError}
+                t={t}
               />
             ))}
           </div>
@@ -172,6 +180,8 @@ export function SettingsPage({
         onRulesChange={setRules}
         onError={onError}
         onSaved={onSaved}
+        t={t}
+        fmt={fmt}
       />
     </section>
   );
@@ -215,15 +225,127 @@ function InputModeOption({
 }
 
 // ---------------------------------------------------------------------------
+// Appearance: language, theme, close behaviour
+// ---------------------------------------------------------------------------
+
+function AppearanceSection({
+  preferences,
+  onChange,
+}: {
+  preferences: UiPreferences;
+  onChange: (preferences: UiPreferences) => void;
+}) {
+  const { t } = useI18n();
+  const themes: Array<{ value: UiPreferences["theme"]; label: MessageKey }> = [
+    { value: "dark", label: "settings.themeDark" },
+    { value: "light", label: "settings.themeLight" },
+    { value: "system", label: "settings.themeSystem" },
+  ];
+
+  return (
+    <div className="settings-page__section">
+      <div className="settings-page__section-heading">
+        <h2>{t("settings.appearance")}</h2>
+        <p>{t("settings.appearanceHint")}</p>
+      </div>
+
+      <div className="settings-page__group settings-page__rows">
+        <div className="settings-page__row">
+          <div className="settings-page__row-label">
+            <strong>{t("settings.language")}</strong>
+            <span>{t("settings.languageHint")}</span>
+          </div>
+          <div className="settings-page__row-control">
+            <div className="settings-page__segmented" role="group" aria-label={t("settings.language")}>
+              {(["fa", "en"] as const).map((language) => (
+                <button
+                  key={language}
+                  type="button"
+                  lang={language}
+                  aria-pressed={preferences.language === language}
+                  className={
+                    preferences.language === language
+                      ? "settings-page__segment settings-page__segment--active"
+                      : "settings-page__segment"
+                  }
+                  onClick={() => onChange({ ...preferences, language })}
+                >
+                  {language === "fa" ? "فارسی" : "English"}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-page__row">
+          <div className="settings-page__row-label">
+            <strong>{t("settings.theme")}</strong>
+          </div>
+          <div className="settings-page__row-control">
+            <div className="settings-page__segmented" role="group" aria-label={t("settings.theme")}>
+              {themes.map((theme) => (
+                <button
+                  key={theme.value}
+                  type="button"
+                  aria-pressed={preferences.theme === theme.value}
+                  className={
+                    preferences.theme === theme.value
+                      ? "settings-page__segment settings-page__segment--active"
+                      : "settings-page__segment"
+                  }
+                  onClick={() => onChange({ ...preferences, theme: theme.value })}
+                >
+                  {t(theme.label)}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-page__row">
+          <div className="settings-page__row-label">
+            <strong>{t("settings.closeToTray")}</strong>
+            <span>{t("settings.closeToTrayHint")}</span>
+          </div>
+          <div className="settings-page__row-control">
+            <Switch
+              id="close-to-tray"
+              checked={preferences.closeToTray}
+              label={t("settings.closeToTray")}
+              onChange={(closeToTray) => onChange({ ...preferences, closeToTray })}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Switch({
+  id,
+  checked,
+  label,
+  onChange,
+}: {
+  id: string;
+  checked: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="settings-page__switch">
+      <input id={id} type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      <span aria-hidden="true" />
+      <span className="visually-hidden">{label}</span>
+    </label>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Downloads: folder, speed limit, sleep
 // ---------------------------------------------------------------------------
 
-const SPEED_PRESETS: Array<{ label: string; kib: number | null }> = [
-  { label: "Unlimited", kib: null },
-  { label: "256 KB/s", kib: 256 },
-  { label: "1 MB/s", kib: 1024 },
-  { label: "5 MB/s", kib: 5 * 1024 },
-];
+const SPEED_PRESETS_KIB: Array<number | null> = [null, 256, 1024, 5 * 1024];
 
 function DownloadsSection({
   settings,
@@ -234,6 +356,7 @@ function DownloadsSection({
   onChange: (settings: DownloadSettings) => void;
   onError: (message: string) => void;
 }) {
+  const { t, fmt } = useI18n();
   const currentKib = bytesToKibPerSecond(settings?.globalSpeedLimit ?? null);
   const [customKib, setCustomKib] = useState("");
 
@@ -252,67 +375,58 @@ function DownloadsSection({
   async function chooseFolder() {
     try {
       const folder = await pickFolder(
-        "Choose the default download folder",
+        t("settings.chooseDefaultFolder"),
         settings?.defaultDirectory ?? settings?.systemDirectory,
       );
       if (folder) {
         await run("set_default_download_directory", { directory: folder });
       }
     } catch (reason) {
-      onError(`Could not open the folder picker: ${String(reason)}`);
+      onError(t("settings.pickerFailed", { reason: String(reason) }));
     }
   }
 
   function applyCustom() {
     const kib = Number(customKib);
     if (!customKib.trim() || !Number.isFinite(kib) || kib <= 0) {
-      onError("Enter a speed above 0 KB/s, or choose Unlimited.");
+      onError(t("settings.speedInvalid"));
       return;
     }
-    void run("set_global_speed_limit", {
-      bytesPerSecond: kibPerSecondToBytes(kib),
-    });
+    void run("set_global_speed_limit", { bytesPerSecond: kibPerSecondToBytes(kib) });
   }
 
-  const isPreset = SPEED_PRESETS.some((preset) => preset.kib === currentKib);
+  const isPreset = SPEED_PRESETS_KIB.includes(currentKib);
 
   return (
     <div className="settings-page__section">
       <div className="settings-page__section-heading">
-        <h2>Downloads</h2>
-        <p>Where files go and how much bandwidth downloads may use.</p>
+        <h2>{t("settings.downloads")}</h2>
+        <p>{t("settings.downloadsHint")}</p>
       </div>
 
       <div className="settings-page__group settings-page__rows">
         <div className="settings-page__row">
           <div className="settings-page__row-label">
-            <strong>Default folder</strong>
-            <span>
-              Used when no category or rule names a folder.
-            </span>
+            <strong>{t("settings.defaultFolder")}</strong>
+            <span>{t("settings.defaultFolderHint")}</span>
           </div>
           <div className="settings-page__row-control">
-            <code className="settings-page__path" title={settings?.defaultDirectory ?? settings?.systemDirectory ?? ""}>
-              {settings?.defaultDirectory ??
-                settings?.systemDirectory ??
-                "System Downloads folder"}
-            </code>
-            <button
-              type="button"
-              className="settings-page__secondary-button"
-              onClick={() => void chooseFolder()}
+            <code
+              className="settings-page__path"
+              title={settings?.defaultDirectory ?? settings?.systemDirectory ?? ""}
             >
-              <FolderOpen size={14} /> Change…
+              {settings?.defaultDirectory ?? settings?.systemDirectory ?? t("settings.systemFolder")}
+            </code>
+            <button type="button" className="settings-page__secondary-button" onClick={() => void chooseFolder()}>
+              <FolderOpen size={14} /> {t("settings.change")}
             </button>
             {settings?.defaultDirectory ? (
               <button
                 type="button"
                 className="settings-page__icon-button"
-                aria-label="Use the system Downloads folder"
-                title="Use the system Downloads folder"
-                onClick={() =>
-                  void run("set_default_download_directory", { directory: null })
-                }
+                aria-label={t("settings.useSystemFolder")}
+                title={t("settings.useSystemFolder")}
+                onClick={() => void run("set_default_download_directory", { directory: null })}
               >
                 <RotateCcw size={14} />
               </button>
@@ -322,76 +436,68 @@ function DownloadsSection({
 
         <div className="settings-page__row">
           <div className="settings-page__row-label">
-            <strong>Speed limit</strong>
-            <span>Shared by every download. Applies at once, even to running ones.</span>
+            <strong>{t("settings.speedLimit")}</strong>
+            <span>{t("settings.speedLimitHint")}</span>
           </div>
           <div className="settings-page__row-control settings-page__row-control--wrap">
-            <div className="settings-page__segmented" role="group" aria-label="Speed limit">
-              {SPEED_PRESETS.map((preset) => (
+            <div className="settings-page__segmented" role="group" aria-label={t("settings.speedLimit")}>
+              {SPEED_PRESETS_KIB.map((kib) => (
                 <button
-                  key={preset.label}
+                  key={kib ?? "none"}
                   type="button"
-                  aria-pressed={preset.kib === currentKib}
+                  aria-pressed={kib === currentKib}
                   className={
-                    preset.kib === currentKib
+                    kib === currentKib
                       ? "settings-page__segment settings-page__segment--active"
                       : "settings-page__segment"
                   }
                   onClick={() =>
                     void run("set_global_speed_limit", {
-                      bytesPerSecond:
-                        preset.kib === null ? null : kibPerSecondToBytes(preset.kib),
+                      bytesPerSecond: kib === null ? null : kibPerSecondToBytes(kib),
                     })
                   }
                 >
-                  {preset.label}
+                  <span className="num">
+                    {kib === null ? t("settings.unlimited") : fmt.rate(kibPerSecondToBytes(kib))}
+                  </span>
                 </button>
               ))}
             </div>
             <label className="settings-page__inline-field">
-              <span className={isPreset ? "" : "settings-page__custom-active"}>Custom</span>
+              <span className={isPreset ? "" : "settings-page__custom-active"}>{t("settings.custom")}</span>
               <input
                 id="custom-speed-limit"
                 type="number"
                 min={1}
                 step={1}
                 inputMode="numeric"
+                dir="ltr"
                 value={customKib}
                 onChange={(event) => setCustomKib(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") applyCustom();
                 }}
               />
-              <span>KB/s</span>
+              <span>{t("settings.kibPerSecond")}</span>
             </label>
-            <button
-              type="button"
-              className="settings-page__secondary-button"
-              onClick={applyCustom}
-            >
-              Apply
+            <button type="button" className="settings-page__secondary-button" onClick={applyCustom}>
+              {t("settings.apply")}
             </button>
           </div>
         </div>
 
         <div className="settings-page__row">
           <div className="settings-page__row-label">
-            <strong>Keep the computer awake</strong>
-            <span>Stops Windows from sleeping while a download is running.</span>
+            <strong>{t("settings.keepAwake")}</strong>
+            <span>{t("settings.keepAwakeHint")}</span>
           </div>
           <div className="settings-page__row-control">
-            <label className="settings-page__switch">
-              <input
-                id="prevent-sleep"
-                type="checkbox"
-                checked={settings?.preventSleep ?? true}
-                onChange={(event) =>
-                  void run("set_prevent_sleep", { enabled: event.target.checked })
-                }
-              />
-              <span aria-hidden="true" />
-              <span className="settings-page__visually-hidden">Keep the computer awake</span>
-            </label>
+            <Switch
+              id="prevent-sleep"
+              checked={settings?.preventSleep ?? true}
+              label={t("settings.keepAwake")}
+              onChange={(enabled) => void run("set_prevent_sleep", { enabled })}
+            />
           </div>
         </div>
       </div>
@@ -403,17 +509,11 @@ function DownloadsSection({
 // Schedules
 // ---------------------------------------------------------------------------
 
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const ALL_DAYS = 0b0111_1111;
+/** Weekday bits (0 = Sunday) in the order each language's week starts. */
+const WEEK_ORDER = { en: [1, 2, 3, 4, 5, 6, 0], fa: [6, 0, 1, 2, 3, 4, 5] } as const;
 
-const COMPLETION_ACTIONS: Array<{ value: CompletionAction; label: string }> = [
-  { value: "none", label: "Do nothing" },
-  { value: "notify", label: "Notify me" },
-  { value: "exit_app", label: "Close Download Manager" },
-  { value: "sleep", label: "Sleep" },
-  { value: "hibernate", label: "Hibernate" },
-  { value: "shutdown", label: "Shut down" },
-];
+const COMPLETION_ACTIONS: CompletionAction[] = ["none", "notify", "exit_app", "sleep", "hibernate", "shutdown"];
 
 type ScheduleDraft = {
   enabled: boolean;
@@ -431,8 +531,7 @@ function draftFrom(schedule: QueueSchedule | null): ScheduleDraft {
   return {
     enabled: schedule?.enabled ?? false,
     days: schedule?.kind === "weekdays" ? "selected" : "every",
-    weekdaysMask:
-      schedule && schedule.weekdaysMask > 0 ? schedule.weekdaysMask : ALL_DAYS,
+    weekdaysMask: schedule && schedule.weekdaysMask > 0 ? schedule.weekdaysMask : ALL_DAYS,
     start: formatMinuteOfDay(start),
     end: formatMinuteOfDay(end),
     completionAction: schedule?.completionAction ?? "none",
@@ -445,12 +544,15 @@ function ScheduleEditor({
   schedule,
   onSaved,
   onError,
+  t,
 }: {
   queue: DownloadQueue;
   schedule: QueueSchedule | null;
   onSaved: (schedule: QueueSchedule) => void;
   onError: (message: string) => void;
+  t: Translate;
 }) {
+  const { language } = useI18n();
   const [draft, setDraft] = useState(() => draftFrom(schedule));
   const [saving, setSaving] = useState(false);
 
@@ -459,19 +561,17 @@ function ScheduleEditor({
   }, [schedule]);
 
   const idPrefix = `schedule-${queue.id}`;
-  const isPowerAction = ["sleep", "hibernate", "shutdown", "exit_app"].includes(
-    draft.completionAction,
-  );
+  const isPowerAction = ["sleep", "hibernate", "shutdown", "exit_app"].includes(draft.completionAction);
 
   async function save() {
     const start = parseMinuteOfDay(draft.start);
     const end = parseMinuteOfDay(draft.end);
     if (start === null || end === null) {
-      onError("Enter times as HH:MM, for example 02:00.");
+      onError(t("settings.timeInvalid"));
       return;
     }
     if (draft.days === "selected" && draft.weekdaysMask === 0) {
-      onError("Choose at least one day.");
+      onError(t("settings.dayRequired"));
       return;
     }
 
@@ -494,7 +594,7 @@ function ScheduleEditor({
       });
       onSaved(saved);
     } catch (reason) {
-      onError(`Could not save the schedule: ${String(reason)}`);
+      onError(t("settings.scheduleFailed", { reason: String(reason) }));
     } finally {
       setSaving(false);
     }
@@ -503,80 +603,67 @@ function ScheduleEditor({
   return (
     <div className="settings-page__group settings-page__schedule-editor">
       <div className="settings-page__schedule-head">
-        <label className="settings-page__switch">
-          <input
-            id={`${idPrefix}-enabled`}
-            type="checkbox"
-            checked={draft.enabled}
-            onChange={(event) =>
-              setDraft({ ...draft, enabled: event.target.checked })
-            }
-          />
-          <span aria-hidden="true" />
-          <span className="settings-page__visually-hidden">
-            Run {queue.name} on a schedule
-          </span>
-        </label>
+        <Switch
+          id={`${idPrefix}-enabled`}
+          checked={draft.enabled}
+          label={t("settings.scheduleOn", { name: queue.name })}
+          onChange={(enabled) => setDraft({ ...draft, enabled })}
+        />
         <strong>{queue.name}</strong>
-        <span className="settings-page__muted">
+        <span className="settings-page__muted num">
           {draft.enabled
-            ? `Runs ${draft.start}–${draft.end}${
-                draft.days === "every" ? " every day" : " on selected days"
-              }`
-            : "Not scheduled"}
+            ? t(draft.days === "every" ? "settings.runsEveryDay" : "settings.runsSelectedDays", {
+                start: draft.start,
+                end: draft.end,
+              })
+            : t("settings.notScheduled")}
         </span>
       </div>
 
       <div className="settings-page__schedule-grid" aria-disabled={!draft.enabled}>
         <label className="settings-page__field">
-          <span>From</span>
+          <span>{t("settings.from")}</span>
           <input
             id={`${idPrefix}-start`}
             type="time"
+            dir="ltr"
             value={draft.start}
             onChange={(event) => setDraft({ ...draft, start: event.target.value })}
           />
         </label>
         <label className="settings-page__field">
-          <span>Until</span>
+          <span>{t("settings.until")}</span>
           <input
             id={`${idPrefix}-end`}
             type="time"
+            dir="ltr"
             value={draft.end}
             onChange={(event) => setDraft({ ...draft, end: event.target.value })}
           />
         </label>
         <label className="settings-page__field">
-          <span>Days</span>
+          <span>{t("settings.days")}</span>
           <select
             id={`${idPrefix}-days`}
             value={draft.days}
-            onChange={(event) =>
-              setDraft({
-                ...draft,
-                days: event.target.value as ScheduleDraft["days"],
-              })
-            }
+            onChange={(event) => setDraft({ ...draft, days: event.target.value as ScheduleDraft["days"] })}
           >
-            <option value="every">Every day</option>
-            <option value="selected">Selected days</option>
+            <option value="every">{t("settings.everyDay")}</option>
+            <option value="selected">{t("settings.selectedDays")}</option>
           </select>
         </label>
         <label className="settings-page__field">
-          <span>When the queue finishes</span>
+          <span>{t("settings.whenFinished")}</span>
           <select
             id={`${idPrefix}-action`}
             value={draft.completionAction}
             onChange={(event) =>
-              setDraft({
-                ...draft,
-                completionAction: event.target.value as CompletionAction,
-              })
+              setDraft({ ...draft, completionAction: event.target.value as CompletionAction })
             }
           >
             {COMPLETION_ACTIONS.map((action) => (
-              <option key={action.value} value={action.value}>
-                {action.label}
+              <option key={action} value={action}>
+                {t(`settings.action.${action}` as MessageKey)}
               </option>
             ))}
           </select>
@@ -584,27 +671,18 @@ function ScheduleEditor({
       </div>
 
       {draft.days === "selected" ? (
-        <div className="settings-page__weekdays" role="group" aria-label="Days">
-          {WEEKDAYS.map((label, index) => {
-            const on = (draft.weekdaysMask & (1 << index)) !== 0;
+        <div className="settings-page__weekdays" role="group" aria-label={t("settings.days")}>
+          {WEEK_ORDER[language].map((day) => {
+            const on = (draft.weekdaysMask & (1 << day)) !== 0;
             return (
               <button
-                key={label}
+                key={day}
                 type="button"
                 aria-pressed={on}
-                className={
-                  on
-                    ? "settings-page__day settings-page__day--active"
-                    : "settings-page__day"
-                }
-                onClick={() =>
-                  setDraft({
-                    ...draft,
-                    weekdaysMask: draft.weekdaysMask ^ (1 << index),
-                  })
-                }
+                className={on ? "settings-page__day settings-page__day--active" : "settings-page__day"}
+                onClick={() => setDraft({ ...draft, weekdaysMask: draft.weekdaysMask ^ (1 << day) })}
               >
-                {label}
+                {t(`settings.day.${day}` as MessageKey)}
               </button>
             );
           })}
@@ -617,24 +695,13 @@ function ScheduleEditor({
             id={`${idPrefix}-awake`}
             type="checkbox"
             checked={draft.preventSleep}
-            onChange={(event) =>
-              setDraft({ ...draft, preventSleep: event.target.checked })
-            }
+            onChange={(event) => setDraft({ ...draft, preventSleep: event.target.checked })}
           />
-          Keep the computer awake while this queue runs
+          {t("settings.queueKeepAwake")}
         </label>
-        {isPowerAction ? (
-          <span className="settings-page__muted">
-            You get 60 seconds to cancel. Skipped if other downloads are still running.
-          </span>
-        ) : null}
-        <button
-          type="button"
-          className="settings-page__primary-button"
-          disabled={saving}
-          onClick={() => void save()}
-        >
-          {saving ? "Saving…" : "Save schedule"}
+        {isPowerAction ? <span className="settings-page__muted">{t("settings.powerHint")}</span> : null}
+        <button type="button" className="settings-page__primary-button" disabled={saving} onClick={() => void save()}>
+          {saving ? t("settings.saving") : t("settings.saveSchedule")}
         </button>
       </div>
     </div>
@@ -726,23 +793,29 @@ function draftToRule(draft: RuleDraft, sortOrder: number): DownloadRule {
   };
 }
 
-function describeRule(rule: DownloadRule, queues: DownloadQueue[]): string {
+function describeRule(rule: DownloadRule, queues: DownloadQueue[], t: Translate, fmt: Formatter): string {
   const when = [
-    rule.domain ? `from ${rule.domain}` : null,
-    rule.extension ? `.${rule.extension} files` : null,
-    rule.urlPattern ? `URL like ${rule.urlPattern}` : null,
-    rule.minSize ? `over ${Math.round(rule.minSize / MIB)} MB` : null,
+    rule.domain ? t("settings.describe.from", { domain: rule.domain }) : null,
+    rule.extension ? t("settings.describe.extension", { extension: rule.extension }) : null,
+    rule.urlPattern ? t("settings.describe.url", { pattern: rule.urlPattern }) : null,
+    rule.minSize ? t("settings.describe.over", { size: fmt.bytes(rule.minSize) }) : null,
   ].filter(Boolean);
   const then = [
-    rule.destinationDirectory ? `save to ${rule.destinationDirectory}` : null,
+    rule.destinationDirectory ? t("settings.describe.saveTo", { folder: rule.destinationDirectory }) : null,
     rule.queueId
-      ? `queue in ${queues.find((queue) => queue.id === rule.queueId)?.name ?? "a queue"}`
+      ? t("settings.describe.queue", {
+          queue: queues.find((queue) => queue.id === rule.queueId)?.name ?? t("settings.describe.aQueue"),
+        })
       : null,
-    rule.priority ? `${rule.priority.replace("_", " ")} priority` : null,
-    rule.maxConnections ? `at most ${rule.maxConnections} connections` : null,
-    rule.speedCap ? `limit to ${bytesToKibPerSecond(rule.speedCap)} KB/s` : null,
+    rule.priority
+      ? t("settings.describe.priority", { priority: t(`priority.${rule.priority}` as MessageKey) })
+      : null,
+    rule.maxConnections ? t("settings.describe.connections", { count: fmt.number(rule.maxConnections) }) : null,
+    rule.speedCap ? t("settings.describe.limit", { rate: fmt.rate(rule.speedCap) ?? "" }) : null,
   ].filter(Boolean);
-  return `${when.join(", ") || "Any download"} → ${then.join(", ") || "no change"}`;
+  const separator = fmt.language === "fa" ? "، " : ", ";
+  const arrow = fmt.language === "fa" ? " ← " : " → ";
+  return `${when.join(separator) || t("settings.describe.any")}${arrow}${then.join(separator) || t("settings.describe.nothing")}`;
 }
 
 function RulesSection({
@@ -752,6 +825,8 @@ function RulesSection({
   onRulesChange,
   onError,
   onSaved,
+  t,
+  fmt,
 }: {
   rules: DownloadRule[];
   categories: DownloadCategory[];
@@ -759,13 +834,15 @@ function RulesSection({
   onRulesChange: (rules: DownloadRule[]) => void;
   onError: (message: string) => void;
   onSaved: (message: string) => void;
+  t: Translate;
+  fmt: Formatter;
 }) {
   const [draft, setDraft] = useState<RuleDraft | null>(null);
 
   async function save() {
     if (!draft) return;
     if (!draft.name.trim()) {
-      onError("Give the rule a name.");
+      onError(t("settings.ruleNameRequired"));
       return;
     }
     const index = rules.findIndex((rule) => rule.id === draft.id);
@@ -774,15 +851,11 @@ function RulesSection({
       const saved = await invoke<DownloadRule>("save_download_rule", {
         rule: draftToRule(draft, sortOrder),
       });
-      onRulesChange(
-        index >= 0
-          ? rules.map((rule) => (rule.id === saved.id ? saved : rule))
-          : [...rules, saved],
-      );
+      onRulesChange(index >= 0 ? rules.map((rule) => (rule.id === saved.id ? saved : rule)) : [...rules, saved]);
       setDraft(null);
-      onSaved(`Rule “${saved.name}” saved`);
+      onSaved(t("settings.ruleSaved", { name: saved.name }));
     } catch (reason) {
-      onError(`Could not save the rule: ${String(reason)}`);
+      onError(t("settings.ruleFailed", { reason: String(reason) }));
     }
   }
 
@@ -810,75 +883,53 @@ function RulesSection({
   async function chooseRuleFolder() {
     if (!draft) return;
     try {
-      const folder = await pickFolder("Folder for this rule", draft.destinationDirectory || null);
+      const folder = await pickFolder(t("settings.ruleFolderTitle"), draft.destinationDirectory || null);
       if (folder) setDraft({ ...draft, destinationDirectory: folder });
     } catch (reason) {
-      onError(`Could not open the folder picker: ${String(reason)}`);
+      onError(t("settings.pickerFailed", { reason: String(reason) }));
     }
   }
 
-  const field = (key: keyof RuleDraft) => ({
+  const field = (key: keyof RuleDraft, ltr = false) => ({
     id: `rule-${key}`,
+    dir: ltr ? "ltr" : undefined,
     value: draft ? String(draft[key]) : "",
-    onChange: (
-      event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
-    ) => draft && setDraft({ ...draft, [key]: event.target.value }),
+    onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+      draft && setDraft({ ...draft, [key]: event.target.value }),
   });
 
   return (
     <div className="settings-page__section">
       <div className="settings-page__section-heading settings-page__section-heading--row">
         <div>
-          <h2>Rules</h2>
-          <p>
-            Rules run in order; the first match decides. Without a match, the
-            file&apos;s category ({categories.length} configured) decides the folder.
-          </p>
+          <h2>{t("settings.rules")}</h2>
+          <p>{t("settings.rulesHint", { count: fmt.number(categories.length) })}</p>
         </div>
-        <button
-          type="button"
-          className="settings-page__secondary-button"
-          onClick={() => setDraft({ ...EMPTY_RULE })}
-        >
-          <Plus size={14} /> New rule
+        <button type="button" className="settings-page__secondary-button" onClick={() => setDraft({ ...EMPTY_RULE })}>
+          <Plus size={14} /> {t("settings.newRule")}
         </button>
       </div>
 
-      {rules.length === 0 && !draft ? (
-        <div className="settings-page__hint">
-          No rules yet. Example: send everything from a university site to a
-          Lectures folder, or limit large ISO files to 2 MB/s.
-        </div>
-      ) : null}
+      {rules.length === 0 && !draft ? <div className="settings-page__hint">{t("settings.rulesEmpty")}</div> : null}
 
       {rules.length > 0 ? (
         <ul className="settings-page__rule-list">
           {rules.map((rule) => (
             <li key={rule.id} className="settings-page__rule">
-              <label className="settings-page__switch">
-                <input
-                  id={`rule-enabled-${rule.id}`}
-                  type="checkbox"
-                  checked={rule.enabled}
-                  onChange={() => void toggle(rule)}
-                />
-                <span aria-hidden="true" />
-                <span className="settings-page__visually-hidden">
-                  Enable {rule.name}
-                </span>
-              </label>
-              <button
-                type="button"
-                className="settings-page__rule-body"
-                onClick={() => setDraft(ruleToDraft(rule))}
-              >
+              <Switch
+                id={`rule-enabled-${rule.id}`}
+                checked={rule.enabled}
+                label={t("settings.enableRule", { name: rule.name })}
+                onChange={() => void toggle(rule)}
+              />
+              <button type="button" className="settings-page__rule-body" onClick={() => setDraft(ruleToDraft(rule))}>
                 <strong>{rule.name}</strong>
-                <span>{describeRule(rule, queues)}</span>
+                <span>{describeRule(rule, queues, t, fmt)}</span>
               </button>
               <button
                 type="button"
                 className="settings-page__icon-button"
-                aria-label={`Delete rule ${rule.name}`}
+                aria-label={t("settings.deleteRule", { name: rule.name })}
                 onClick={() => void remove(rule)}
               >
                 <Trash2 size={14} />
@@ -891,49 +942,45 @@ function RulesSection({
       {draft ? (
         <div className="settings-page__group settings-page__rule-editor">
           <label className="settings-page__field settings-page__field--wide">
-            <span>Name</span>
-            <input {...field("name")} placeholder="University lectures" />
+            <span>{t("settings.ruleName")}</span>
+            <input {...field("name")} placeholder={t("settings.ruleNamePlaceholder")} />
           </label>
 
           <fieldset className="settings-page__fieldset">
-            <legend>When the download…</legend>
+            <legend>{t("settings.ruleWhen")}</legend>
             <label className="settings-page__field">
-              <span>comes from (domain)</span>
-              <input {...field("domain")} placeholder="example.com" />
+              <span>{t("settings.ruleDomain")}</span>
+              <input {...field("domain", true)} placeholder="example.com" />
             </label>
             <label className="settings-page__field">
-              <span>has the extension</span>
-              <input {...field("extension")} placeholder="iso" />
+              <span>{t("settings.ruleExtension")}</span>
+              <input {...field("extension", true)} placeholder="iso" />
             </label>
             <label className="settings-page__field">
-              <span>URL matches</span>
-              <input {...field("urlPattern")} placeholder="*/lectures/*" />
+              <span>{t("settings.ruleUrl")}</span>
+              <input {...field("urlPattern", true)} placeholder="*/lectures/*" />
             </label>
             <label className="settings-page__field">
-              <span>is larger than (MB)</span>
-              <input {...field("minSizeMb")} type="number" min={1} />
+              <span>{t("settings.ruleMinSize")}</span>
+              <input {...field("minSizeMb", true)} type="number" min={1} />
             </label>
           </fieldset>
 
           <fieldset className="settings-page__fieldset">
-            <legend>…then</legend>
+            <legend>{t("settings.ruleThen")}</legend>
             <label className="settings-page__field settings-page__field--wide">
-              <span>save to folder</span>
+              <span>{t("settings.ruleFolder")}</span>
               <div className="settings-page__input-with-button">
-                <input {...field("destinationDirectory")} placeholder="Keep the category folder" />
-                <button
-                  type="button"
-                  className="settings-page__secondary-button"
-                  onClick={() => void chooseRuleFolder()}
-                >
-                  <FolderOpen size={14} /> Choose…
+                <input {...field("destinationDirectory", true)} placeholder={t("settings.ruleFolderPlaceholder")} />
+                <button type="button" className="settings-page__secondary-button" onClick={() => void chooseRuleFolder()}>
+                  <FolderOpen size={14} /> {t("settings.choose")}
                 </button>
               </div>
             </label>
             <label className="settings-page__field">
-              <span>add to queue</span>
+              <span>{t("settings.ruleQueue")}</span>
               <select {...field("queueId")}>
-                <option value="">Don&apos;t queue</option>
+                <option value="">{t("settings.ruleNoQueue")}</option>
                 {queues.map((queue) => (
                   <option key={queue.id} value={queue.id}>
                     {queue.name}
@@ -942,39 +989,32 @@ function RulesSection({
               </select>
             </label>
             <label className="settings-page__field">
-              <span>priority</span>
+              <span>{t("settings.rulePriority")}</span>
               <select {...field("priority")}>
-                <option value="">Unchanged</option>
-                <option value="very_high">Very high</option>
-                <option value="high">High</option>
-                <option value="normal">Normal</option>
-                <option value="low">Low</option>
+                <option value="">{t("settings.ruleUnchanged")}</option>
+                {(["very_high", "high", "normal", "low"] as const).map((priority) => (
+                  <option key={priority} value={priority}>
+                    {t(`priority.${priority}`)}
+                  </option>
+                ))}
               </select>
             </label>
             <label className="settings-page__field">
-              <span>max connections</span>
-              <input {...field("maxConnections")} type="number" min={1} max={64} placeholder="Automatic" />
+              <span>{t("settings.ruleConnections")}</span>
+              <input {...field("maxConnections", true)} type="number" min={1} max={64} placeholder={t("settings.ruleAutomatic")} />
             </label>
             <label className="settings-page__field">
-              <span>speed limit (KB/s)</span>
-              <input {...field("speedCapKib")} type="number" min={1} placeholder="No limit" />
+              <span>{t("settings.ruleSpeed")}</span>
+              <input {...field("speedCapKib", true)} type="number" min={1} placeholder={t("settings.ruleNoLimit")} />
             </label>
           </fieldset>
 
           <div className="settings-page__schedule-foot">
-            <button
-              type="button"
-              className="settings-page__secondary-button"
-              onClick={() => setDraft(null)}
-            >
-              Cancel
+            <button type="button" className="settings-page__secondary-button" onClick={() => setDraft(null)}>
+              {t("settings.cancel")}
             </button>
-            <button
-              type="button"
-              className="settings-page__primary-button"
-              onClick={() => void save()}
-            >
-              Save rule
+            <button type="button" className="settings-page__primary-button" onClick={() => void save()}>
+              {t("settings.saveRule")}
             </button>
           </div>
         </div>

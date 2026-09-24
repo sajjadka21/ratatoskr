@@ -982,3 +982,64 @@ process auditing).
   start it again from the browser.
 - Handover needs Windows. Elsewhere the channel reports it is unsupported and
   the browser keeps the download.
+
+## Review follow-up - Step 3: "Rud" interface, Persian first
+
+The interface was rebuilt around a new visual identity (working name "Rud",
+river) with Persian as the default language and English as the second.
+The Rust service remains the single owner of download state; every new
+control calls an existing or new backend command.
+
+### Language, direction and formatting
+
+- `src/i18n`: typed fa/en dictionaries (`messages.ts`, `pageMessages.ts`),
+  `I18nProvider` / `useI18n()` returning `t`, `dir` and a formatter.
+- Numbers use Persian digits in Persian; dates use the Persian (Jalali)
+  calendar; byte units and rates are translated. English keeps Latin digits.
+- The whole layout is written with logical CSS properties, so it mirrors in
+  RTL. URLs, paths and file names stay left-to-right inside RTL text.
+- Language and theme are stored by the backend (`ui_language`, `ui_theme`)
+  through `get_ui_preferences` / `set_ui_preferences` and applied before the
+  first paint. Vazirmatn is bundled (`@fontsource-variable/vazirmatn`), so no
+  font is fetched from the network.
+
+### Visual system
+
+- New tokens (`styles/tokens.css`): dark default, light, and follow-system;
+  saffron accent; status colours shared by pills, sparklines and the sidebar.
+- Sidebar with the Rud mark, per-status counts and a collapsed 72px form
+  below 1100px. Top bar with search, add, pause all / resume all and a
+  global speed-limit control.
+- Throughput band: live total speed with a 60-second sparkline.
+- Download table: virtualized, sortable (added, name, progress, speed, size),
+  file-type badges, per-row sparkline, status pills; columns drop with
+  container queries on narrow windows.
+- Details drawer: progress ring, one lane per connection, the adaptive
+  engine's reason, speed history, properties and a session timeline.
+- Refresh-link dialog replaces `window.prompt`.
+- LinkGrabber keeps the Phase 8 additions (checks, numbered series, dropped
+  files, large batches through the Default Queue), now translated.
+
+### Desktop behaviour
+
+- System tray (`src-tauri/src/tray.rs`): show, pause all, quit; the tooltip
+  shows active downloads and total speed in the chosen language.
+- Optional close-to-tray (`ui_close_to_tray`), off by default.
+- `pause_all_downloads` pauses every running transfer (service `pause_all`).
+- Keyboard: Ctrl+N add, Ctrl+F search, Ctrl+A select all, arrows to move,
+  Space to pause/resume, Delete to remove, Esc to close.
+
+### Verification
+
+- `cargo fmt --all` - clean
+- `cargo clippy --workspace --all-targets -- -D warnings` - passed
+- `cargo test --workspace` - passed (220 Rust tests)
+- `tsc --noEmit`, `npm test` (42 tests), `npm run build` - passed
+- Screens checked with a mocked backend in Chromium: Persian dark, Persian
+  light, English dark, settings, and narrow windows.
+
+### Not verified
+
+- Tray, close-to-tray, native dialogs and notifications need a Windows build
+  of the application; they were only type-checked and unit-tested here.
+- `npm install` is required once, for the bundled Vazirmatn font.

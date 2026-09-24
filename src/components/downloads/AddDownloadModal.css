@@ -8,7 +8,7 @@
 
   padding: 24px;
 
-  background: rgba(3, 7, 13, 0.72);
+  background: var(--backdrop);
   backdrop-filter: blur(7px);
 
   animation: modal-backdrop-in 130ms ease-out;
@@ -20,11 +20,7 @@
 
   color: var(--text-primary);
   background:
-    linear-gradient(
-      180deg,
-      rgba(25, 34, 49, 0.98),
-      rgba(15, 21, 31, 0.99)
-    );
+var(--bg-elevated);
 
   border: 1px solid var(--border-strong);
   border-radius: 16px;
@@ -63,7 +59,7 @@
   color: #7aa9ff;
   background: var(--accent-soft);
 
-  border: 1px solid rgba(79, 140, 255, 0.22);
+  border: 1px solid color-mix(in srgb, var(--info) 22%, transparent);
   border-radius: 12px;
 }
 
@@ -135,7 +131,7 @@
   border-color: var(--accent);
 
   box-shadow:
-    0 0 0 3px rgba(79, 140, 255, 0.1);
+    0 0 0 3px color-mix(in srgb, var(--info) 10%, transparent);
 }
 
 .add-download-modal__input-wrap input {
@@ -165,7 +161,7 @@
   gap: 20px;
 
   color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.018);
+  background: color-mix(in srgb, var(--text-primary) 1.8%, transparent);
 
   border: 1px solid var(--border-subtle);
   border-radius: 9px;
@@ -188,10 +184,10 @@
   margin-top: 13px;
   padding: 10px 12px;
 
-  color: #ff9a9a;
-  background: rgba(240, 100, 100, 0.08);
+  color: var(--danger-text);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
 
-  border: 1px solid rgba(240, 100, 100, 0.2);
+  border: 1px solid color-mix(in srgb, var(--danger) 20%, transparent);
   border-radius: 9px;
 
   font-size: 11px;
@@ -206,7 +202,7 @@
   justify-content: flex-end;
   gap: 9px;
 
-  background: rgba(7, 11, 17, 0.34);
+  background: color-mix(in srgb, var(--bg-app) 34%, transparent);
 
   border-top: 1px solid var(--border-subtle);
 }
@@ -280,7 +276,7 @@
   color: #fff;
   background: var(--accent);
 
-  border-left: 1px solid rgba(255, 255, 255, 0.2);
+  border-inline-start: 1px solid color-mix(in srgb, var(--text-primary) 20%, transparent);
   border-radius: 0 9px 9px 0;
 
   cursor: pointer;
@@ -292,7 +288,7 @@
 
 .add-download-modal__action-menu {
   position: absolute;
-  right: 0;
+  inset-inline-end: 0;
   bottom: calc(100% + 8px);
   z-index: 2;
 
@@ -323,7 +319,7 @@
 
   border-radius: 7px;
 
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 
@@ -432,7 +428,7 @@
   border-color: var(--accent);
 
   box-shadow:
-    0 0 0 3px rgba(79, 140, 255, 0.12);
+    0 0 0 3px color-mix(in srgb, var(--info) 12%, transparent);
 }
 
 .add-download-modal__title-row {
@@ -449,9 +445,9 @@
   align-items: center;
 
   color: #aac8ff;
-  background: rgba(79, 140, 255, 0.11);
+  background: color-mix(in srgb, var(--info) 11%, transparent);
 
-  border: 1px solid rgba(79, 140, 255, 0.2);
+  border: 1px solid color-mix(in srgb, var(--info) 20%, transparent);
   border-radius: 999px;
 
   font-size: 8px;
@@ -525,7 +521,7 @@
 }
 
 .add-download-modal__destination strong {
-  text-align: right;
+  text-align: end;
 }
 
 .add-download-modal__destination small {

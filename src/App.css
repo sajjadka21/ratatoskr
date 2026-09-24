@@ -1,111 +1,45 @@
-.download-library {
-  width: 100%;
-}
-
-.download-library__header {
-  margin-bottom: 14px;
-
+.downloads-workspace {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 20px;
 }
 
-.download-library__header h2 {
-  margin: 0;
-
-  color: var(--text-primary);
-
-  font-size: 16px;
-  font-weight: 650;
-}
-
-.download-library__header span {
-  display: block;
-  margin-top: 4px;
-
-  color: var(--text-muted);
-
-  font-size: 10px;
-}
-
-.download-library__list {
+.downloads-workspace__main {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 12px;
 }
 
-.download-library__empty {
-  min-height: 320px;
-
-  display: grid;
-  place-items: center;
-
-  color: var(--text-muted);
-
-  background:
-    linear-gradient(
-      180deg,
-      rgba(17, 23, 34, 0.42),
-      rgba(17, 23, 34, 0.16)
-    );
-
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-lg);
-
-  text-align: center;
+.downloads-workspace__bulk {
+  margin: 0 24px;
 }
 
-.download-library__empty > div {
+.downloads-workspace__table {
+  min-height: 0;
+  flex: 1;
+  margin: 0 12px;
+  display: flex;
+}
+
+.downloads-workspace__status {
+  height: 32px;
+  flex: 0 0 auto;
+  padding: 0 24px;
   display: flex;
   align-items: center;
-  flex-direction: column;
-}
-
-.download-library__empty strong {
-  color: var(--text-primary);
-
-  font-size: 14px;
-  font-weight: 620;
-}
-
-.download-library__empty span {
-  margin-top: 6px;
-
+  gap: 16px;
   color: var(--text-muted);
-
-  font-size: 11px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 11.5px;
 }
 
-.download-library__empty button {
-  height: 36px;
-  margin-top: 16px;
-  padding: 0 14px;
-
-  color: #fff;
-  background: var(--accent);
-
-  border-radius: 9px;
-
-  font-size: 11px;
-  font-weight: 600;
-
-  cursor: pointer;
-}
-
-.download-library__empty button:hover {
-  background: var(--accent-hover);
-}
-
-.downloads-workspace {
-  width: 100%;
-
-  display: flex;
-  align-items: flex-start;
-  gap: 18px;
-}
-
-.download-library {
-  min-width: 0;
-  flex: 1;
+.downloads-workspace__hint {
+  margin-inline-start: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

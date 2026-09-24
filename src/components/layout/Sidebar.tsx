@@ -1,206 +1,167 @@
-﻿import {
+import {
   CheckCircle2,
-  CircleX,
+  CircleAlert,
   Clock3,
   Download,
-  List,
-  Layers3,
-  Settings,
-  Zap,
-  ScanLine,
   FolderOpen,
+  Layers3,
+  List,
+  Plus,
+  ScanLine,
+  Settings,
 } from "lucide-react";
+import type { ComponentType } from "react";
+
+import { useI18n } from "../../i18n/I18n";
+import type { MessageKey } from "../../i18n/messages";
 
 import "./Sidebar.css";
 
-export type DownloadSection =
-  | "all"
-  | "active"
-  | "queued"
-  | "completed"
-  | "failed";
-
-export type SidebarCounts =
-  Record<DownloadSection, number>;
+export type DownloadSection = "all" | "active" | "queued" | "completed" | "failed";
+export type WorkspacePage = "downloads" | "linkgrabber" | "categories" | "queues" | "settings";
+export type SidebarCounts = Record<DownloadSection, number>;
 
 type SidebarProps = {
-  activeItem?: DownloadSection;
-  settingsActive?: boolean;
-  queuesActive?: boolean;
-  counts?: SidebarCounts;
-  onSelect?: (
-    section: DownloadSection,
-  ) => void;
-  onOpenSettings?: () => void;
-  onOpenQueues?: () => void;
-  linkGrabberActive?: boolean;
-  categoriesActive?: boolean;
-  onOpenLinkGrabber?: () => void;
-  onOpenCategories?: () => void;
+  page: WorkspacePage;
+  section: DownloadSection;
+  counts: SidebarCounts;
+  bytesToday: number;
+  engineState: "ready" | "checking" | "down";
+  onSection: (section: DownloadSection) => void;
+  onPage: (page: WorkspacePage) => void;
+  onAddDownload: () => void;
 };
 
-const items: Array<{
+const SECTIONS: Array<{
   id: DownloadSection;
-  label: string;
-  icon: typeof List;
+  label: MessageKey;
+  icon: ComponentType<{ size?: number; strokeWidth?: number }>;
+  tone: string;
 }> = [
-  {
-    id: "all",
-    label: "All Downloads",
-    icon: List,
-  },
-  {
-    id: "active",
-    label: "Active",
-    icon: Zap,
-  },
-  {
-    id: "queued",
-    label: "Queued",
-    icon: Clock3,
-  },
-  {
-    id: "completed",
-    label: "Completed",
-    icon: CheckCircle2,
-  },
-  {
-    id: "failed",
-    label: "Failed",
-    icon: CircleX,
-  },
+  { id: "all", label: "nav.all", icon: List, tone: "all" },
+  { id: "active", label: "nav.active", icon: Download, tone: "active" },
+  { id: "queued", label: "nav.queued", icon: Clock3, tone: "queued" },
+  { id: "completed", label: "nav.completed", icon: CheckCircle2, tone: "completed" },
+  { id: "failed", label: "nav.failed", icon: CircleAlert, tone: "failed" },
 ];
 
+const PAGES: Array<{
+  id: Exclude<WorkspacePage, "downloads" | "settings">;
+  label: MessageKey;
+  icon: ComponentType<{ size?: number; strokeWidth?: number }>;
+}> = [
+  { id: "linkgrabber", label: "nav.linkGrabber", icon: ScanLine },
+  { id: "queues", label: "nav.queues", icon: Layers3 },
+  { id: "categories", label: "nav.categories", icon: FolderOpen },
+];
+
+/** The brand mark: two currents flowing down into a download arrow. */
+export function RudMark({ size = 34 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 34 34" aria-hidden="true" className="rud-mark">
+      <rect width="34" height="34" rx="10" fill="var(--accent)" />
+      <path
+        d="M8 12.5c3-3 6 3 9 0s6-3 9 0M8 18c3-3 6 3 9 0s6-3 9 0"
+        stroke="var(--accent-ink)"
+        strokeWidth="2.2"
+        fill="none"
+        strokeLinecap="round"
+      />
+      <path
+        d="M17 22v5.5m-3-3 3 3 3-3"
+        stroke="var(--accent-ink)"
+        strokeWidth="2.2"
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function Sidebar({
-  activeItem = "all",
-  settingsActive = false,
-  queuesActive = false,
+  page,
+  section,
   counts,
-  onSelect,
-  onOpenSettings,
-  onOpenQueues,
-  linkGrabberActive = false,
-  categoriesActive = false,
-  onOpenLinkGrabber,
-  onOpenCategories,
+  bytesToday,
+  engineState,
+  onSection,
+  onPage,
+  onAddDownload,
 }: SidebarProps) {
+  const { t, fmt } = useI18n();
+  const engineLabel: MessageKey =
+    engineState === "ready" ? "nav.engineReady" : engineState === "down" ? "nav.engineDown" : "nav.engineChecking";
+
   return (
     <aside className="sidebar">
       <div className="sidebar__brand">
-        <div className="sidebar__brand-icon">
-          <Download
-            size={18}
-            strokeWidth={2.4}
-          />
-        </div>
-
+        <RudMark />
         <div className="sidebar__brand-copy">
-          <div className="sidebar__brand-title">
-            Download
-          </div>
-
-          <div className="sidebar__brand-subtitle">
-            Manager
-          </div>
+          <strong>{t("app.name")}</strong>
+          <span>{t("app.fullName")}</span>
         </div>
       </div>
 
-      <nav
-        className="sidebar__nav"
-        aria-label="Download sections"
-      >
-        {items.map(
-          ({
-            id,
-            label,
-            icon: Icon,
-          }) => {
-            const count =
-              counts?.[id] ?? 0;
+      <button type="button" className="sidebar__add" onClick={onAddDownload}>
+        <Plus size={17} strokeWidth={2.4} />
+        <span>{t("nav.addLink")}</span>
+        <kbd className="ltr">Ctrl+N</kbd>
+      </button>
 
-            return (
-              <button
-                key={id}
-                type="button"
-                className={`sidebar__item ${
-                  !settingsActive &&
-                  !queuesActive &&
-                  !linkGrabberActive &&
-                  !categoriesActive &&
-                  activeItem === id
-                    ? "sidebar__item--active"
-                    : ""
-                }`}
-                onClick={() =>
-                  onSelect?.(id)
-                }
-              >
-                <Icon
-                  size={17}
-                  strokeWidth={1.9}
-                />
-
-                <span className="sidebar__item-label">
-                  {label}
-                </span>
-
-                {count > 0 ? (
-                  <span className="sidebar__count">
-                    {count}
-                  </span>
-                ) : null}
-              </button>
-            );
-          },
-        )}
+      <nav className="sidebar__nav" aria-label={t("nav.sections")}>
+        {SECTIONS.map(({ id, label, icon: Icon, tone }) => {
+          const active = page === "downloads" && section === id;
+          const count = counts[id];
+          return (
+            <button
+              key={id}
+              type="button"
+              className={`sidebar__item sidebar__item--tone-${tone} ${active ? "sidebar__item--active" : ""}`}
+              aria-current={active ? "page" : undefined}
+              onClick={() => onSection(id)}
+            >
+              <Icon size={17} strokeWidth={1.9} />
+              <span className="sidebar__label">{t(label)}</span>
+              {count > 0 ? <span className="sidebar__count num">{fmt.number(count)}</span> : null}
+            </button>
+          );
+        })}
       </nav>
 
-      <div className="sidebar__secondary">
-        <div className="sidebar__section-label">Workspace</div>
-        <button
-          className={`sidebar__item ${linkGrabberActive ? "sidebar__item--active" : ""}`}
-          type="button"
-          onClick={onOpenLinkGrabber}
-        >
-          <ScanLine size={17} strokeWidth={1.9} />
-          <span>LinkGrabber</span>
-        </button>
-        <button
-          className={`sidebar__item ${categoriesActive ? "sidebar__item--active" : ""}`}
-          type="button"
-          onClick={onOpenCategories}
-        >
-          <FolderOpen size={17} strokeWidth={1.9} />
-          <span>Categories</span>
-        </button>
-        <button
-          className={`sidebar__item ${
-            queuesActive ? "sidebar__item--active" : ""
-          }`}
-          type="button"
-          onClick={onOpenQueues}
-        >
-          <Layers3 size={17} strokeWidth={1.9} />
-          <span>Queues</span>
-        </button>
+      <div className="sidebar__group">
+        <span className="sidebar__group-label">{t("nav.workspace")}</span>
+        {PAGES.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            className={`sidebar__item ${page === id ? "sidebar__item--active" : ""}`}
+            aria-current={page === id ? "page" : undefined}
+            onClick={() => onPage(id)}
+          >
+            <Icon size={17} strokeWidth={1.9} />
+            <span className="sidebar__label">{t(label)}</span>
+          </button>
+        ))}
       </div>
 
       <div className="sidebar__footer">
+        <div className="sidebar__stat">
+          <span>{t("nav.today")}</span>
+          <strong className="num">{fmt.bytes(bytesToday)}</strong>
+        </div>
+        <div className={`sidebar__engine sidebar__engine--${engineState}`}>
+          <span className="sidebar__engine-dot" />
+          {t(engineLabel)}
+        </div>
         <button
-          className={`sidebar__item ${
-            settingsActive
-              ? "sidebar__item--active"
-              : ""
-          }`}
           type="button"
-          onClick={onOpenSettings}
+          className={`sidebar__item ${page === "settings" ? "sidebar__item--active" : ""}`}
+          aria-current={page === "settings" ? "page" : undefined}
+          onClick={() => onPage("settings")}
         >
-          <Settings
-            size={17}
-            strokeWidth={1.9}
-          />
-
-          <span>Settings</span>
+          <Settings size={17} strokeWidth={1.9} />
+          <span className="sidebar__label">{t("nav.settings")}</span>
         </button>
       </div>
     </aside>

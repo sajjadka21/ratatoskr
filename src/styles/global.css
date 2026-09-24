@@ -1,4 +1,5 @@
-@import './tokens.css';
+@import "@fontsource-variable/vazirmatn/wght.css";
+@import "./tokens.css";
 
 * {
   box-sizing: border-box;
@@ -18,10 +19,14 @@ body {
   background: var(--bg-app);
   color: var(--text-primary);
   overflow: hidden;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 
@@ -30,11 +35,52 @@ button {
 }
 
 button:focus-visible,
-input:focus-visible {
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
 ::selection {
-  background: rgba(56, 210, 189, 0.3);
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* File names, URLs and paths are left-to-right even inside Persian text. */
+.ltr {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+[dir="rtl"] .sparkline {
+  transform: scaleX(-1);
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

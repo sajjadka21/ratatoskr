@@ -4,8 +4,9 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type { DownloadQueue } from "../../types/download";
 import type { AddDownloadAction } from "../downloads/AddDownloadModal";
-import { formatBytes } from "../../utils/format";
-import { batchAction, readDroppedText } from "../../utils/linkgrabber";
+import { useI18n } from "../../i18n/I18n";
+import { LARGE_BATCH, batchAction, readDroppedText } from "../../utils/linkgrabber";
+
 import "./LinkGrabberPage.css";
 
 type LinkCandidate = { url: string; host: string; extension: string | null };
@@ -30,6 +31,7 @@ type Props = {
 };
 
 export function LinkGrabberPage({ queues, engineReady, submitting = false, onSubmit, intake = null }: Props) {
+  const { t, fmt } = useI18n();
   const [input, setInput] = useState(() => intake?.urls.join("\n") ?? "");
   const [appliedIntake, setAppliedIntake] = useState(intake?.id ?? 0);
 
@@ -129,12 +131,18 @@ export function LinkGrabberPage({ queues, engineReady, submitting = false, onSub
       const text = await readDroppedText(event.dataTransfer);
       if (text) appendLinks(text);
     } catch (reason) {
-      setError(String(reason));
+      setError(reason instanceof Error ? reason.message : String(reason));
     }
   }
 
   const defaultQueueId = queues.find((queue) => queue.id === "default")?.id ?? queues[0]?.id ?? null;
   const startAction = batchAction(selected.size, queueId || null, defaultQueueId);
+  const routedThroughDefault = !queueId && startAction.action.kind === "queue";
+  const startLabel = queueId
+    ? t("grabber.sendToQueue")
+    : routedThroughDefault
+      ? t("grabber.startViaQueue", { count: fmt.number(selected.size) })
+      : t("grabber.start");
 
   function submit(action: AddDownloadAction) {
     if (!engineReady || submitting || selected.size === 0) return;
@@ -144,54 +152,56 @@ export function LinkGrabberPage({ queues, engineReady, submitting = false, onSub
   return <div className="linkgrabber-page">
     <section className="linkgrabber-page__hero">
       <div>
-        <span className="eyebrow"><ScanLine size={14} /> Capture desk</span>
-        <h2>Find every downloadable link</h2>
-        <p>Paste a page, a copied list, or raw HTML, or drop a text file. The Rust engine will normalize, deduplicate, and classify candidates before anything is created.</p>
+        <span className="eyebrow"><ScanLine size={14} /> {t("grabber.eyebrow")}</span>
+        <h2>{t("grabber.title")}</h2>
+        <p>{t("grabber.hint")}</p>
       </div>
-      <div className="linkgrabber-page__hero-mark"><Sparkles size={28} /><span>LOCAL<br />ANALYSIS</span></div>
+      <div className="linkgrabber-page__hero-mark"><Sparkles size={28} /><span>{t("grabber.badge")}</span></div>
     </section>
 
     <section className="linkgrabber-page__workbench">
       <textarea
         className={dragging ? "is-dragging" : undefined}
         value={input}
+        dir="ltr"
         onChange={(event) => setInput(event.target.value)}
         onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
         onDrop={(event) => void handleDrop(event)}
-        placeholder="Paste URLs or HTML here, or drop a .txt / .html file…"
-        aria-label="Links to inspect"
+        placeholder={t("grabber.placeholder")}
+        aria-label={t("grabber.inputLabel")}
       />
       <div className="linkgrabber-page__generator">
         <Wand2 size={14} />
         <input
           value={pattern}
+          dir="ltr"
           onChange={(event) => setPattern(event.target.value)}
           onKeyDown={(event) => { if (event.key === "Enter" && pattern.trim()) void generate(); }}
-          placeholder="Numbered series, e.g. https://site.com/part[01-20].rar"
-          aria-label="Link pattern"
+          placeholder={t("grabber.patternPlaceholder")}
+          aria-label={t("grabber.patternLabel")}
         />
-        <button type="button" onClick={() => void generate()} disabled={!pattern.trim()}>Generate</button>
+        <button type="button" onClick={() => void generate()} disabled={!pattern.trim()}>{t("grabber.generate")}</button>
       </div>
       <div className="linkgrabber-page__toolbar">
-        <span>{candidates.length} candidates · {selected.size} selected</span>
-        <button type="button" onClick={() => navigator.clipboard?.writeText([...selected].join("\n"))} disabled={!selected.size}><Copy size={14} /> Copy selected</button>
+        <span className="num">{t("grabber.counts", { count: fmt.number(candidates.length), selected: fmt.number(selected.size) })}</span>
+        <button type="button" onClick={() => navigator.clipboard?.writeText([...selected].join("\n"))} disabled={!selected.size}><Copy size={14} /> {t("grabber.copySelected")}</button>
       </div>
     </section>
 
     <section className="linkgrabber-page__results">
       <div className="linkgrabber-page__results-head">
-        <div><strong>Candidate links</strong><span>Review before sending to the queue</span></div>
-        <div className="linkgrabber-page__filters"><label><Filter size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter hosts" /></label><select value={kind} onChange={(event) => setKind(event.target.value)}><option value="all">All types</option>{types.map((type) => <option key={type} value={type}>{type}</option>)}</select></div>
+        <div><strong>{t("grabber.candidates")}</strong><span>{t("grabber.review")}</span></div>
+        <div className="linkgrabber-page__filters"><label><Filter size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("grabber.filter")} aria-label={t("grabber.filter")} /></label><select value={kind} onChange={(event) => setKind(event.target.value)}><option value="all">{t("grabber.allTypes")}</option>{types.map((type) => <option key={type} value={type}>{type}</option>)}</select></div>
       </div>
       <div className="linkgrabber-page__select-row">
-        <button type="button" onClick={() => setSelected(new Set(visible.map((item) => item.url)))}><Check size={14} /> Select visible</button>
-        <button type="button" onClick={() => setSelected(new Set())}>Clear</button>
-        <button type="button" onClick={() => void checkSelected()} disabled={!selected.size || probing}><Radar size={14} /> {probing ? "Checking…" : "Check selected"}</button>
+        <button type="button" onClick={() => setSelected(new Set(visible.map((item) => item.url)))}><Check size={14} /> {t("grabber.selectVisible")}</button>
+        <button type="button" onClick={() => setSelected(new Set())}>{t("grabber.clear")}</button>
+        <button type="button" onClick={() => void checkSelected()} disabled={!selected.size || probing}><Radar size={14} /> {probing ? t("grabber.checking") : t("grabber.check")}</button>
         {checkedSummary.known || checkedSummary.unreachable ? (
-          <span className="linkgrabber-page__summary">
-            {checkedSummary.known ? `${formatBytes(checkedSummary.bytes)} in ${checkedSummary.known} checked` : null}
-            {checkedSummary.unreachable ? <em>{checkedSummary.unreachable} unreachable</em> : null}
+          <span className="linkgrabber-page__summary num">
+            {checkedSummary.known ? t("grabber.checkedTotal", { size: fmt.bytes(checkedSummary.bytes), count: fmt.number(checkedSummary.known) }) : null}
+            {checkedSummary.unreachable ? <em>{t("grabber.unreachableCount", { count: fmt.number(checkedSummary.unreachable) })}</em> : null}
           </span>
         ) : null}
       </div>
@@ -201,25 +211,24 @@ export function LinkGrabberPage({ queues, engineReady, submitting = false, onSub
         return <label key={item.url} className={`linkgrabber-page__item${probe && !probe.reachable ? " is-unreachable" : ""}`}>
           <input type="checkbox" checked={selected.has(item.url)} onChange={() => toggle(item.url)} />
           <span className="linkgrabber-page__item-main">
-            <strong>{probe?.filename ?? item.host}</strong>
-            <span>{item.url}</span>
+            <strong className="ltr">{probe?.filename ?? item.host}</strong>
+            <span className="ltr">{item.url}</span>
           </span>
           <span className="linkgrabber-page__item-facts">
             {probe ? (probe.reachable ? <>
-              {probe.totalBytes !== null ? <b>{formatBytes(probe.totalBytes)}</b> : null}
-              <i className={probe.rangeSupported ? "is-good" : undefined}>{probe.rangeSupported ? "Resumable" : "No resume"}</i>
-            </> : <i className="is-bad" title={probe.error ?? undefined}>Unreachable</i>) : null}
-            <code>{item.extension ?? "other"}</code>
+              {probe.totalBytes !== null ? <b className="num">{fmt.bytes(probe.totalBytes)}</b> : null}
+              <i className={probe.rangeSupported ? "is-good" : undefined}>{probe.rangeSupported ? t("grabber.resumable") : t("grabber.noResume")}</i>
+            </> : <i className="is-bad" title={probe.error ?? undefined}>{t("grabber.unreachable")}</i>) : null}
+            <code>{item.extension ?? t("grabber.other")}</code>
           </span>
         </label>;
-      })}{!visible.length ? <div className="linkgrabber-page__empty">Paste links above to begin.</div> : null}</div>
+      })}{!visible.length ? <div className="linkgrabber-page__empty">{t("grabber.empty")}</div> : null}</div>
       <div className="linkgrabber-page__actions">
-        {startAction.note ? <span className="linkgrabber-page__note">{startAction.note}</span> : null}
-        <select value={queueId} onChange={(event) => setQueueId(event.target.value)} aria-label="Target queue"><option value="">No queue</option>{queues.map((queue) => <option key={queue.id} value={queue.id}>{queue.name}</option>)}</select>
-        <button type="button" className="secondary" disabled={!engineReady || submitting || !selected.size} onClick={() => submit({ kind: "download-later" })}>Download later</button>
-        <button type="button" disabled={!engineReady || submitting || !selected.size} onClick={() => submit(startAction.action)}>{startAction.label}</button>
+        {routedThroughDefault ? <span className="linkgrabber-page__note">{t("grabber.largeBatchNote", { count: fmt.number(LARGE_BATCH) })}</span> : null}
+        <select value={queueId} onChange={(event) => setQueueId(event.target.value)} aria-label={t("grabber.targetQueue")}><option value="">{t("grabber.noQueue")}</option>{queues.map((queue) => <option key={queue.id} value={queue.id}>{queue.name}</option>)}</select>
+        <button type="button" className="secondary" disabled={!engineReady || submitting || !selected.size} onClick={() => submit({ kind: "download-later" })}>{t("grabber.later")}</button>
+        <button type="button" disabled={!engineReady || submitting || !selected.size} onClick={() => submit(startAction.action)}>{startLabel}</button>
       </div>
     </section>
   </div>;
 }
-

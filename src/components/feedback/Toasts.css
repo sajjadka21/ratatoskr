@@ -1,6 +1,6 @@
 .toasts {
   position: fixed;
-  right: 20px;
+  inset-inline-end: 20px;
   bottom: 20px;
   z-index: 40;
 
@@ -43,7 +43,7 @@
 }
 
 .toast--error {
-  border-color: rgba(240, 100, 100, 0.55);
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
 }
 
 .toast--error > svg {

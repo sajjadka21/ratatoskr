@@ -1,0 +1,35 @@
+.file-badge {
+  --kind: var(--text-secondary);
+
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+
+  display: grid;
+  place-items: center;
+
+  color: var(--kind);
+  background: color-mix(in srgb, var(--kind) 16%, var(--bg-surface));
+  border-radius: 9px;
+
+  font-family: var(--font-ui);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  direction: ltr;
+}
+
+.file-badge--lg {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  font-size: 11px;
+}
+
+.file-badge--video { --kind: var(--paused); }
+.file-badge--audio { --kind: var(--success); }
+.file-badge--image { --kind: #e879a6; }
+.file-badge--archive { --kind: var(--text-secondary); }
+.file-badge--app { --kind: var(--info); }
+.file-badge--document { --kind: var(--danger); }
+.file-badge--disk { --kind: var(--accent-text); }

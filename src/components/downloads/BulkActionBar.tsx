@@ -1,5 +1,7 @@
 import { Pause, Play, RotateCcw, Trash2, X, XCircle } from "lucide-react";
 
+import { useI18n } from "../../i18n/I18n";
+import type { MessageKey } from "../../i18n/messages";
 import type { DownloadPriority, DownloadQueue } from "../../types/download";
 
 import "./BulkActionBar.css";
@@ -15,62 +17,52 @@ type BulkActionBarProps = {
   onClear: () => void;
 };
 
-const ACTIONS: Array<{ action: BulkAction; label: string; icon: typeof Play }> = [
-  { action: "start", label: "Start", icon: Play },
-  { action: "pause", label: "Pause", icon: Pause },
-  { action: "resume", label: "Resume", icon: Play },
-  { action: "retry", label: "Retry", icon: RotateCcw },
-  { action: "cancel", label: "Cancel", icon: XCircle },
-  { action: "remove", label: "Remove", icon: Trash2 },
+const ACTIONS: Array<{ action: BulkAction; icon: typeof Play }> = [
+  { action: "start", icon: Play },
+  { action: "pause", icon: Pause },
+  { action: "resume", icon: Play },
+  { action: "retry", icon: RotateCcw },
+  { action: "cancel", icon: XCircle },
+  { action: "remove", icon: Trash2 },
 ];
 
-const PRIORITIES: Array<{ value: DownloadPriority; label: string }> = [
-  { value: "very_high", label: "Very high" },
-  { value: "high", label: "High" },
-  { value: "normal", label: "Normal" },
-  { value: "low", label: "Low" },
-];
+const PRIORITIES: DownloadPriority[] = ["very_high", "high", "normal", "low"];
 
-export function BulkActionBar({
-  count,
-  queues,
-  onAction,
-  onQueue,
-  onPriority,
-  onClear,
-}: BulkActionBarProps) {
+export function BulkActionBar({ count, queues, onAction, onQueue, onPriority, onClear }: BulkActionBarProps) {
+  const { t, fmt } = useI18n();
+
   return (
-    <div className="bulk-action-bar" role="toolbar" aria-label="Bulk download actions">
-      <strong>{count} selected</strong>
-
-      {ACTIONS.map(({ action, label, icon: Icon }) => (
+    <div className="bulk-action-bar" role="toolbar" aria-label={t("bulk.label")}>
+      <strong className="num">{t("table.selected", { count: fmt.number(count) })}</strong>
+      {ACTIONS.map(({ action, icon: Icon }) => (
         <button key={action} type="button" onClick={() => onAction(action)}>
           <Icon size={14} />
-          {label}
+          {t(`action.${action}` as MessageKey)}
         </button>
       ))}
-
       <label className="bulk-action-bar__select">
-        <span>Queue</span>
-        <select defaultValue="" onChange={(event) => event.target.value && onQueue(event.target.value)}>
-          <option value="">Move to…</option>
+        <span>{t("bulk.queue")}</span>
+        <select value="" onChange={(event) => event.target.value && onQueue(event.target.value)}>
+          <option value="">{t("bulk.moveTo")}</option>
           {queues.map((queue) => (
-            <option key={queue.id} value={queue.id}>{queue.name}</option>
+            <option key={queue.id} value={queue.id}>
+              {queue.name}
+            </option>
           ))}
         </select>
       </label>
-
       <label className="bulk-action-bar__select">
-        <span>Priority</span>
-        <select defaultValue="" onChange={(event) => event.target.value && onPriority(event.target.value as DownloadPriority)}>
-          <option value="">Set…</option>
+        <span>{t("bulk.priority")}</span>
+        <select value="" onChange={(event) => event.target.value && onPriority(event.target.value as DownloadPriority)}>
+          <option value="">{t("bulk.set")}</option>
           {PRIORITIES.map((priority) => (
-            <option key={priority.value} value={priority.value}>{priority.label}</option>
+            <option key={priority} value={priority}>
+              {t(`priority.${priority}` as MessageKey)}
+            </option>
           ))}
         </select>
       </label>
-
-      <button type="button" className="bulk-action-bar__close" onClick={onClear} aria-label="Clear selection">
+      <button type="button" className="bulk-action-bar__close" onClick={onClear} aria-label={t("bulk.clear")}>
         <X size={15} />
       </button>
     </div>

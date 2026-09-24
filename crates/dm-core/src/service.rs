@@ -373,6 +373,22 @@ impl DownloadService {
         }
     }
 
+    /// Asks every transfer running in this process to pause. Each one
+    /// persists its own pause, exactly as a single pause does. Returns the
+    /// ids that were asked.
+    pub fn pause_all(&self) -> Vec<String> {
+        let Ok(controls) = self.controls.lock() else {
+            return Vec::new();
+        };
+        controls
+            .iter()
+            .map(|(id, control)| {
+                control.request(StopReason::Pause);
+                id.clone()
+            })
+            .collect()
+    }
+
     /// Ends a task and discards its partial transfer. A running transfer
     /// persists the cancellation itself; anything else is cancelled in place.
     pub async fn cancel_task(&self, download_id: &str) -> Result<DownloadRecord> {
@@ -1692,6 +1708,40 @@ mod tests {
             .await
             .unwrap();
         assert!(started.elapsed() >= Duration::from_millis(500));
+    }
+
+    #[tokio::test]
+    async fn pause_all_pauses_every_running_transfer() {
+        let server = TestServer::start(slow_server()).await;
+        let harness = harness();
+        let first = harness.service.create_task(&server.url("a.bin")).unwrap();
+        let second = harness.service.create_task(&server.url("b.bin")).unwrap();
+
+        let runner = |id: String| {
+            let service = harness.service.clone();
+            let destination = harness.destination.clone();
+            tokio::spawn(async move { service.start_task(&id, destination).await })
+        };
+        let first_run = runner(first.id.clone());
+        let second_run = runner(second.id.clone());
+
+        for _ in 0..100 {
+            if harness.service.controls.lock().unwrap().len() == 2 {
+                break;
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+        let mut paused = harness.service.pause_all();
+        paused.sort();
+        let mut expected = vec![first.id.clone(), second.id.clone()];
+        expected.sort();
+        assert_eq!(paused, expected);
+
+        for handle in [first_run, second_run] {
+            let record = handle.await.unwrap().unwrap();
+            assert_eq!(record.status, DownloadStatus::Paused);
+        }
+        assert!(!harness.service.has_running_transfers());
     }
 
     #[test]

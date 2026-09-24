@@ -18,6 +18,11 @@ import type {
   DownloadQueue,
 } from "../../types/download";
 
+import { useI18n } from "../../i18n/I18n";
+import type { MessageKey } from "../../i18n/messages";
+import { displayName } from "../../utils/fileKind";
+import { formatHost } from "../../utils/format";
+
 import "./QueuePage.css";
 
 type QueuePageProps = {
@@ -70,6 +75,8 @@ export function QueuePage({
   onRemove,
   onPriority,
 }: QueuePageProps) {
+  const { t, fmt } = useI18n();
+  const priorityLabel = (priority: DownloadPriority) => t(`priority.${priority}` as MessageKey);
   const [selectedQueueId, setSelectedQueueId] = useState("default");
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
@@ -157,12 +164,12 @@ export function QueuePage({
       <aside className="queue-page__rail">
         <div className="queue-page__rail-heading">
           <div>
-            <span>Queue library</span>
-            <strong>{queues.length} queues</strong>
+            <span>{t("queues.library")}</span>
+            <strong className="num">{t("queues.count", { count: fmt.number(queues.length) })}</strong>
           </div>
           <button
             type="button"
-            aria-label="Create queue"
+            aria-label={t("queues.create")}
             onClick={() => setCreateOpen((current) => !current)}
           >
             <Plus size={15} />
@@ -174,11 +181,12 @@ export function QueuePage({
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="Queue name"
+              placeholder={t("queues.name")}
+              aria-label={t("queues.name")}
             />
             <div className="queue-page__create-grid">
               <label>
-                Concurrent
+                {t("queues.concurrent")}
                 <input
                   type="number"
                   min={1}
@@ -189,7 +197,7 @@ export function QueuePage({
                 />
               </label>
               <label>
-                Per host
+                {t("queues.perHost")}
                 <input
                   type="number"
                   min={1}
@@ -206,7 +214,7 @@ export function QueuePage({
             >
               {priorities.map((priority) => (
                 <option key={priority} value={priority}>
-                  {priority.replace("_", " ")} priority
+                  {t("queues.priorityOption", { priority: priorityLabel(priority) })}
                 </option>
               ))}
             </select>
@@ -216,7 +224,7 @@ export function QueuePage({
               disabled={busy || !name.trim()}
               onClick={() => void createQueue()}
             >
-              Create queue
+              {t("queues.create")}
             </button>
           </div>
         ) : null}
@@ -243,7 +251,10 @@ export function QueuePage({
                 <span>
                   <strong>{queue.name}</strong>
                   <small>
-                    {queue.state} · {count} waiting
+                    {t("queues.waiting", {
+                      state: t(`queues.state.${queue.enabled ? queue.state : "disabled"}` as MessageKey),
+                      count: fmt.number(count),
+                    })}
                   </small>
                 </span>
               </button>
@@ -264,19 +275,24 @@ export function QueuePage({
                       : "disabled"
                   }`}
                 >
-                  {selectedQueue.enabled
-                    ? selectedQueue.state
-                    : "disabled"}
+                  {t(`queues.state.${selectedQueue.enabled ? selectedQueue.state : "disabled"}` as MessageKey)}
                 </span>
                 <h2>{selectedQueue.name}</h2>
                 <p>
-                  {selectedQueue.maxConcurrent} concurrent · {selectedQueue.maxConcurrentPerHost ?? "No"} per host · {selectedQueue.defaultPriority.replace("_", " ")} default
+                  {t("queues.summary", {
+                    concurrent: fmt.number(selectedQueue.maxConcurrent),
+                    perHost:
+                      selectedQueue.maxConcurrentPerHost === null
+                        ? t("queues.perHostNone")
+                        : t("queues.perHostValue", { count: fmt.number(selectedQueue.maxConcurrentPerHost) }),
+                    priority: priorityLabel(selectedQueue.defaultPriority),
+                  })}
                 </p>
               </div>
               <div className="queue-page__header-actions">
                 <label
                   className="queue-page__enabled"
-                  title="A disabled queue never schedules work, even when started."
+                  title={t("queues.enabledHint")}
                 >
                   <input
                     type="checkbox"
@@ -291,7 +307,7 @@ export function QueuePage({
                       )
                     }
                   />
-                  Enabled
+                  {t("queues.enabled")}
                 </label>
 
                 <button
@@ -311,7 +327,7 @@ export function QueuePage({
                   ) : (
                     <Play size={16} />
                   )}
-                  {selectedQueue.state === "running" ? "Stop queue" : "Start queue"}
+                  {selectedQueue.state === "running" ? t("queues.stop") : t("queues.start")}
                 </button>
               </div>
             </header>
@@ -319,8 +335,8 @@ export function QueuePage({
             {error ? <div className="queue-page__error">{error}</div> : null}
 
             <div className="queue-page__task-heading">
-              <strong>Waiting tasks</strong>
-              <span>Priority is evaluated before saved order.</span>
+              <strong>{t("queues.waitingTasks")}</strong>
+              <span>{t("queues.orderHint")}</span>
             </div>
 
             {queueDownloads.length ? (
@@ -340,10 +356,8 @@ export function QueuePage({
                   >
                     <GripVertical size={16} />
                     <div className="queue-page__task-copy">
-                      <strong>
-                        {download.filename ?? download.sourceUrl}
-                      </strong>
-                      <span>{new URL(download.sourceUrl).hostname}</span>
+                      <strong className="ltr">{displayName(download)}</strong>
+                      <span className="ltr">{formatHost(download.sourceUrl)}</span>
                     </div>
                     <select
                       value={download.priority}
@@ -356,11 +370,11 @@ export function QueuePage({
                           ),
                         )
                       }
-                      aria-label="Task priority"
+                      aria-label={t("queues.taskPriority")}
                     >
                       {priorities.map((priority) => (
                         <option key={priority} value={priority}>
-                          {priority.replace("_", " ")}
+                          {priorityLabel(priority)}
                         </option>
                       ))}
                     </select>
@@ -370,7 +384,7 @@ export function QueuePage({
                       onChange={(event) =>
                         void run(() => onMove(download.id, event.target.value))
                       }
-                      aria-label="Move task to queue"
+                      aria-label={t("queues.moveTask")}
                     >
                       {queues.map((queue) => (
                         <option key={queue.id} value={queue.id}>
@@ -379,11 +393,11 @@ export function QueuePage({
                       ))}
                     </select>
                     <div className="queue-page__order-actions">
-                      <button type="button" disabled={busy || index === 0} onClick={() => void moveInOrder(download.id, 0)} aria-label="Move to top"><ChevronsUp size={14} /></button>
-                      <button type="button" disabled={busy || index === 0} onClick={() => void moveInOrder(download.id, index - 1)} aria-label="Move up"><ArrowUp size={14} /></button>
-                      <button type="button" disabled={busy || index === queueDownloads.length - 1} onClick={() => void moveInOrder(download.id, index + 1)} aria-label="Move down"><ArrowDown size={14} /></button>
-                      <button type="button" disabled={busy || index === queueDownloads.length - 1} onClick={() => void moveInOrder(download.id, queueDownloads.length - 1)} aria-label="Move to bottom"><ChevronsDown size={14} /></button>
-                      <button type="button" disabled={busy} onClick={() => void run(() => onRemove(download.id))} aria-label="Remove from queue"><Unlink size={14} /></button>
+                      <button type="button" disabled={busy || index === 0} onClick={() => void moveInOrder(download.id, 0)} aria-label={t("queues.top")}><ChevronsUp size={14} /></button>
+                      <button type="button" disabled={busy || index === 0} onClick={() => void moveInOrder(download.id, index - 1)} aria-label={t("queues.up")}><ArrowUp size={14} /></button>
+                      <button type="button" disabled={busy || index === queueDownloads.length - 1} onClick={() => void moveInOrder(download.id, index + 1)} aria-label={t("queues.down")}><ArrowDown size={14} /></button>
+                      <button type="button" disabled={busy || index === queueDownloads.length - 1} onClick={() => void moveInOrder(download.id, queueDownloads.length - 1)} aria-label={t("queues.bottom")}><ChevronsDown size={14} /></button>
+                      <button type="button" disabled={busy} onClick={() => void run(() => onRemove(download.id))} aria-label={t("queues.remove")}><Unlink size={14} /></button>
                     </div>
                   </article>
                 ))}
@@ -391,13 +405,13 @@ export function QueuePage({
             ) : (
               <div className="queue-page__empty">
                 <Layers3 size={26} />
-                <strong>No waiting tasks</strong>
-                <span>Add downloads to this queue from the Add Download menu.</span>
+                <strong>{t("queues.empty")}</strong>
+                <span>{t("queues.emptyHint")}</span>
               </div>
             )}
           </>
         ) : (
-          <div className="queue-page__empty">No queue selected.</div>
+          <div className="queue-page__empty">{t("queues.noneSelected")}</div>
         )}
       </section>
     </div>

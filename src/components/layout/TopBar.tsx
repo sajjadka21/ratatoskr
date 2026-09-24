@@ -1,6 +1,6 @@
-﻿import { Gauge, Plus, Search } from "lucide-react";
+import { Search } from "lucide-react";
 
-import { formatRate } from "../../utils/format";
+import { useI18n } from "../../i18n/I18n";
 
 import "./TopBar.css";
 
@@ -8,65 +8,34 @@ type TopBarProps = {
   title: string;
   subtitle?: string;
   searchValue: string;
-  activeCount?: number;
-  aggregateBytesPerSecond?: number | null;
   onSearchChange: (value: string) => void;
-  onAddDownload?: () => void;
+  showSearch?: boolean;
 };
 
-export function TopBar({
-  title,
-  subtitle,
-  searchValue,
-  activeCount = 0,
-  aggregateBytesPerSecond = null,
-  onSearchChange,
-  onAddDownload,
-}: TopBarProps) {
-  const aggregateRate = formatRate(aggregateBytesPerSecond);
+export function TopBar({ title, subtitle, searchValue, onSearchChange, showSearch = true }: TopBarProps) {
+  const { t } = useI18n();
+
   return (
     <header className="topbar">
       <div className="topbar__heading">
         <h1>{title}</h1>
-        {subtitle ? <span>{subtitle}</span> : null}
+        {subtitle ? <span className="num">{subtitle}</span> : null}
       </div>
 
-      <div className="topbar__actions">
-        {aggregateRate ? (
-          <div
-            className="topbar__throughput"
-            title={`${activeCount} active ${
-              activeCount === 1 ? "transfer" : "transfers"
-            }`}
-          >
-            <Gauge size={15} strokeWidth={1.9} />
-            <span>{aggregateRate}</span>
-          </div>
-        ) : null}
-
+      {showSearch ? (
         <label className="topbar__search">
           <Search size={16} strokeWidth={1.9} />
-
           <input
+            id="download-search"
             type="search"
             value={searchValue}
-            onChange={(event) =>
-              onSearchChange(event.target.value)
-            }
-            placeholder="Search downloads..."
-            aria-label="Search downloads"
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder={t("top.search")}
+            aria-label={t("top.searchLabel")}
           />
+          <kbd className="ltr">Ctrl F</kbd>
         </label>
-
-        <button
-          className="topbar__add"
-          type="button"
-          onClick={onAddDownload}
-        >
-          <Plus size={17} strokeWidth={2.2} />
-          <span>Add Download</span>
-        </button>
-      </div>
+      ) : null}
     </header>
   );
 }

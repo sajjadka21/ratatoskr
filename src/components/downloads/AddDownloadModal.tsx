@@ -14,6 +14,9 @@ import {
   useState,
 } from "react";
 
+import { useI18n } from "../../i18n/I18n";
+import type { MessageKey } from "../../i18n/messages";
+
 import "./AddDownloadModal.css";
 import type { DownloadQueue } from "../../types/download";
 
@@ -52,6 +55,7 @@ export function AddDownloadModal({
   onClose,
   onSubmit,
 }: AddDownloadModalProps) {
+  const { t, fmt } = useI18n();
   const inputRef =
     useRef<HTMLTextAreaElement>(null);
   const actionRef =
@@ -160,20 +164,16 @@ export function AddDownloadModal({
             <div>
               <div className="add-download-modal__title-row">
                 <h2 id="add-download-title">
-                  {isBatch ? "Add Batch" : "Add Download"}
+                  {isBatch ? t("add.titleBatch", { count: fmt.number(linkCount) }) : t("add.title")}
                 </h2>
 
-                {isBatch ? (
-                  <span className="add-download-modal__batch-badge">
-                    {linkCount} links
-                  </span>
-                ) : null}
+
               </div>
 
               <p>
                 {isBatch
-                  ? `${linkCount} unique download links detected.`
-                  : "Paste a direct link and we'll handle the rest."}
+                  ? t("add.subtitleBatch", { count: fmt.number(linkCount) })
+                  : t("add.subtitle")}
               </p>
             </div>
           </div>
@@ -183,15 +183,15 @@ export function AddDownloadModal({
             className="add-download-modal__close"
             onClick={onClose}
             disabled={submitting}
-            aria-label="Close"
+            aria-label={t("add.close")}
           >
             <X size={18} />
           </button>
         </header>
 
         <div className="add-download-modal__body">
-          <label className="add-download-modal__label">
-            {isBatch ? "Download links" : "URL"}
+          <label className="add-download-modal__label" htmlFor="add-download-links">
+            {isBatch ? t("add.links") : t("add.url")}
           </label>
 
           <div
@@ -205,6 +205,8 @@ export function AddDownloadModal({
 
             <textarea
               ref={inputRef}
+              id="add-download-links"
+              dir="ltr"
               value={url}
               rows={isBatch ? Math.min(Math.max(linkCount, 3), 7) : 1}
               onChange={(event) => onUrlChange(event.target.value)}
@@ -222,9 +224,7 @@ export function AddDownloadModal({
               }}
               disabled={submitting}
               placeholder={
-                isBatch
-                  ? "One download link per line"
-                  : "https://example.com/file.zip"
+                isBatch ? t("add.placeholderBatch") : t("add.placeholder")
               }
             />
           </div>
@@ -234,27 +234,27 @@ export function AddDownloadModal({
               {isBatch ? (
                 <>
                   <Layers3 size={13} />
-                  <span>Batch detected · {linkCount} unique links</span>
+                  <span>{t("add.detectedBatch", { count: fmt.number(linkCount) })}</span>
                 </>
               ) : (
                 <>
                   <Link2 size={13} />
-                  <span>1 valid download link</span>
+                  <span>{t("add.detectedOne")}</span>
                 </>
               )}
             </div>
           ) : url.trim() ? (
             <div className="add-download-modal__detection add-download-modal__detection--warning">
-              No valid HTTP or HTTPS link detected.
+              {t("add.noneValid")}
             </div>
           ) : null}
 
           <div className="add-download-modal__destination">
-            <span>Destination</span>
-            <strong title={defaultDirectory ?? undefined}>
-              {defaultDirectory ?? "System Downloads folder"}
+            <span>{t("add.destination")}</span>
+            <strong title={defaultDirectory ?? undefined} className={defaultDirectory ? "ltr" : undefined}>
+              {defaultDirectory ?? t("add.systemDownloads")}
             </strong>
-            <small>Categories and rules can choose another folder.</small>
+            <small>{t("add.destinationHint")}</small>
           </div>
 
           {error ? (
@@ -271,7 +271,7 @@ export function AddDownloadModal({
             onClick={onClose}
             disabled={submitting}
           >
-            Cancel
+            {t("add.cancel")}
           </button>
 
           <div
@@ -291,16 +291,16 @@ export function AddDownloadModal({
               )}
 
               {submitting
-                ? "Creating..."
+                ? t("add.creating")
                 : isBatch
-                  ? `Start ${linkCount} Downloads`
-                  : "Start Download"}
+                  ? t("add.startBatch", { count: fmt.number(linkCount) })
+                  : t("add.start")}
             </button>
 
             <button
               type="button"
               className="add-download-modal__dropdown-toggle"
-              aria-label="Choose download action"
+              aria-label={t("add.chooseAction")}
               aria-haspopup="menu"
               aria-expanded={actionMenuOpen}
               onClick={() => setActionMenuOpen((current) => !current)}
@@ -324,8 +324,8 @@ export function AddDownloadModal({
                 >
                   <Download size={15} />
                   <span>
-                    <strong>Start Now</strong>
-                    <small>Create tasks and run them in the background</small>
+                    <strong>{t("add.startNow")}</strong>
+                    <small>{t("add.startNowHint")}</small>
                   </span>
                 </button>
 
@@ -339,8 +339,8 @@ export function AddDownloadModal({
                 >
                   <Clock3 size={15} />
                   <span>
-                    <strong>Download Later</strong>
-                    <small>Create tasks without network activity</small>
+                    <strong>{t("add.later")}</strong>
+                    <small>{t("add.laterHint")}</small>
                   </span>
                 </button>
 
@@ -358,9 +358,11 @@ export function AddDownloadModal({
                   >
                     <Layers3 size={15} />
                     <span>
-                      <strong>Add to {queue.name}</strong>
+                      <strong>{t("add.toQueue", { name: queue.name })}</strong>
                       <small>
-                        Queue with {queue.defaultPriority.replace("_", " ")} priority
+                        {t("add.toQueueHint", {
+                          priority: t(`priority.${queue.defaultPriority}` as MessageKey),
+                        })}
                       </small>
                     </span>
                   </button>
@@ -371,8 +373,8 @@ export function AddDownloadModal({
                     value={newQueueName}
                     onChange={(event) => setNewQueueName(event.target.value)}
                     onKeyDown={(event) => event.stopPropagation()}
-                    placeholder="New queue name"
-                    aria-label="New queue name"
+                    placeholder={t("add.newQueue")}
+                    aria-label={t("add.newQueue")}
                   />
                   <button
                     type="button"
@@ -386,7 +388,7 @@ export function AddDownloadModal({
                     }}
                   >
                     <Plus size={14} />
-                    Create Queue &amp; Add
+                    {t("add.createQueue")}
                   </button>
                 </div>
               </div>

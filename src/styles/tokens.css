@@ -1,41 +1,142 @@
-﻿:root {
-  --bg-app: #0b1016;
-  --bg-sidebar: #0d141b;
-  --bg-surface: #121b24;
-  --bg-surface-hover: #182631;
-  --bg-elevated: #1b2a35;
+/*
+ * Rud design tokens.
+ *
+ * Dark is the default; `data-theme="light"` on <html> switches to light and
+ * `data-theme="system"` follows Windows. Components use only these tokens so
+ * both themes and both text directions stay consistent.
+ */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
 
-  --border-subtle: #22323c;
-  --border-strong: #344954;
+  --bg-app: #0f1115;
+  --bg-sidebar: #0b0d10;
+  --bg-surface: #161a20;
+  --bg-surface-hover: #1c2129;
+  --bg-elevated: #1e232c;
+  --bg-sunken: #0c0e12;
 
-  --text-primary: #f3f6fa;
-  --text-secondary: #98a5b7;
-  --text-muted: #677488;
+  --border-subtle: #232933;
+  --border-strong: #343b47;
 
-  --accent: #38d2bd;
-  --accent-hover: #65e0cf;
-  --accent-soft: rgba(56, 210, 189, 0.12);
+  --text-primary: #eef1f5;
+  --text-secondary: #a7b0be;
+  --text-muted: #7a8392;
 
-  --success: #40c982;
-  --warning: #e5a93d;
-  --danger: #f06464;
+  /* Saffron: the colour of work in progress. */
+  --accent: #f2b33d;
+  --accent-hover: #ffc75e;
+  --accent-ink: #1a1204;
+  --accent-text: #f5c160;
+  --accent-soft: rgba(242, 179, 61, 0.13);
 
-  --radius-sm: 6px;
-  --radius-md: 9px;
-  --radius-lg: 13px;
+  --info: #62c6e8;
+  --info-text: #7fd3f0;
+  --success: #5ad19a;
+  --success-text: #6fd6a4;
+  --warning: #e8a33d;
+  --warning-text: #f0bf6c;
+  --danger: #ff6f6f;
+  --danger-text: #ff8f8f;
+  --paused: #a993ff;
+  --paused-text: #bcaaff;
 
-  --sidebar-width: 224px;
-  --topbar-height: 72px;
+  --backdrop: rgba(3, 5, 8, 0.66);
+  --shadow-modal: 0 24px 80px rgba(0, 0, 0, 0.5);
+  --shadow-popover: 0 14px 40px rgba(0, 0, 0, 0.45);
+}
 
-  --shadow-modal: 0 24px 80px rgba(0, 0, 0, 0.45);
+:root[data-theme="light"] {
+  color-scheme: light;
 
-  font-family:
-    "Segoe UI Variable",
-    Aptos,
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
+  --bg-app: #f6f4ef;
+  --bg-sidebar: #efece5;
+  --bg-surface: #ffffff;
+  --bg-surface-hover: #f3f0ea;
+  --bg-elevated: #ffffff;
+  --bg-sunken: #ebe7df;
+
+  --border-subtle: #e2ddd3;
+  --border-strong: #cfc9bd;
+
+  --text-primary: #17191e;
+  --text-secondary: #4b5260;
+  --text-muted: #6b7280;
+
+  --accent: #f2b33d;
+  --accent-hover: #e6a52b;
+  --accent-ink: #1a1204;
+  --accent-text: #8a5a00;
+  --accent-soft: rgba(242, 179, 61, 0.2);
+
+  --info: #1c84a8;
+  --info-text: #146b89;
+  --success: #1f8a57;
+  --success-text: #1a7249;
+  --warning: #b86e00;
+  --warning-text: #945800;
+  --danger: #c43d3d;
+  --danger-text: #b03030;
+  --paused: #6b55d6;
+  --paused-text: #5a45c2;
+
+  --backdrop: rgba(23, 25, 30, 0.38);
+  --shadow-modal: 0 24px 70px rgba(40, 32, 12, 0.22);
+  --shadow-popover: 0 12px 34px rgba(40, 32, 12, 0.18);
+}
+
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"] {
+    color-scheme: light;
+
+    --bg-app: #f6f4ef;
+    --bg-sidebar: #efece5;
+    --bg-surface: #ffffff;
+    --bg-surface-hover: #f3f0ea;
+    --bg-elevated: #ffffff;
+    --bg-sunken: #ebe7df;
+
+    --border-subtle: #e2ddd3;
+    --border-strong: #cfc9bd;
+
+    --text-primary: #17191e;
+    --text-secondary: #4b5260;
+    --text-muted: #6b7280;
+
+    --accent-hover: #e6a52b;
+    --accent-text: #8a5a00;
+    --accent-soft: rgba(242, 179, 61, 0.2);
+
+    --info: #1c84a8;
+    --info-text: #146b89;
+    --success: #1f8a57;
+    --success-text: #1a7249;
+    --warning: #b86e00;
+    --warning-text: #945800;
+    --danger: #c43d3d;
+    --danger-text: #b03030;
+    --paused: #6b55d6;
+    --paused-text: #5a45c2;
+
+    --backdrop: rgba(23, 25, 30, 0.38);
+    --shadow-modal: 0 24px 70px rgba(40, 32, 12, 0.22);
+    --shadow-popover: 0 12px 34px rgba(40, 32, 12, 0.18);
+  }
+}
+
+:root {
+  --radius-sm: 7px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  --sidebar-width: 244px;
+  --topbar-height: 64px;
+  --row-height: 56px;
+
+  --font-ui: "Vazirmatn Variable", "Vazirmatn", "Segoe UI Variable", "Segoe UI", Tahoma,
+    system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+
+  font-family: var(--font-ui);
+  font-feature-settings: "ss01";
 }

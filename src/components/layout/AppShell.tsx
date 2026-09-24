@@ -1,86 +1,56 @@
-﻿import type { ReactNode } from "react";
+import type { ReactNode } from "react";
 
-import {
-  Sidebar,
-  type DownloadSection,
-  type SidebarCounts,
-} from "./Sidebar";
-
+import { Sidebar, type DownloadSection, type SidebarCounts, type WorkspacePage } from "./Sidebar";
 import { TopBar } from "./TopBar";
 
 import "./AppShell.css";
 
 type AppShellProps = {
   children: ReactNode;
-
-  title?: string;
+  title: string;
   subtitle?: string;
-
-  activeItem?: DownloadSection;
-  settingsActive?: boolean;
-  queuesActive?: boolean;
-  linkGrabberActive?: boolean;
-  categoriesActive?: boolean;
-
-  counts?: SidebarCounts;
-
+  page: WorkspacePage;
+  section: DownloadSection;
+  counts: SidebarCounts;
+  bytesToday: number;
+  engineState: "ready" | "checking" | "down";
   searchValue: string;
-
-  activeCount?: number;
-  aggregateBytesPerSecond?: number | null;
-
-  onSearchChange: (
-    value: string,
-  ) => void;
-
-  onSectionChange?: (
-    section: DownloadSection,
-  ) => void;
-
-  onOpenSettings?: () => void;
-  onOpenQueues?: () => void;
-  onOpenLinkGrabber?: () => void;
-  onOpenCategories?: () => void;
-  onAddDownload?: () => void;
+  onSearchChange: (value: string) => void;
+  onSection: (section: DownloadSection) => void;
+  onPage: (page: WorkspacePage) => void;
+  onAddDownload: () => void;
+  /// Pages with their own scroll and layout (the download table) fill the
+  /// workspace instead of scrolling inside a padded column.
+  fill?: boolean;
 };
 
 export function AppShell({
   children,
-  title = "All Downloads",
+  title,
   subtitle,
-  activeItem = "all",
-  settingsActive = false,
-  queuesActive = false,
-  linkGrabberActive = false,
-  categoriesActive = false,
+  page,
+  section,
   counts,
+  bytesToday,
+  engineState,
   searchValue,
-  activeCount,
-  aggregateBytesPerSecond,
   onSearchChange,
-  onSectionChange,
-  onOpenSettings,
-  onOpenQueues,
-  onOpenLinkGrabber,
-  onOpenCategories,
+  onSection,
+  onPage,
   onAddDownload,
+  fill = false,
 }: AppShellProps) {
   return (
     <div className="app-shell">
       <Sidebar
-        activeItem={activeItem}
-        settingsActive={settingsActive}
-        queuesActive={queuesActive}
-        linkGrabberActive={linkGrabberActive}
-        categoriesActive={categoriesActive}
+        page={page}
+        section={section}
         counts={counts}
-        onSelect={onSectionChange}
-        onOpenSettings={
-          onOpenSettings
-        }
-        onOpenQueues={onOpenQueues}
-        onOpenLinkGrabber={onOpenLinkGrabber}
-        onOpenCategories={onOpenCategories}
+        bytesToday={bytesToday}
+        engineState={engineState}
+        onSection={onSection}
+        onPage={onPage}
+        onAddDownload={onAddDownload}
       />
 
       <div className="app-shell__workspace">
@@ -88,22 +58,12 @@ export function AppShell({
           title={title}
           subtitle={subtitle}
           searchValue={searchValue}
-          activeCount={activeCount}
-          aggregateBytesPerSecond={
-            aggregateBytesPerSecond
-          }
-          onSearchChange={
-            onSearchChange
-          }
-          onAddDownload={
-            onAddDownload
-          }
+          onSearchChange={onSearchChange}
+          showSearch={page === "downloads"}
         />
 
-        <main className="app-shell__content">
-          <div className="app-shell__content-inner">
-            {children}
-          </div>
+        <main className={fill ? "app-shell__content app-shell__content--fill" : "app-shell__content"}>
+          {fill ? children : <div className="app-shell__content-inner">{children}</div>}
         </main>
       </div>
     </div>

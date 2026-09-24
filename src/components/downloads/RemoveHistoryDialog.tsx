@@ -1,4 +1,4 @@
-﻿import {
+import {
   AlertTriangle,
   Trash2,
   X,
@@ -10,6 +10,9 @@ import {
 } from "react";
 
 import type { DownloadListItem } from "../../types/download";
+
+import { useI18n } from "../../i18n/I18n";
+import { displayName } from "../../utils/fileKind";
 
 import "./RemoveHistoryDialog.css";
 
@@ -28,6 +31,7 @@ export function RemoveHistoryDialog({
   onCancel,
   onConfirm,
 }: RemoveHistoryDialogProps) {
+  const { t } = useI18n();
   const [deleteFile, setDeleteFile] =
     useState(false);
 
@@ -64,10 +68,7 @@ export function RemoveHistoryDialog({
     return null;
   }
 
-  const name =
-    item.filename ??
-    item.resolvedUrl ??
-    item.sourceUrl;
+  const name = displayName(item);
 
   const canDeleteFile =
     Boolean(item.destinationPath);
@@ -101,15 +102,11 @@ export function RemoveHistoryDialog({
 
           <div className="remove-history-dialog__heading">
             <h2 id="remove-history-title">
-              {hasFile
-                ? "Remove from History?"
-                : "Remove Task?"}
+              {hasFile ? t("remove.titleHistory") : t("remove.titleTask")}
             </h2>
 
             <p>
-              {hasFile
-                ? "Remove this download from the app."
-                : "Remove this task before it has downloaded anything."}
+              {hasFile ? t("remove.subtitleHistory") : t("remove.subtitleTask")}
             </p>
           </div>
 
@@ -118,7 +115,7 @@ export function RemoveHistoryDialog({
             className="remove-history-dialog__close"
             onClick={onCancel}
             disabled={removing}
-            aria-label="Close"
+            aria-label={t("remove.close")}
           >
             <X size={17} />
           </button>
@@ -126,9 +123,8 @@ export function RemoveHistoryDialog({
 
         <div className="remove-history-dialog__body">
           <div className="remove-history-dialog__file">
-            <span>{hasFile ? "Download" : "Task"}</span>
-
-            <strong title={name}>
+            <span>{hasFile ? t("remove.download") : t("remove.task")}</span>
+            <strong title={name} className="ltr">
               {name}
             </strong>
           </div>
@@ -149,13 +145,8 @@ export function RemoveHistoryDialog({
               <span className="remove-history-dialog__checkbox" />
 
               <div>
-                <strong>
-                  Also delete the downloaded file
-                </strong>
-
-                <span>
-                  Permanently remove the file from disk.
-                </span>
+                <strong>{t("remove.alsoDelete")}</strong>
+                <span>{t("remove.alsoDeleteHint")}</span>
               </div>
             </label>
           ) : null}
@@ -168,10 +159,10 @@ export function RemoveHistoryDialog({
             }`}
           >
             {deleteFile
-              ? "The file will be permanently deleted from your computer. This cannot be undone."
+              ? t("remove.noticeDelete")
               : hasFile
-                ? "The downloaded file will remain on your computer."
-                : "Nothing has been downloaded yet, so no file is removed."}
+                ? t("remove.noticeKeep")
+                : t("remove.noticeNothing")}
           </div>
 
           {error ? (
@@ -188,7 +179,7 @@ export function RemoveHistoryDialog({
             onClick={onCancel}
             disabled={removing}
           >
-            Cancel
+            {t("remove.cancel")}
           </button>
 
           <button
@@ -208,12 +199,12 @@ export function RemoveHistoryDialog({
             ) : null}
 
             {removing
-              ? "Removing..."
+              ? t("remove.removing")
               : deleteFile
-                ? "Remove & Delete File"
+                ? t("remove.removeAndDelete")
                 : hasFile
-                  ? "Remove from History"
-                  : "Remove Task"}
+                  ? t("remove.removeHistory")
+                  : t("remove.removeTask")}
           </button>
         </footer>
       </section>

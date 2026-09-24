@@ -70,6 +70,42 @@ impl Storage {
         }
         Ok(totals)
     }
+
+    /// Totals for each day of `[from_day, to_day]` that saw traffic, in
+    /// day order. Days without traffic are left out.
+    pub fn traffic_by_day(
+        &self,
+        from_day: &str,
+        to_day: &str,
+    ) -> Result<Vec<(String, TrafficTotals)>> {
+        validate_day(from_day)?;
+        validate_day(to_day)?;
+        let connection = self.connection()?;
+        let mut statement = connection.prepare(
+            "SELECT day, scope, bytes FROM traffic_usage WHERE day >= ?1 AND day <= ?2 ORDER BY day;",
+        )?;
+        let rows = statement.query_map(params![from_day, to_day], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })?;
+        let mut days: Vec<(String, TrafficTotals)> = Vec::new();
+        for row in rows {
+            let (day, scope, bytes) = row?;
+            let bytes = u64::try_from(bytes).unwrap_or(0);
+            if days.last().is_none_or(|(last, _)| *last != day) {
+                days.push((day, TrafficTotals::default()));
+            }
+            let totals = &mut days.last_mut().expect("just pushed").1;
+            match scope.as_str() {
+                "domestic" => totals.domestic_bytes += bytes,
+                _ => totals.international_bytes += bytes,
+            }
+        }
+        Ok(days)
+    }
 }
 
 fn validate_day(day: &str) -> Result<()> {

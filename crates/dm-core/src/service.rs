@@ -150,6 +150,30 @@ pub const SETTING_STREAM_MAX_HEIGHT: &str = "stream_max_height";
 const STREAM_CONNECTIONS: usize = 4;
 /// Where FFmpeg is; empty to look for it automatically.
 pub const SETTING_FFMPEG_PATH: &str = "ffmpeg_path";
+/// The shape an exported download list takes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportFormat {
+    Csv,
+    Links,
+}
+
+/// What a test request found.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ConnectionCheck {
+    pub host: String,
+    /// `direct`, `proxy` or `system`.
+    pub route: String,
+    pub reachable: bool,
+    pub elapsed_ms: u64,
+    /// The host a redirect ended on, when it differs.
+    pub final_host: Option<String>,
+    pub filename: Option<String>,
+    pub total_bytes: Option<u64>,
+    pub range_supported: bool,
+    /// Why it failed, with any link reduced to its host.
+    pub error: Option<String>,
+}
+
 /// After-download steps, all off by default.
 pub const SETTING_POST_HASH: &str = "post_hash_always";
 pub const SETTING_POST_EXTRACT: &str = "post_extract_zip";
@@ -1662,6 +1686,198 @@ impl DownloadService {
             if enabled { "true" } else { "false" },
         )?;
         Ok(())
+    }
+
+    // -- statistics, export, diagnostics --------------------------------------
+
+    /// Figures for the last `days` local days, today included.
+    pub fn download_stats(&self, days: u32) -> Result<crate::stats::DownloadStats> {
+        let days = days.clamp(1, 366);
+        let now = unix_timestamp_seconds()?;
+        let offset = self.utc_offset_seconds.load(Ordering::Relaxed);
+        let list: Vec<String> = (0..i64::from(days))
+            .rev()
+            .map(|back| crate::traffic::local_day(now - back * 86_400, offset))
+            .collect();
+        let traffic = self
+            .storage
+            .traffic_by_day(&list[0], list.last().expect("at least one day"))?;
+        let records = self.storage.list_downloads()?;
+        Ok(crate::stats::build_stats(&records, &traffic, list, offset))
+    }
+
+    /// The download list as a CSV spreadsheet or as plain links; `ids`
+    /// narrows it to those downloads, in list order.
+    pub fn export_downloads(&self, format: ExportFormat, ids: Option<&[String]>) -> Result<String> {
+        let mut records = self.storage.list_downloads()?;
+        if let Some(ids) = ids {
+            records.retain(|record| ids.contains(&record.id));
+        }
+        Ok(match format {
+            ExportFormat::Csv => crate::export::downloads_csv(
+                &records,
+                self.utc_offset_seconds.load(Ordering::Relaxed),
+            ),
+            ExportFormat::Links => crate::export::links_text(&records),
+        })
+    }
+
+    /// A report for asking for help. `download_folder` and `home` let paths
+    /// be shown without the user's name.
+    pub async fn diagnostics_report(
+        &self,
+        app_version: &str,
+        download_folder: &Path,
+        home: Option<&str>,
+    ) -> Result<String> {
+        let offset = self.utc_offset_seconds.load(Ordering::Relaxed);
+        let now = unix_timestamp_seconds()?;
+        let records = self.storage.list_downloads()?;
+
+        let mut statuses: Vec<(String, u32)> = Vec::new();
+        for record in &records {
+            let status = record.status.to_string();
+            match statuses.iter_mut().find(|(name, _)| *name == status) {
+                Some((_, count)) => *count += 1,
+                None => statuses.push((status, 1)),
+            }
+        }
+        statuses.sort();
+
+        let mut troubled: Vec<&DownloadRecord> = records
+            .iter()
+            .filter(|record| record.error_code.is_some() || record.error_message.is_some())
+            .collect();
+        troubled.sort_by_key(|record| {
+            std::cmp::Reverse(
+                record
+                    .completed_at
+                    .or(record.started_at)
+                    .unwrap_or(record.created_at),
+            )
+        });
+        let problems = troubled
+            .into_iter()
+            .take(20)
+            .map(|record| crate::diagnostics::Problem {
+                at: crate::traffic::local_time(
+                    record
+                        .completed_at
+                        .or(record.started_at)
+                        .unwrap_or(record.created_at),
+                    offset,
+                ),
+                status: record.status.to_string(),
+                code: record.error_code.clone(),
+                host: crate::stats::host_of(&record.source_url),
+                message: record.error_message.clone().unwrap_or_default(),
+            })
+            .collect();
+
+        let network = self.network_settings();
+        let route = match network.mode {
+            crate::network::ProxyMode::Off => "direct".to_owned(),
+            crate::network::ProxyMode::System => "system proxy".to_owned(),
+            crate::network::ProxyMode::Manual => format!(
+                "manual ({})",
+                network
+                    .proxy_url
+                    .as_deref()
+                    .and_then(|url| url.split_once("://").map(|(scheme, _)| scheme.to_owned()))
+                    .unwrap_or_else(|| "not set".to_owned())
+            ),
+        };
+        let ffmpeg = match self.ffmpeg() {
+            Some(ffmpeg) => Some(
+                ffmpeg
+                    .version()
+                    .await
+                    .unwrap_or_else(|| "found, version unknown".to_owned()),
+            ),
+            None => None,
+        };
+        let post = self.post_process_settings();
+        let mut post_steps = Vec::new();
+        if post.hash_always {
+            post_steps.push("checksum");
+        }
+        if post.scan {
+            post_steps.push("Defender scan");
+        }
+        if post.extract_zip {
+            post_steps.push("unpack ZIP");
+        }
+        if post.command.is_some() {
+            post_steps.push("command");
+        }
+
+        let facts = crate::diagnostics::DiagnosticsFacts {
+            created_at: crate::traffic::local_time(now, offset),
+            app_version: app_version.to_owned(),
+            os: format!("{} {}", std::env::consts::OS, std::env::consts::ARCH),
+            schema_version: self.storage.schema_version()?,
+            database_bytes: self.storage.database_bytes(),
+            integrity: self.storage.integrity_check()?,
+            statuses,
+            route,
+            domestic_direct: network.domestic_direct,
+            direct_hosts: network.direct_hosts.len(),
+            max_connections: u32::try_from(self.max_connections()).unwrap_or(u32::MAX),
+            speed_limit: self.global_speed_limit(),
+            auto_adopt_links: self.auto_adopt_links(),
+            polite_hosts: self.polite_hosts().len(),
+            ffmpeg,
+            defender: crate::postprocess::defender_path().is_some(),
+            post_steps,
+            download_folder: crate::diagnostics::hide_home(
+                &download_folder.to_string_lossy(),
+                home,
+            ),
+            free_bytes: dm_system::disk::free_space(download_folder),
+            problems,
+        };
+        Ok(crate::diagnostics::render_report(&facts))
+    }
+
+    /// Asks a server what a download would, through the route a download
+    /// would take, and times it.
+    pub async fn connection_check(&self, url: &str) -> ConnectionCheck {
+        let host = crate::stats::host_of(url);
+        let network = self.network_settings();
+        let route = match network.mode {
+            crate::network::ProxyMode::Off => "direct",
+            crate::network::ProxyMode::System => "system",
+            crate::network::ProxyMode::Manual if network.goes_direct(&host) => "direct",
+            crate::network::ProxyMode::Manual => "proxy",
+        };
+        let started = std::time::Instant::now();
+        let result = tokio::time::timeout(
+            Duration::from_secs(30),
+            self.base_downloader().probe(url.trim()),
+        )
+        .await;
+        let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let mut check = ConnectionCheck {
+            host,
+            route: route.to_owned(),
+            elapsed_ms,
+            ..ConnectionCheck::default()
+        };
+        match result {
+            Ok(Ok(probe)) => {
+                check.reachable = true;
+                check.final_host = Some(crate::stats::host_of(&probe.final_url))
+                    .filter(|final_host| *final_host != check.host);
+                check.total_bytes = probe.total_bytes;
+                check.range_supported = probe.range_supported;
+                check.filename = Some(probe.filename);
+            }
+            Ok(Err(error)) => {
+                check.error = Some(crate::diagnostics::redact_urls(&error.redacted_message()));
+            }
+            Err(_) => check.error = Some("the server did not answer within 30 seconds".to_owned()),
+        }
+        check
     }
 
     // -- after the download -------------------------------------------------
@@ -5625,5 +5841,123 @@ mod tests {
                 }),
             Err(DownloadServiceError::InvalidCommand)
         ));
+    }
+
+    #[tokio::test]
+    async fn statistics_count_todays_download_and_its_traffic() {
+        let server = TestServer::start(ServerBehaviour::default()).await;
+        let harness = harness();
+        let created = harness
+            .service
+            .create_task(&server.url("stats.bin"))
+            .unwrap();
+        harness
+            .service
+            .start_task(&created.id, &harness.destination)
+            .await
+            .unwrap();
+
+        let stats = harness.service.download_stats(7).unwrap();
+
+        assert_eq!(stats.days.len(), 7);
+        let today = stats.days.last().unwrap();
+        assert_eq!(today.completed, 1);
+        assert_eq!(
+            today.domestic_bytes + today.international_bytes,
+            DEFAULT_BODY.len() as u64
+        );
+        assert_eq!(stats.all_completed, 1);
+        assert_eq!(stats.top_hosts[0].name, "127.0.0.1");
+        assert_eq!(stats.extensions[0].name, "bin");
+    }
+
+    #[tokio::test]
+    async fn the_list_exports_as_links_or_a_spreadsheet() {
+        let harness = harness();
+        let first = harness
+            .service
+            .create_task("https://a.example/one.iso")
+            .unwrap();
+        harness
+            .service
+            .create_task("https://b.example/two.zip")
+            .unwrap();
+
+        let links = harness
+            .service
+            .export_downloads(ExportFormat::Links, None)
+            .unwrap();
+        assert_eq!(links.lines().count(), 2);
+        let only = harness
+            .service
+            .export_downloads(ExportFormat::Csv, Some(std::slice::from_ref(&first.id)))
+            .unwrap();
+        assert_eq!(only.lines().count(), 2);
+        assert!(only.contains("https://a.example/one.iso"));
+    }
+
+    #[tokio::test]
+    async fn the_diagnostics_report_hides_links_and_the_proxy() {
+        let harness = harness();
+        let created = harness
+            .service
+            .create_task("https://files.example/secret.iso?token=abc")
+            .unwrap();
+        harness
+            .storage
+            .record_notice(
+                &created.id,
+                "http_403",
+                "403 at https://files.example/secret.iso?token=abc",
+            )
+            .unwrap();
+        let mut network = harness.service.network_settings();
+        network.mode = crate::network::ProxyMode::Manual;
+        network.proxy_url = Some("socks5://127.0.0.1:10808".to_owned());
+        harness.service.set_network_settings(&network).unwrap();
+
+        let report = harness
+            .service
+            .diagnostics_report(
+                "1.2.3",
+                Path::new("/home/someone/Downloads"),
+                Some("/home/someone"),
+            )
+            .await
+            .unwrap();
+
+        assert!(report.contains("Application: 1.2.3"));
+        assert!(report.contains("integrity ok"));
+        assert!(report.contains("manual (socks5)"));
+        assert!(report.contains("[http_403] files.example: 403 at https://files.example/…"));
+        assert!(report.contains("Download folder: ~/Downloads"));
+        assert!(!report.contains("token=abc"));
+        assert!(!report.contains("10808"));
+        assert!(!report.contains("someone"));
+    }
+
+    #[tokio::test]
+    async fn a_connection_check_reports_what_a_download_would_find() {
+        let server = TestServer::start(ServerBehaviour::default()).await;
+        let harness = harness();
+        let mut network = harness.service.network_settings();
+        network.mode = crate::network::ProxyMode::Off;
+        harness.service.set_network_settings(&network).unwrap();
+
+        let check = harness
+            .service
+            .connection_check(&server.url("probe.bin"))
+            .await;
+        assert!(check.reachable, "{check:?}");
+        assert_eq!(check.route, "direct");
+        assert_eq!(check.total_bytes, Some(DEFAULT_BODY.len() as u64));
+        assert!(check.range_supported);
+
+        let failed = harness
+            .service
+            .connection_check("http://127.0.0.1:9/nothing?key=secret")
+            .await;
+        assert!(!failed.reachable);
+        assert!(!failed.error.unwrap_or_default().contains("secret"));
     }
 }

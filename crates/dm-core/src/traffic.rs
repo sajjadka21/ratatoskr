@@ -50,6 +50,18 @@ pub fn local_day(unix_seconds: i64, utc_offset_seconds: i32) -> String {
     format!("{year:04}-{month:02}-{day:02}")
 }
 
+/// Local date and time as `YYYY-MM-DD HH:MM`.
+pub fn local_time(unix_seconds: i64, utc_offset_seconds: i32) -> String {
+    let local = unix_seconds + i64::from(utc_offset_seconds);
+    let minutes = local.rem_euclid(86_400) / 60;
+    format!(
+        "{} {:02}:{:02}",
+        local_day(unix_seconds, utc_offset_seconds),
+        minutes / 60,
+        minutes % 60
+    )
+}
+
 /// The first and last day of the calendar month containing `day`.
 pub fn month_bounds(day: &str) -> (String, String) {
     let prefix = day.get(..7).unwrap_or("1970-01");

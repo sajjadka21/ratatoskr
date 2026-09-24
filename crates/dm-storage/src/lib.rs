@@ -7,6 +7,7 @@ use std::{
 };
 use thiserror::Error;
 
+mod backup;
 mod categories;
 mod checks;
 mod downloads;
@@ -19,6 +20,10 @@ mod segments;
 mod settings;
 mod traffic;
 
+pub use backup::{
+    BackupInfo, RestoreOutcome, apply_pending_restore, cancel_pending_restore, inspect_backup,
+    pending_restore, stage_restore,
+};
 pub use checks::DownloadChecks;
 pub use traffic::{TrafficScope, TrafficTotals};
 
@@ -436,6 +441,12 @@ pub enum StorageError {
 
     #[error("database schema version {found} is newer than supported version {supported}")]
     UnsupportedSchemaVersion { found: i32, supported: i32 },
+
+    #[error("not a usable backup: {0}")]
+    InvalidBackup(String),
+
+    #[error("file error: {0}")]
+    File(#[source] std::io::Error),
 
     #[error("download not found: {0}")]
     DownloadNotFound(String),

@@ -31,6 +31,10 @@ export function createFormatter(language: Language) {
     timeStyle: "short",
   });
   const dayFormat = new Intl.DateTimeFormat(DATE_LOCALE[language], { dateStyle: "long" });
+  const shortDayFormat = new Intl.DateTimeFormat(DATE_LOCALE[language], {
+    day: "numeric",
+    month: language === "fa" ? "long" : "short",
+  });
   const time = new Intl.DateTimeFormat(DATE_LOCALE[language], {
     hour: "2-digit",
     minute: "2-digit",
@@ -102,9 +106,17 @@ export function createFormatter(language: Language) {
     return dayFormat.format(new Date(Number(year), Number(month) - 1, Number(date)));
   }
 
+  /** Day and month only: `24 Sept` / `۲ مهر`. */
+  function shortDay(isoDay: string): string {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDay);
+    if (!match) return isoDay;
+    const [, year, month, date] = match;
+    return shortDayFormat.format(new Date(Number(year), Number(month) - 1, Number(date)));
+  }
+
   function clock(unixMillis: number): string {
     return time.format(new Date(unixMillis));
   }
 
-  return { language, number, bytes, rate, duration, percent, date, day, clock };
+  return { language, number, bytes, rate, duration, percent, date, day, shortDay, clock };
 }

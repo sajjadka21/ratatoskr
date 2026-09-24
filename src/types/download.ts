@@ -218,3 +218,42 @@ export type PostProcessSettings = {
   command: string;
   scanAvailable: boolean;
 };
+
+export type ActivityDay = {
+  day: string;
+  domesticBytes: number;
+  internationalBytes: number;
+  completed: number;
+};
+
+export type NamedTotal = { name: string; count: number; bytes: number };
+
+export type DownloadStats = {
+  days: ActivityDay[];
+  periodCompleted: number;
+  periodDomesticBytes: number;
+  periodInternationalBytes: number;
+  allCompleted: number;
+  allCompletedBytes: number;
+  failed: number;
+  active: number;
+  topHosts: NamedTotal[];
+  extensions: NamedTotal[];
+  largest: NamedTotal | null;
+};
+
+export type BackupInfo = { schemaVersion: number; downloads: number; queues: number; bytes: number };
+
+export type RestoreOutcome = { restored: boolean; keptCopy: string | null; reason: string | null };
+
+export type ConnectionCheck = {
+  host: string;
+  route: "direct" | "proxy" | "system";
+  reachable: boolean;
+  elapsedMs: number;
+  finalHost: string | null;
+  filename: string | null;
+  totalBytes: number | null;
+  rangeSupported: boolean;
+  error: string | null;
+};

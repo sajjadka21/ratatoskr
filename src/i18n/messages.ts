@@ -1,4 +1,5 @@
 import { engineEn, engineFa } from "./engineMessages";
+import { insightEn, insightFa } from "./insightMessages";
 import { pageEn, pageFa } from "./pageMessages";
 
 /**
@@ -450,9 +451,9 @@ const coreFa: Record<CoreKey, string> = {
   "shortcuts.hint": "Ctrl+K فرمان‌ها · Ctrl+N افزودن · Ctrl+F جستجو · Space توقف/ادامه · Del حذف",
 };
 
-const enAll = { ...en, ...pageEn, ...engineEn };
+const enAll = { ...en, ...pageEn, ...engineEn, ...insightEn };
 export type MessageKey = keyof typeof enAll;
-const faAll: Record<MessageKey, string> = { ...coreFa, ...pageFa, ...engineFa };
+const faAll: Record<MessageKey, string> = { ...coreFa, ...pageFa, ...engineFa, ...insightFa };
 
 export const messages = { en: enAll, fa: faAll } as const;
 export type Language = keyof typeof messages;

@@ -1343,3 +1343,77 @@ control calls an existing or new backend command.
 
 - The Windows Defender scan and the command's hidden console on Windows
   (type-checked only; the test environment is Linux).
+
+## Review follow-up - Step 8: Statistics, backup, troubleshooting
+
+### Statistics page
+
+- `dm-core::stats` builds the figures from the download records and the
+  daily traffic counters (`Storage::traffic_by_day`); nothing is sampled.
+  A finished file belongs to its local day (the same UTC offset as the
+  traffic counters).
+- The page (sidebar > Statistics, also in the command palette) shows the
+  last 7, 30 or 90 days: files finished, bytes downloaded, the domestic
+  share, failures and work in progress; a stacked daily chart (domestic at
+  the base, international above) with a hover/focus tooltip, a legend and
+  a table view; top sites (the rest summed as "other sites"), file types
+  and the largest file.
+- The two series use new `--chart-domestic` / `--chart-international`
+  tokens, checked with a colour-blindness validator on both surfaces; the
+  traffic meter in Settings now uses the same colours. The chart mirrors
+  in Persian (oldest day at the right).
+
+### Backup and restore
+
+- `Storage::backup_to` writes a consistent copy with `VACUUM INTO` (safe
+  while downloads run), checks it, then moves it into place.
+- A backup is checked before it is accepted: readable SQLite, intact
+  (`PRAGMA integrity_check`), a download database, from this version or an
+  older one (older ones are migrated when opened).
+- Restoring never replaces the open database. The backup is copied next to
+  it (`downloads.db.restore`) and swapped in on the next start, before the
+  database is opened; the replaced database and its write-ahead log are
+  renamed to `downloads.before-restore-<time>.db`, never deleted. A damaged
+  waiting backup is set aside and the database is left alone. The window
+  reports the outcome once after the restart. "Restart now" pauses running
+  transfers first.
+- Backups hold no cookies, passwords or authorization headers, because the
+  database never stores them.
+
+### Export
+
+- The list as a CSV spreadsheet (UTF-8 with a byte-order mark for Excel,
+  quoted cells, cells starting with `= + - @` neutralised) or as one link
+  per line.
+
+### Troubleshooting
+
+- Database check (`PRAGMA integrity_check`).
+- Connection test: the same probe a download makes, through the same
+  route, with the time taken, the route (direct, proxy, system proxy),
+  size, resume support and redirect host. Errors keep only the host of any
+  link.
+- Diagnostics report (view, copy, save): versions, schema and database
+  health, task counts, the network route (proxy scheme only, never its
+  address), engine settings, FFmpeg, Defender, after-download steps, free
+  space on the download drive and the last 20 problems. Links are reduced
+  to their host and the home folder to `~`.
+- `dm-system::disk::free_space` (Windows `GetDiskFreeSpaceExW`).
+
+### Verification
+
+- `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo check --workspace` - passed
+- `cargo test --workspace` - passed (332 Rust tests): statistics by local
+  day and top hosts; backup, refused files, restore on the next start
+  keeping the old database, cancelled and damaged restores; CSV quoting
+  and formula guarding; link redaction; a report that must not contain a
+  link's query, the proxy port or the user name; a connection test against
+  a local server and an unreachable one.
+- `tsc --noEmit`, `npm test` (65 tests), `npm run build` - passed
+
+### Not verified
+
+- Free space and the restart on Windows (the Windows call was checked
+  against the `windows-sys` signature only; the test environment is Linux
+  and cannot fetch the Windows toolchain).

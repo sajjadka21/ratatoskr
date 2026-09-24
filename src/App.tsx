@@ -14,6 +14,7 @@ import { RefreshLinkDialog } from "./components/downloads/RefreshLinkDialog";
 import { RemoveHistoryDialog } from "./components/downloads/RemoveHistoryDialog";
 import { ThroughputBand } from "./components/downloads/ThroughputBand";
 import { CategoriesPage } from "./components/categories/CategoriesPage";
+import { StatsPage } from "./components/stats/StatsPage";
 import { CompletionBanner } from "./components/feedback/CompletionBanner";
 import { Toasts, type Toast, type ToastKind } from "./components/feedback/Toasts";
 import { AppShell } from "./components/layout/AppShell";
@@ -33,6 +34,7 @@ import type {
   DownloadListItem,
   DownloadPriority,
   DownloadSettings,
+  RestoreOutcome,
   TrafficSummary,
   TaskAction,
   TransferMetricsMap,
@@ -85,6 +87,7 @@ const PAGE_TITLES: Record<Exclude<WorkspacePage, "downloads">, MessageKey> = {
   linkgrabber: "nav.linkGrabber",
   categories: "nav.categories",
   queues: "nav.queues",
+  stats: "nav.stats",
   settings: "nav.settings",
 };
 
@@ -207,6 +210,18 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   );
   const reportError = useCallback((message: string) => notify("error", message), [notify]);
   const reportSaved = useCallback((message: string) => notify("success", message), [notify]);
+
+  // A restore chosen before the last restart reports how it went, once.
+  useEffect(() => {
+    invoke<RestoreOutcome | null>("take_restore_outcome")
+      .then((outcome) => {
+        if (!outcome) return;
+        if (outcome.restored) notify("success", t("backup.restored"));
+        else notify("error", t("backup.refused", { reason: outcome.reason ?? "" }));
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ---- engine state -------------------------------------------------------
 
@@ -887,6 +902,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
       { id: "go-grabber", group: "go", label: t("nav.linkGrabber"), keywords: "link grabber collect", run: () => goToPage("linkgrabber") },
       { id: "go-queues", group: "go", label: t("nav.queues"), keywords: "queues schedule", run: () => goToPage("queues") },
       { id: "go-categories", group: "go", label: t("nav.categories"), keywords: "categories folders", run: () => goToPage("categories") },
+      { id: "go-stats", group: "go", label: t("nav.stats"), keywords: "statistics stats chart traffic آمار", run: () => goToPage("stats") },
       { id: "go-settings", group: "go", label: t("nav.settings"), hint: "Ctrl+,", keywords: "settings preferences options proxy quota", run: () => goToPage("settings") },
     ];
     for (const item of downloads.slice(0, 500)) {
@@ -1113,6 +1129,8 @@ function App({ preferences, onPreferencesChange }: AppProps) {
           />
         ) : page === "categories" ? (
           <CategoriesPage onError={reportError} />
+        ) : page === "stats" ? (
+          <StatsPage onError={reportError} />
         ) : (
           <div className="downloads-workspace">
             <section className="downloads-workspace__main">

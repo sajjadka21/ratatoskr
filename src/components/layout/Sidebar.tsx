@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   CheckCircle2,
   CircleAlert,
   Clock3,
@@ -18,7 +19,7 @@ import type { MessageKey } from "../../i18n/messages";
 import "./Sidebar.css";
 
 export type DownloadSection = "all" | "active" | "queued" | "completed" | "failed";
-export type WorkspacePage = "downloads" | "linkgrabber" | "categories" | "queues" | "settings";
+export type WorkspacePage = "downloads" | "linkgrabber" | "categories" | "queues" | "stats" | "settings";
 export type SidebarCounts = Record<DownloadSection, number>;
 
 type SidebarProps = {
@@ -53,6 +54,7 @@ const PAGES: Array<{
   { id: "linkgrabber", label: "nav.linkGrabber", icon: ScanLine },
   { id: "queues", label: "nav.queues", icon: Layers3 },
   { id: "categories", label: "nav.categories", icon: FolderOpen },
+  { id: "stats", label: "nav.stats", icon: BarChart3 },
 ];
 
 /** The brand mark: two currents flowing down into a download arrow. */

@@ -164,6 +164,76 @@ pub struct FfmpegStatusResponse {
     pub version: Option<String>,
 }
 
+/// One day on the statistics page.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityDayResponse {
+    pub day: String,
+    pub domestic_bytes: u64,
+    pub international_bytes: u64,
+    pub completed: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NamedTotalResponse {
+    pub name: String,
+    pub count: u32,
+    pub bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadStatsResponse {
+    pub days: Vec<ActivityDayResponse>,
+    pub period_completed: u32,
+    pub period_domestic_bytes: u64,
+    pub period_international_bytes: u64,
+    pub all_completed: u32,
+    pub all_completed_bytes: u64,
+    pub failed: u32,
+    pub active: u32,
+    /// The last entry, named `""`, sums the hosts beyond the top.
+    pub top_hosts: Vec<NamedTotalResponse>,
+    pub extensions: Vec<NamedTotalResponse>,
+    pub largest: Option<NamedTotalResponse>,
+}
+
+/// What a backup file holds.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupInfoResponse {
+    pub schema_version: i32,
+    pub downloads: u64,
+    pub queues: u64,
+    pub bytes: u64,
+}
+
+/// What happened to a restore that waited for this start.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreOutcomeResponse {
+    pub restored: bool,
+    pub kept_copy: Option<String>,
+    pub reason: Option<String>,
+}
+
+/// What a test request found.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectionCheckResponse {
+    pub host: String,
+    /// `direct`, `proxy` or `system`.
+    pub route: String,
+    pub reachable: bool,
+    pub elapsed_ms: u64,
+    pub final_host: Option<String>,
+    pub filename: Option<String>,
+    pub total_bytes: Option<u64>,
+    pub range_supported: bool,
+    pub error: Option<String>,
+}
+
 /// What happened after a download finished: checksum, virus scan,
 /// unpacking and the user's command.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]

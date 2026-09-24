@@ -15,6 +15,10 @@ mod tray;
 use automation::Automation;
 use dm_ipc::UiPreferencesResponse;
 use dm_ipc::{
+    ActivityDayResponse, BackupInfoResponse, ConnectionCheckResponse, DownloadStatsResponse,
+    NamedTotalResponse, RestoreOutcomeResponse,
+};
+use dm_ipc::{
     AppInfoResponse, CategoryResponse, ComponentHealth, DownloadListItemResponse,
     DownloadRuleResponse, DownloadSettingsResponse, DownloadTaskEvent, HealthCheckResponse,
     LinkCandidateResponse, MediaClassificationResponse, MediaVariantResponse,
@@ -58,6 +62,8 @@ pub struct AppState {
     pending_link_intake: Mutex<Vec<String>>,
     automation: Automation,
     tray_menu: Mutex<Option<tray::TrayMenu>>,
+    /// What happened to a restore that waited for this start; shown once.
+    restore_outcome: Mutex<Option<RestoreOutcomeResponse>>,
 }
 
 /// Publishes engine events to the UI and enforces the per-task event rate.
@@ -1092,6 +1098,203 @@ async fn set_ffmpeg_path(
         .set_ffmpeg_path(path.as_deref())
         .map_err(|_| "choose the FFmpeg program itself (ffmpeg.exe)".to_owned())?;
     Ok(ffmpeg_status(&state).await)
+}
+
+// -- statistics, backup, diagnostics ------------------------------------------
+
+fn named_total(total: dm_core::stats::NamedTotal) -> NamedTotalResponse {
+    NamedTotalResponse {
+        name: total.name,
+        count: total.count,
+        bytes: total.bytes,
+    }
+}
+
+#[tauri::command]
+fn get_download_stats(
+    state: State<'_, AppState>,
+    days: u32,
+) -> Result<DownloadStatsResponse, String> {
+    let stats = state
+        .downloads
+        .download_stats(days)
+        .map_err(|error| error.to_string())?;
+    Ok(DownloadStatsResponse {
+        days: stats
+            .days
+            .into_iter()
+            .map(|day| ActivityDayResponse {
+                day: day.day,
+                domestic_bytes: day.domestic_bytes,
+                international_bytes: day.international_bytes,
+                completed: day.completed,
+            })
+            .collect(),
+        period_completed: stats.period_completed,
+        period_domestic_bytes: stats.period_domestic_bytes,
+        period_international_bytes: stats.period_international_bytes,
+        all_completed: stats.all_completed,
+        all_completed_bytes: stats.all_completed_bytes,
+        failed: stats.failed,
+        active: stats.active,
+        top_hosts: stats.top_hosts.into_iter().map(named_total).collect(),
+        extensions: stats.extensions.into_iter().map(named_total).collect(),
+        largest: stats.largest.map(named_total),
+    })
+}
+
+/// A path the user chose in a save or open dialog.
+fn chosen_path(path: &str) -> Result<std::path::PathBuf, String> {
+    let path = std::path::PathBuf::from(path.trim());
+    if !path.is_absolute() || path.file_name().is_none() || path.is_dir() {
+        return Err("choose a file".to_owned());
+    }
+    Ok(path)
+}
+
+fn backup_info(info: dm_storage::BackupInfo) -> BackupInfoResponse {
+    BackupInfoResponse {
+        schema_version: info.schema_version,
+        downloads: info.downloads,
+        queues: info.queues,
+        bytes: info.bytes,
+    }
+}
+
+#[tauri::command]
+async fn backup_database(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<BackupInfoResponse, String> {
+    let target = chosen_path(&path)?;
+    let storage = Arc::clone(&state.storage);
+    tauri::async_runtime::spawn_blocking(move || storage.backup_to(&target))
+        .await
+        .map_err(|error| error.to_string())?
+        .map(backup_info)
+        .map_err(|error| error.to_string())
+}
+
+/// Checks a backup and sets it to replace the database on the next start.
+#[tauri::command]
+fn stage_restore(state: State<'_, AppState>, path: String) -> Result<BackupInfoResponse, String> {
+    let backup = chosen_path(&path)?;
+    dm_storage::stage_restore(state.storage.path(), &backup)
+        .map(backup_info)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_pending_restore(state: State<'_, AppState>) -> Option<BackupInfoResponse> {
+    dm_storage::pending_restore(state.storage.path()).map(backup_info)
+}
+
+#[tauri::command]
+fn cancel_restore(state: State<'_, AppState>) -> Result<(), String> {
+    dm_storage::cancel_pending_restore(state.storage.path()).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn take_restore_outcome(state: State<'_, AppState>) -> Option<RestoreOutcomeResponse> {
+    state
+        .restore_outcome
+        .lock()
+        .ok()
+        .and_then(|mut outcome| outcome.take())
+}
+
+/// Restarts the application so a waiting restore takes effect. Running
+/// transfers are paused first, so their partial files stay usable.
+#[tauri::command]
+fn restart_app(app: AppHandle, state: State<'_, AppState>) {
+    state.downloads.pause_all();
+    app.restart();
+}
+
+#[tauri::command]
+fn export_downloads(
+    state: State<'_, AppState>,
+    path: String,
+    format: String,
+    ids: Option<Vec<String>>,
+) -> Result<(), String> {
+    let target = chosen_path(&path)?;
+    let format = match format.as_str() {
+        "csv" => dm_core::service::ExportFormat::Csv,
+        "links" => dm_core::service::ExportFormat::Links,
+        _ => return Err("unknown export format".to_owned()),
+    };
+    let text = state
+        .downloads
+        .export_downloads(format, ids.as_deref())
+        .map_err(|error| error.to_string())?;
+    std::fs::write(target, text).map_err(|error| error.to_string())
+}
+
+async fn diagnostics_text(app: &AppHandle, state: &AppState) -> Result<String, String> {
+    let folder = state
+        .downloads
+        .default_directory()
+        .ok()
+        .flatten()
+        .or_else(|| app.path().download_dir().ok())
+        .unwrap_or_default();
+    let home = app
+        .path()
+        .home_dir()
+        .ok()
+        .map(|home| home.to_string_lossy().into_owned());
+    state
+        .downloads
+        .diagnostics_report(env!("CARGO_PKG_VERSION"), &folder, home.as_deref())
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn get_diagnostics_report(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    diagnostics_text(&app, &state).await
+}
+
+#[tauri::command]
+async fn save_diagnostics_report(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<(), String> {
+    let target = chosen_path(&path)?;
+    let text = diagnostics_text(&app, &state).await?;
+    std::fs::write(target, text).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn check_database(state: State<'_, AppState>) -> Result<String, String> {
+    state
+        .storage
+        .integrity_check()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn check_connection(
+    state: State<'_, AppState>,
+    url: String,
+) -> Result<ConnectionCheckResponse, String> {
+    let check = state.downloads.connection_check(&url).await;
+    Ok(ConnectionCheckResponse {
+        host: check.host,
+        route: check.route,
+        reachable: check.reachable,
+        elapsed_ms: check.elapsed_ms,
+        final_host: check.final_host,
+        filename: check.filename,
+        total_bytes: check.total_bytes,
+        range_supported: check.range_supported,
+        error: check.error,
+    })
 }
 
 /// Tells the window that a download's after-download results changed.
@@ -2167,6 +2370,36 @@ pub fn run() {
             let app_data_dir = app.path().app_data_dir()?;
             let database_path = app_data_dir.join("downloads.db");
 
+            // A restore chosen in the previous run is swapped in before the
+            // database is opened. The replaced database is kept beside it.
+            let restore_outcome = match dm_storage::apply_pending_restore(&database_path) {
+                Ok(None) => None,
+                Ok(Some(dm_storage::RestoreOutcome::Restored { kept_copy })) => {
+                    info!(kept = %kept_copy.display(), "restored the database from a backup");
+                    Some(RestoreOutcomeResponse {
+                        restored: true,
+                        kept_copy: Some(kept_copy.to_string_lossy().into_owned()),
+                        reason: None,
+                    })
+                }
+                Ok(Some(dm_storage::RestoreOutcome::Refused { reason })) => {
+                    warn!(reason = %reason, "a waiting restore was refused");
+                    Some(RestoreOutcomeResponse {
+                        restored: false,
+                        kept_copy: None,
+                        reason: Some(reason),
+                    })
+                }
+                Err(error) => {
+                    warn!(error = %error, "a waiting restore could not be applied");
+                    Some(RestoreOutcomeResponse {
+                        restored: false,
+                        kept_copy: None,
+                        reason: Some(error.to_string()),
+                    })
+                }
+            };
+
             let storage = Arc::new(Storage::open(&database_path)?);
 
             let downloads = DownloadService::new(Arc::clone(&storage))?;
@@ -2207,6 +2440,7 @@ pub fn run() {
                 pending_link_intake: Mutex::new(Vec::new()),
                 automation: Automation::new(),
                 tray_menu: Mutex::new(None),
+                restore_outcome: Mutex::new(restore_outcome),
             });
 
             // A missing notification area (some Linux desktops) must not stop
@@ -2335,6 +2569,18 @@ pub fn run() {
             get_engine_settings,
             get_ffmpeg_status,
             set_ffmpeg_path,
+            get_download_stats,
+            backup_database,
+            stage_restore,
+            get_pending_restore,
+            cancel_restore,
+            take_restore_outcome,
+            restart_app,
+            export_downloads,
+            get_diagnostics_report,
+            save_diagnostics_report,
+            check_database,
+            check_connection,
             get_download_checks,
             set_expected_checksum,
             run_post_process,

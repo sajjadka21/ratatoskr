@@ -41,6 +41,10 @@
   --paused: #a993ff;
   --paused-text: #bcaaff;
 
+  /* Chart series (validated for colour-blind separation on this surface). */
+  --chart-domestic: #38a673;
+  --chart-international: #c2841a;
+
   --backdrop: rgba(3, 5, 8, 0.66);
   --shadow-modal: 0 24px 80px rgba(0, 0, 0, 0.5);
   --shadow-popover: 0 14px 40px rgba(0, 0, 0, 0.45);
@@ -80,6 +84,9 @@
   --paused: #6b55d6;
   --paused-text: #5a45c2;
 
+  --chart-domestic: #17805a;
+  --chart-international: #c4861c;
+
   --backdrop: rgba(23, 25, 30, 0.38);
   --shadow-modal: 0 24px 70px rgba(40, 32, 12, 0.22);
   --shadow-popover: 0 12px 34px rgba(40, 32, 12, 0.18);
@@ -117,6 +124,9 @@
     --danger-text: #b03030;
     --paused: #6b55d6;
     --paused-text: #5a45c2;
+
+    --chart-domestic: #17805a;
+    --chart-international: #c4861c;
 
     --backdrop: rgba(23, 25, 30, 0.38);
     --shadow-modal: 0 24px 70px rgba(40, 32, 12, 0.22);

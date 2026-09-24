@@ -13,6 +13,11 @@ const EXTENSION_KIND: Record<string, FileKind> = {
   iso: "disk", img: "disk", vhd: "disk", vhdx: "disk",
 };
 
+/** The kind a bare extension (lower case, no dot) belongs to. */
+export function kindOfExtension(extension: string): FileKind {
+  return EXTENSION_KIND[extension.toLowerCase()] ?? "other";
+}
+
 /** Short upper-case extension for the badge, or null when there is none. */
 export function fileExtension(item: DownloadListItem): string | null {
   const name = item.filename ?? safePath(item.resolvedUrl ?? item.sourceUrl);

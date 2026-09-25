@@ -57,19 +57,27 @@ npm run tauri -- build
 
 Outputs are written under `target/release/bundle/`:
 
-- `Download Manager_1.0.0_x64-setup.exe` (NSIS installer)
-- `Download Manager_1.0.0_x64_en-US.msi` (MSI installer)
-- `Download-Manager-1.0.0.exe` (portable executable copy)
-- `Download-Manager-Browser-Extension-1.0.0.zip` (MV3 extension + native host)
+- `Ratatosk_1.0.0_x64-setup.exe` (NSIS installer)
+- `Ratatosk_1.0.0_x64_en-US.msi` (MSI installer)
+
+The installer carries the browser extension folder; release builds made with
+`scripts\release.cmd` also carry `dm-native-host.exe` and `tosk.exe`.
 
 ## Browser extension
 
-Load `browser-extension/` as an unpacked extension in Chrome/Edge, or use the
-release ZIP. Build the host with `cargo build --release -p dm-native-host`,
-place it next to the application, replace the extension ID in
-`native-messaging-host.json`, and register the host manifest in the browser's
-Native Messaging registry/directory. Takeover is disabled by default and all
-cookies, credentials, authorization headers, and access tokens are excluded.
+The extension in `browser-extension/` works in Chrome, Edge, Brave and
+Firefox. Ratatosk connects it by itself: every start registers the
+`dm-native-host.exe` next to it for the current Windows user. Settings →
+Browser extension shows the connection and opens the folder and each
+browser's extensions page for loading it. Takeover is off by default, and
+cookies, credentials, authorization headers and access tokens are never
+stored. See `browser-extension/README.md`.
+
+## Releases and updates
+
+`scripts\release.cmd` builds a signed installer (with the browser connector
+and `tosk.exe`) and the `latest.json` installed copies read to update. See
+`RELEASING.md`.
 
 ## Command line (`tosk`)
 

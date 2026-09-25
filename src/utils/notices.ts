@@ -29,6 +29,8 @@ const TRANSLATED_NOTICES = new Set([
   "storage_error",
   "invalid_source",
   "download_error",
+  "needs_ytdlp",
+  "ytdlp_failed",
 ]);
 
 /**
@@ -37,7 +39,7 @@ const TRANSLATED_NOTICES = new Set([
  */
 export function noticeDetail(code: string | null, message: string | null): string | null {
   if (!message || !code || !TRANSLATED_NOTICES.has(code)) return null;
-  return ["filesystem_error", "http_refused", "server_error", "download_error"].includes(code) ? message : null;
+  return ["filesystem_error", "http_refused", "server_error", "download_error", "ytdlp_failed"].includes(code) ? message : null;
 }
 
 /**

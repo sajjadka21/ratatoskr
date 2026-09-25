@@ -153,6 +153,8 @@ pub const SETTING_STREAM_MAX_HEIGHT: &str = "stream_max_height";
 const STREAM_CONNECTIONS: usize = 4;
 /// Where FFmpeg is; empty to look for it automatically.
 pub const SETTING_FFMPEG_PATH: &str = "ffmpeg_path";
+/// Where yt-dlp is, when the user chose it rather than letting the app look.
+pub const SETTING_YTDLP_PATH: &str = "ytdlp_path";
 /// The shape an exported download list takes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportFormat {
@@ -1079,6 +1081,13 @@ impl DownloadService {
     where
         F: FnMut(&str, TransferProgress) + Send,
     {
+        // A video page (YouTube and the like) is not a file; yt-dlp reads it.
+        if crate::ytdlp::handles(&task.source_url) {
+            return self
+                .run_ytdlp_transfer(task, destination_directory, control, on_progress)
+                .await;
+        }
+
         let downloader = self.downloader_for(&task.id)?;
         let probe = match downloader.probe(&task.source_url).await {
             Ok(probe) => probe,
@@ -1688,6 +1697,202 @@ impl DownloadService {
         file.sync_all().await.map_err(DownloadError::Io)?;
         self.count_traffic(scope, progress.written.saturating_sub(last_counted));
         Ok(())
+    }
+
+    /// yt-dlp, from Settings or found next to the application or on `PATH`.
+    pub fn ytdlp(&self) -> Option<crate::ytdlp::YtDlp> {
+        crate::ytdlp::YtDlp::locate(self.ytdlp_path_setting().map(PathBuf::from).as_deref())
+    }
+
+    pub fn ytdlp_path_setting(&self) -> Option<String> {
+        self.storage
+            .get_setting(SETTING_YTDLP_PATH)
+            .ok()
+            .flatten()
+            .filter(|value| !value.trim().is_empty())
+    }
+
+    /// Where yt-dlp is; `None` to look for it automatically. A path that
+    /// does not name a file is refused.
+    pub fn set_ytdlp_path(&self, path: Option<&Path>) -> Result<()> {
+        if let Some(path) = path
+            && (!path.is_absolute() || !path.is_file())
+        {
+            return Err(DownloadServiceError::RelativeDirectory);
+        }
+        self.storage.set_setting(
+            SETTING_YTDLP_PATH,
+            &path
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+        )?;
+        Ok(())
+    }
+
+    /// Downloads a video page with yt-dlp into a private folder next to the
+    /// destination, then moves the finished file out of it.
+    async fn run_ytdlp_transfer<F>(
+        &self,
+        task: &DownloadRecord,
+        destination_directory: &Path,
+        control: Arc<TaskControl>,
+        on_progress: &mut F,
+    ) -> Result<crate::TransferOutcome>
+    where
+        F: FnMut(&str, TransferProgress) + Send,
+    {
+        use crate::ytdlp::{ProxyChoice, YtDlpError, YtDlpRequest};
+
+        let ytdlp = self.ytdlp().ok_or(DownloadError::NeedsYtDlp)?;
+        let decision = evaluate_rules(
+            &task.source_url,
+            None,
+            None,
+            &self.storage.list_rules()?,
+            &self.storage.list_categories()?,
+        );
+        // A paused run continues in the folder it started in.
+        let work_dir = match task.temp_path.as_deref().map(PathBuf::from) {
+            Some(path) if crate::ytdlp::is_work_dir(&path) => path,
+            _ => self
+                .resolve_destination(decision.as_ref(), destination_directory)
+                .join(format!("{}{}", crate::ytdlp::WORK_DIR_PREFIX, task.id)),
+        };
+        let directory = work_dir
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| destination_directory.to_path_buf());
+        let mut filename = task.filename.clone().unwrap_or_else(|| "video".to_owned());
+        let plan = |filename: &str, total: Option<u64>| TransferPlan {
+            resolved_url: task.source_url.clone(),
+            filename: filename.to_owned(),
+            destination_path: directory.join(filename).to_string_lossy().into_owned(),
+            temp_path: work_dir.to_string_lossy().into_owned(),
+            mime_type: None,
+            total_bytes: total,
+            etag: None,
+            last_modified: None,
+            range_supported: true,
+        };
+        self.storage.set_transfer_plan(&task.id, &plan(&filename, None))?;
+
+        let scope = self.traffic_scope_of(&task.source_url);
+        self.ensure_quota_allows(scope)?;
+        self.storage
+            .mark_downloading(&task.id, unix_timestamp_seconds()?)?;
+
+        let network = self.network_settings();
+        let host = normalized_host(&task.source_url).unwrap_or_default();
+        let proxy = match network.mode {
+            _ if network.goes_direct(&host) => ProxyChoice::Direct,
+            crate::network::ProxyMode::Off => ProxyChoice::Direct,
+            crate::network::ProxyMode::System => ProxyChoice::System,
+            crate::network::ProxyMode::Manual => network
+                .proxy_url
+                .clone()
+                .map_or(ProxyChoice::System, ProxyChoice::Url),
+        };
+        // yt-dlp takes one fixed rate: the tightest limit at the start.
+        let rate_limit = [
+            self.global_limiter.limit(),
+            self.task_speed_limit(&task.id)?,
+            decision.as_ref().and_then(|decision| decision.speed_cap),
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|limit| *limit > 0)
+        .min();
+        let ffmpeg = self.ffmpeg();
+        let max_height = quality_from_link(&task.source_url).or_else(|| self.stream_max_height());
+        let request = YtDlpRequest {
+            url: &task.source_url,
+            work_dir: &work_dir,
+            max_height,
+            ffmpeg: ffmpeg.as_ref().map(|ffmpeg| ffmpeg.path()),
+            proxy,
+            rate_limit,
+        };
+
+        // Picture and sound arrive one after the other, each counting from
+        // zero; earlier parts are carried in `finished_parts`.
+        let mut finished_parts = 0_u64;
+        let mut last = 0_u64;
+        let mut counted = 0_u64;
+        let mut last_saved = Instant::now();
+        let mut named = task.filename.is_some();
+        let task_id = task.id.clone();
+        let storage = Arc::clone(&self.storage);
+        let result = ytdlp
+            .download(&request, control.as_ref(), |progress| {
+                if progress.downloaded < last {
+                    finished_parts += last;
+                }
+                last = progress.downloaded;
+                let downloaded = finished_parts + progress.downloaded;
+                let total = progress.total.map(|total| finished_parts + total);
+                if downloaded > counted {
+                    self.count_traffic(scope, downloaded - counted);
+                    counted = downloaded;
+                }
+                if !named && let Some(title) = &progress.title {
+                    named = true;
+                    filename = crate::sanitize_filename(title);
+                    let _ = storage.set_transfer_plan(&task_id, &plan(&filename, total));
+                }
+                if last_saved.elapsed() >= PROGRESS_PERSIST_INTERVAL {
+                    last_saved = Instant::now();
+                    let _ = storage.update_progress(&task_id, downloaded, total);
+                }
+                on_progress(
+                    &task_id,
+                    TransferProgress {
+                        downloaded_bytes: downloaded,
+                        total_bytes: total,
+                        bytes_per_second: progress.bytes_per_second.map(|rate| rate as u64),
+                        eta_seconds: progress.eta_seconds,
+                        active_connections: Some(1),
+                        max_connections: Some(1),
+                        adaptive_reason: Some("downloading with yt-dlp"),
+                    },
+                );
+            })
+            .await;
+
+        let file = match result {
+            Ok(file) => file,
+            Err(YtDlpError::Stopped) => {
+                return Err(DownloadError::Stopped(
+                    control.stop_reason().unwrap_or(StopReason::Pause),
+                )
+                .into());
+            }
+            Err(error) => {
+                let temporary = error.is_temporary();
+                return Err(DownloadError::YtDlp {
+                    message: error.to_string(),
+                    temporary,
+                }
+                .into());
+            }
+        };
+
+        let size = tokio::fs::metadata(&file)
+            .await
+            .map_err(DownloadError::Io)?
+            .len();
+        let final_name = file
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or(filename);
+        self.storage
+            .set_transfer_plan(&task.id, &plan(&final_name, Some(size)))?;
+        self.storage.update_progress(&task.id, size, Some(size))?;
+        let outcome = self
+            .base_downloader()
+            .finalize_shared_file(&file, &directory.join(&final_name), size)
+            .await?;
+        remove_work_dir(&work_dir).await;
+        Ok(outcome)
     }
 
     /// FFmpeg, from Settings or found next to the application or on `PATH`.
@@ -3230,7 +3435,20 @@ enum SegmentedTransferResult {
     Fallback(Vec<DownloadSegment>),
 }
 
+/// Removes a yt-dlp working folder, and nothing that is not one.
+async fn remove_work_dir(path: &Path) {
+    if crate::ytdlp::is_work_dir(path) {
+        let _ = tokio::fs::remove_dir_all(path).await;
+    }
+}
+
 async fn remove_partial_file(temp_path: Option<&str>) {
+    if let Some(path) = temp_path
+        && crate::ytdlp::is_work_dir(Path::new(path))
+    {
+        remove_work_dir(Path::new(path)).await;
+        return;
+    }
     if let Some(path) = temp_path {
         let _ = tokio::fs::remove_file(stream_record_path(Path::new(path))).await;
         let _ = tokio::fs::remove_file(path).await;
@@ -3265,6 +3483,8 @@ fn error_code_for(error: &DownloadError) -> &'static str {
         DownloadError::Stream(_) => "stream_error",
         DownloadError::TooLarge { .. } => "stream_error",
         DownloadError::Ffmpeg(_) => "ffmpeg_failed",
+        DownloadError::YtDlp { .. } => "ytdlp_failed",
+        DownloadError::NeedsYtDlp => "needs_ytdlp",
     }
 }
 
@@ -5733,6 +5953,75 @@ mod tests {
             .await
             .unwrap();
         assert!(finished.destination_path.unwrap().ends_with(".ts"));
+    }
+
+    #[tokio::test]
+    async fn a_video_page_without_ytdlp_fails_with_a_reason() {
+        let harness = harness();
+        harness
+            .storage
+            .set_setting(SETTING_YTDLP_PATH, "/nowhere/yt-dlp")
+            .unwrap();
+        assert!(harness.service.ytdlp().is_none());
+        let task = harness
+            .service
+            .create_task("https://www.youtube.com/watch?v=abc")
+            .unwrap();
+        let _ = harness
+            .service
+            .start_task(&task.id, &harness.destination)
+            .await;
+        let row = harness.storage.get_download(&task.id).unwrap().unwrap();
+        assert_eq!(row.status, DownloadStatus::Failed);
+        assert_eq!(row.error_code.as_deref(), Some("needs_ytdlp"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_video_page_is_downloaded_with_ytdlp_and_moved_out_of_its_folder() {
+        use std::os::unix::fs::PermissionsExt;
+        let harness = harness();
+        let tools = tempfile::tempdir().unwrap();
+        let script = tools.path().join("yt-dlp");
+        // A stand-in for yt-dlp that writes where it is told (`--paths`).
+        std::fs::write(
+            &script,
+            "#!/bin/sh
+while [ \"$1\" != \"--paths\" ]; do shift; done
+w=\"$2\"
+mkdir -p \"$w\"
+\
+             echo 'RATATOSK|4|8|NA|2.0|2|My clip'\nprintf abcdefgh > \"$w/My clip [abc].mp4\"\n\
+             echo 'RATATOSK|8|8|NA|NA|0|My clip'\necho \"RATATOSK_FILE|$w/My clip [abc].mp4\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        harness
+            .service
+            .set_ytdlp_path(Some(&script))
+            .unwrap();
+
+        let task = harness
+            .service
+            .create_task("https://youtu.be/abc")
+            .unwrap();
+        let record = harness
+            .service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+        assert_eq!(record.status, DownloadStatus::Completed);
+        assert_eq!(record.filename.as_deref(), Some("My clip [abc].mp4"));
+        let path = PathBuf::from(record.destination_path.unwrap());
+        assert_eq!(std::fs::read(&path).unwrap(), b"abcdefgh");
+        assert_eq!(path.parent().unwrap(), harness.destination.as_path());
+        assert!(
+            !harness
+                .destination
+                .join(format!("{}{}", crate::ytdlp::WORK_DIR_PREFIX, task.id))
+                .exists(),
+            "the working folder is removed"
+        );
     }
 
     #[tokio::test]

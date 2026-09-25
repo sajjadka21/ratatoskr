@@ -24,6 +24,7 @@ pub mod stats;
 pub mod testing;
 pub mod throughput;
 pub mod traffic;
+pub mod ytdlp;
 
 use crate::control::{StopReason, TaskControl};
 use crate::ratelimit::RateLimiter;
@@ -92,6 +93,14 @@ pub enum DownloadError {
 
     #[error("{0}")]
     Ffmpeg(String),
+
+    /// yt-dlp ran and failed; `temporary` when another attempt may succeed.
+    #[error("{message}")]
+    YtDlp { message: String, temporary: bool },
+
+    /// A video page that needs yt-dlp, which is not on this computer.
+    #[error("this video page needs yt-dlp, which was not found")]
+    NeedsYtDlp,
 }
 
 impl DownloadError {
@@ -137,6 +146,9 @@ impl DownloadError {
             }
             Self::Stream(error) => error.to_string(),
             Self::Ffmpeg(message) => message.clone(),
+            // yt-dlp's own words can include the page's address.
+            Self::YtDlp { message, .. } => crate::diagnostics::redact_urls(message),
+            Self::NeedsYtDlp => "this video page needs yt-dlp, which was not found".to_owned(),
             Self::TooLarge { limit } => {
                 format!("the server sent more than {limit} bytes for one part of a stream")
             }
@@ -1047,7 +1059,7 @@ fn filename_from_content_disposition(value: &str) -> Option<String> {
     None
 }
 
-fn sanitize_filename(filename: &str) -> String {
+pub fn sanitize_filename(filename: &str) -> String {
     let mut sanitized: String = filename
         .chars()
         .map(|character| {

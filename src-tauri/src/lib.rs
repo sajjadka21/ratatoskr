@@ -1111,6 +1111,42 @@ async fn set_ffmpeg_path(
     Ok(ffmpeg_status(&state).await)
 }
 
+async fn ytdlp_status(state: &AppState) -> FfmpegStatusResponse {
+    let found = state.downloads.ytdlp();
+    let version = match &found {
+        Some(ytdlp) => ytdlp.version().await,
+        None => None,
+    };
+    FfmpegStatusResponse {
+        configured_path: state.downloads.ytdlp_path_setting(),
+        found_path: found.map(|ytdlp| ytdlp.path().to_string_lossy().into_owned()),
+        version,
+    }
+}
+
+/// Where yt-dlp is and which version, for Settings.
+#[tauri::command]
+async fn get_ytdlp_status(state: State<'_, AppState>) -> Result<FfmpegStatusResponse, String> {
+    Ok(ytdlp_status(&state).await)
+}
+
+/// `None` looks for yt-dlp next to the application and on `PATH`.
+#[tauri::command]
+async fn set_ytdlp_path(
+    state: State<'_, AppState>,
+    path: Option<String>,
+) -> Result<FfmpegStatusResponse, String> {
+    let path = path
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from);
+    state
+        .downloads
+        .set_ytdlp_path(path.as_deref())
+        .map_err(|_| "choose the yt-dlp program itself (yt-dlp.exe)".to_owned())?;
+    Ok(ytdlp_status(&state).await)
+}
+
 // -- statistics, backup, diagnostics ------------------------------------------
 
 fn named_total(total: dm_core::stats::NamedTotal) -> NamedTotalResponse {
@@ -2566,6 +2602,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_app_info,
             get_download_speed_limit,
+            get_ytdlp_status,
+            set_ytdlp_path,
             set_download_speed_limit,
             health_check,
             list_downloads,

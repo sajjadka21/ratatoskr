@@ -1,4 +1,4 @@
-import { CalendarClock, Clapperboard, FolderOpen, Globe2, RotateCcw, Save } from "lucide-react";
+import { CalendarClock, Clapperboard, FolderOpen, Globe2, MonitorPlay, RotateCcw, Save } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -434,12 +434,18 @@ export function EngineSection({
   const { t, fmt } = useI18n();
   const [draft, setDraft] = useState<EngineSettings | null>(null);
   const [ffmpeg, setFfmpeg] = useState<FfmpegStatus | null>(null);
+  const [ytdlp, setYtdlp] = useState<FfmpegStatus | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     invoke<FfmpegStatus>("get_ffmpeg_status")
       .then((status) => {
         if (!cancelled) setFfmpeg(status);
+      })
+      .catch(() => {});
+    invoke<FfmpegStatus>("get_ytdlp_status")
+      .then((status) => {
+        if (!cancelled) setYtdlp(status);
       })
       .catch(() => {});
     invoke<EngineSettings>("get_engine_settings")
@@ -475,6 +481,30 @@ export function EngineSection({
   async function automaticFfmpeg() {
     try {
       setFfmpeg(await invoke<FfmpegStatus>("set_ffmpeg_path", { path: null }));
+    } catch (reason) {
+      onError(String(reason));
+    }
+  }
+
+  async function chooseYtdlp() {
+    try {
+      const selected = await openDialog({
+        multiple: false,
+        directory: false,
+        title: t("ytdlp.pickTitle"),
+        filters: [{ name: "yt-dlp", extensions: ["exe", "*"] }],
+      });
+      if (typeof selected === "string") {
+        setYtdlp(await invoke<FfmpegStatus>("set_ytdlp_path", { path: selected }));
+      }
+    } catch (reason) {
+      onError(String(reason));
+    }
+  }
+
+  async function automaticYtdlp() {
+    try {
+      setYtdlp(await invoke<FfmpegStatus>("set_ytdlp_path", { path: null }));
     } catch (reason) {
       onError(String(reason));
     }
@@ -560,6 +590,35 @@ export function EngineSection({
               </button>
               {ffmpeg?.configuredPath ? (
                 <button type="button" className="settings-page__secondary-button" onClick={() => void automaticFfmpeg()}>
+                  <RotateCcw size={14} /> {t("ffmpeg.automatic")}
+                </button>
+              ) : null}
+            </span>
+          </div>
+        </div>
+
+        <div className="settings-page__row">
+          <div className="settings-page__row-label">
+            <strong>{t("ytdlp.title")}</strong>
+            <span>{t("ytdlp.hint")}</span>
+          </div>
+          <div className="settings-page__row-control settings-page__row-control--stack">
+            <span className={`settings-page__ffmpeg ${ytdlp?.foundPath ? "settings-page__ffmpeg--found" : ""}`}>
+              <MonitorPlay size={14} aria-hidden="true" />
+              {ytdlp?.foundPath ? (
+                <span title={ytdlp.version ?? undefined}>
+                  {t("ffmpeg.found")} <bdi className="ltr">{ytdlp.foundPath}</bdi>
+                </span>
+              ) : (
+                <span>{t("ffmpeg.missing")}</span>
+              )}
+            </span>
+            <span className="settings-page__button-row">
+              <button type="button" className="settings-page__secondary-button" onClick={() => void chooseYtdlp()}>
+                <FolderOpen size={14} /> {t("ffmpeg.choose")}
+              </button>
+              {ytdlp?.configuredPath ? (
+                <button type="button" className="settings-page__secondary-button" onClick={() => void automaticYtdlp()}>
                   <RotateCcw size={14} /> {t("ffmpeg.automatic")}
                 </button>
               ) : null}

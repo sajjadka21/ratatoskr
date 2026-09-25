@@ -49,7 +49,7 @@ if "%RC%"=="0" (echo         passed) else (echo         FAILED - see the log)
 echo  [6/6] Rust tests (a few minutes)...
 echo. >> "%LOG%"
 echo ===== Rust tests (a few minutes) ===== >> "%LOG%"
-cargo test --workspace >> "%LOG%" 2>&1
+cargo test --workspace --no-fail-fast >> "%LOG%" 2>&1
 set "RC=%ERRORLEVEL%"
 echo EXIT cargo-test %RC% >> "%LOG%"
 if "%RC%"=="0" (echo         passed) else (echo         FAILED - see the log)

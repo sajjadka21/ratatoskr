@@ -148,6 +148,8 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const lastSelectedIndex = useRef<number | null>(null);
+  /// When each download's row last came from an engine event.
+  const lastEventAt = useRef(new Map<string, number>());
 
   const [contextMenu, setContextMenu] = useState<{ item: DownloadListItem; x: number; y: number } | null>(null);
   const [removeCandidate, setRemoveCandidate] = useState<DownloadListItem | null>(null);
@@ -382,6 +384,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
           );
         }
         clearLiveMetrics(payload.downloadId);
+        lastEventAt.current.set(payload.downloadId, performance.now());
         upsertDownloads([payload.download]);
         return;
       }
@@ -576,12 +579,20 @@ function App({ preferences, onPreferencesChange }: AppProps) {
 
   // ---- task actions -------------------------------------------------------
 
+  /// A command answers with the row as it was when the command ran. A
+  /// transfer can finish or fail before that answer arrives (an event
+  /// published the newer row), and the answer must not overwrite it.
+  async function applyCommandResult(id: string, pending: Promise<DownloadListItem>) {
+    const sentAt = performance.now();
+    const record = await pending;
+    if ((lastEventAt.current.get(id) ?? 0) < sentAt) upsertDownloads([record]);
+  }
+
   async function startPersistedTask(id: string) {
     if (startingTaskIds.current.has(id)) return;
     startingTaskIds.current.add(id);
     try {
-      const claimed = await invoke<DownloadListItem>("start_download", { id });
-      upsertDownloads([claimed]);
+      await applyCommandResult(id, invoke<DownloadListItem>("start_download", { id }));
     } catch (reason) {
       notify("error", t("toast.startFailed", { reason: String(reason) }));
       await refreshDownloads();
@@ -601,10 +612,10 @@ function App({ preferences, onPreferencesChange }: AppProps) {
           await startPersistedTask(item.id);
           break;
         case "resume":
-          upsertDownloads([await invoke<DownloadListItem>("resume_download", { id: item.id })]);
+          await applyCommandResult(item.id, invoke<DownloadListItem>("resume_download", { id: item.id }));
           break;
         case "restart":
-          upsertDownloads([await invoke<DownloadListItem>("restart_download", { id: item.id })]);
+          await applyCommandResult(item.id, invoke<DownloadListItem>("restart_download", { id: item.id }));
           break;
         case "pause":
           await invoke<DownloadListItem>("pause_download", { id: item.id });
@@ -695,7 +706,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     for (const item of downloads) {
       if (!RESUMABLE_STATUSES.has(item.status.toLowerCase())) continue;
       try {
-        upsertDownloads([await invoke<DownloadListItem>("resume_download", { id: item.id })]);
+        await applyCommandResult(item.id, invoke<DownloadListItem>("resume_download", { id: item.id }));
       } catch (reason) {
         notify("error", t("toast.bulkFailed", { reason: String(reason) }));
       }

@@ -77,7 +77,7 @@ const DOWNLOAD_EXTENSIONS: &[&str] = &[
     "apk", "dmg", "pkg", "deb", "rpm", "appimage", "iso", "img", "vhd", "vhdx", "mp4", "mkv",
     "webm", "mov", "avi", "wmv", "flv", "m4v", "ts", "mp3", "m4a", "aac", "flac", "wav", "ogg",
     "opus", "wma", "pdf", "epub", "djvu", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "torrent",
-    "bin", "part1", "001",
+    "bin", "dat", "part1", "001",
 ];
 
 /// Most copied text looked at; anything longer is not a link someone copied.

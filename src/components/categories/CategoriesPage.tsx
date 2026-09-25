@@ -3,7 +3,7 @@ import { FolderOpen, HardDrive, RotateCcw, Tag } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 
 import { useI18n } from "../../i18n/I18n";
-import type { MessageKey } from "../../i18n/messages";
+import { categoryName } from "../../utils/categories";
 import type { DownloadCategory } from "../../types/download";
 import { pickFolder } from "../settings/SettingsPage";
 import "./CategoriesPage.css";
@@ -12,16 +12,13 @@ type CategoriesPageProps = {
   onError: (message: string) => void;
 };
 
-const BUILT_IN = new Set(["applications", "archives", "documents", "video", "audio", "images", "other"]);
 
 export function CategoriesPage({ onError }: CategoriesPageProps) {
   const { t, fmt } = useI18n();
   const [categories, setCategories] = useState<DownloadCategory[]>([]);
   const [loaded, setLoaded] = useState(false);
 
-  /** Built-in categories are named in the UI language; custom ones as typed. */
-  const nameOf = (category: DownloadCategory) =>
-    BUILT_IN.has(category.id) ? t(`category.${category.id}` as MessageKey) : category.name;
+  const nameOf = (category: DownloadCategory) => categoryName(category.id, category.name, t);
 
   useEffect(() => {
     void invoke<DownloadCategory[]>("list_categories")

@@ -2610,7 +2610,15 @@ impl DownloadService {
                 .base_downloader()
                 .take_retry_after(task.resolved_url.as_deref().unwrap_or(&task.source_url))
                 .or_else(|| self.base_downloader().take_retry_after(&task.source_url));
-            let delay = asked.map_or(delay, |asked| asked.max(delay));
+            // A server that is refusing because of load but did not say for
+            // how long gets a real pause, not a retry every few seconds.
+            let delay = match asked {
+                Some(asked) => asked.max(delay),
+                None if matches!(error.http_status(), Some(429 | 503)) => {
+                    delay.max(RATE_LIMITED_MINIMUM_DELAY)
+                }
+                None => delay,
+            };
             let retry_at = unix_timestamp_seconds()?.saturating_add(delay.as_secs() as i64);
 
             self.storage.mark_retrying(
@@ -3188,18 +3196,26 @@ async fn remove_partial_file(temp_path: Option<&str>) {
     }
 }
 
+/// The shortest wait after a 429 or 503 that came without `Retry-After`.
+const RATE_LIMITED_MINIMUM_DELAY: Duration = Duration::from_secs(30);
+
 fn error_code_for(error: &DownloadError) -> &'static str {
     match error {
         DownloadError::InvalidUrl(_) | DownloadError::UnsupportedScheme(_) => "invalid_source",
-        DownloadError::Http(_) => "download_error",
+        DownloadError::Http(_) | DownloadError::HttpStatus { .. } => match error.http_status() {
+            Some(429) => "rate_limited",
+            Some(503) => "server_busy",
+            Some(404 | 410) => "not_found",
+            Some(401 | 403 | 407) => "access_denied",
+            Some(status) if status >= 500 => "server_error",
+            Some(_) => "http_refused",
+            None => "network_error",
+        },
         DownloadError::Io(_) => "filesystem_error",
         DownloadError::ProgressCallback(_) => "storage_error",
         DownloadError::IncompleteTransfer { .. } => "incomplete_transfer",
         DownloadError::InvalidRangeResponse { .. } => "invalid_range_response",
         DownloadError::SegmentOverflow { .. } => "segment_overflow",
-        DownloadError::HttpStatus { status: 429 } => "rate_limited",
-        DownloadError::HttpStatus { status: 503 } => "server_busy",
-        DownloadError::HttpStatus { .. } => "download_error",
         DownloadError::Stopped(_) => "stopped",
         DownloadError::Stream(crate::hls::HlsError::Protected) => "protected_stream",
         DownloadError::Stream(crate::hls::HlsError::Live) => "live_stream",
@@ -3857,6 +3873,17 @@ mod tests {
             .unwrap();
         assert_eq!(profile.rate_limited_count, 1);
         assert_eq!(profile.last_status, Some(429));
+
+        // Named for what happened, and not retried within seconds when the
+        // server gave no Retry-After.
+        let task = harness.service.get_task(&created.id).unwrap();
+        assert_eq!(task.status, DownloadStatus::Retrying);
+        assert_eq!(task.error_code.as_deref(), Some("rate_limited"));
+        let wait = task.retry_at.unwrap() - unix_timestamp_seconds().unwrap();
+        assert!(
+            wait >= RATE_LIMITED_MINIMUM_DELAY.as_secs() as i64 - 2,
+            "retry in {wait}s"
+        );
     }
 
     #[tokio::test]
@@ -4002,7 +4029,7 @@ mod tests {
             DownloadStatus::Failed,
             "a 404 will not become a 200 by trying again"
         );
-        assert_eq!(downloads[0].error_code.as_deref(), Some("download_error"));
+        assert_eq!(downloads[0].error_code.as_deref(), Some("not_found"));
         assert!(
             !downloads[0]
                 .error_message

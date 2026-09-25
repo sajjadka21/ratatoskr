@@ -23,7 +23,7 @@ use dm_ipc::{
     DownloadRuleResponse, DownloadSettingsResponse, DownloadTaskEvent, HealthCheckResponse,
     LinkCandidateResponse, MediaClassificationResponse, MediaVariantResponse,
     NetworkSettingsResponse, QueueResponse, QueueRunnerEventResponse, QueueScheduleResponse,
-    TrafficSummaryResponse, TransferProgressResponse,
+    RuleExplanationResponse, TrafficSummaryResponse, TransferProgressResponse,
 };
 use dm_ipc::{DownloadChecksResponse, PostProcessSettingsResponse};
 use dm_ipc::{EngineSettingsResponse, FfmpegStatusResponse, StreamVariantResponse};
@@ -534,7 +534,7 @@ fn list_download_rules(state: State<'_, AppState>) -> Result<Vec<DownloadRuleRes
 fn get_download_rule_explanation(
     state: State<'_, AppState>,
     id: String,
-) -> Result<Option<String>, String> {
+) -> Result<Option<RuleExplanationResponse>, String> {
     let record = state
         .storage
         .get_download(&id)
@@ -543,7 +543,13 @@ fn get_download_rule_explanation(
     state
         .downloads
         .rule_decision_for_url(&record.source_url)
-        .map(|decision| decision.map(|value| value.explanation))
+        .map(|decision| {
+            decision.map(|value| RuleExplanationResponse {
+                rule_name: value.rule_name,
+                category_id: value.category_id,
+                category_name: value.category_name,
+            })
+        })
         .map_err(|error| error.to_string())
 }
 
@@ -860,9 +866,14 @@ async fn run_retry_scheduler(
                 continue;
             }
 
-            if let Err(error) = downloads.claim_task(&task.id) {
-                warn!(download_id = %task.id, error = %error, "could not claim a retry");
-                continue;
+            match downloads.claim_task(&task.id) {
+                // The row no longer says "retrying" or carries the old
+                // error; show that now rather than when the transfer ends.
+                Ok(record) => publisher.download_updated(record),
+                Err(error) => {
+                    warn!(download_id = %task.id, error = %error, "could not claim a retry");
+                    continue;
+                }
             }
 
             info!(download_id = %task.id, attempt = task.attempts, "retrying download");

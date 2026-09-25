@@ -14,7 +14,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 
 import { useI18n } from "../../i18n/I18n";
-import { engineReasonText, noticeText } from "../../utils/notices";
+import { explainRule, type RuleExplanation } from "../../utils/categories";
+import { engineReasonText, noticeDetail, noticeText } from "../../utils/notices";
 import type { MessageKey } from "../../i18n/messages";
 import type { DownloadListItem, TaskAction, TransferMetrics } from "../../types/download";
 import { displayName } from "../../utils/fileKind";
@@ -70,14 +71,14 @@ export function DownloadDetailsPanel({
 }: DownloadDetailsPanelProps) {
   const { t, fmt, language } = useI18n();
   const [copied, setCopied] = useState<"url" | "path" | null>(null);
-  const [ruleExplanation, setRuleExplanation] = useState<string | null>(null);
+  const [ruleExplanation, setRuleExplanation] = useState<RuleExplanation | null>(null);
 
   useEffect(() => {
     setCopied(null);
     setRuleExplanation(null);
     if (!item) return;
     let cancelled = false;
-    void invoke<string | null>("get_download_rule_explanation", { id: item.id })
+    void invoke<RuleExplanation | null>("get_download_rule_explanation", { id: item.id })
       .then((value) => !cancelled && setRuleExplanation(value))
       .catch(() => !cancelled && setRuleExplanation(null));
     return () => {
@@ -234,15 +235,18 @@ export function DownloadDetailsPanel({
 
         {current.errorMessage ? (
           <div className={`details__failure details__failure--${status === "failed" ? "error" : "notice"}`}>
-            <strong>{status === "failed" ? current.errorCode ?? t("details.failed") : t("details.attention")}</strong>
+            <strong>{status === "failed" ? t("details.failed") : t("details.attention")}</strong>
             <span>{noticeText(current.errorCode, current.errorMessage, t, language)}</span>
+            {noticeDetail(current.errorCode, current.errorMessage) ? (
+              <small dir="ltr">{noticeDetail(current.errorCode, current.errorMessage)}</small>
+            ) : null}
           </div>
         ) : null}
 
         {ruleExplanation ? (
           <section className="details__section">
             <h3>{t("details.intake")}</h3>
-            <p className="details__note">{ruleExplanation}</p>
+            <p className="details__note">{explainRule(ruleExplanation, t)}</p>
           </section>
         ) : null}
 

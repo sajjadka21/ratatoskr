@@ -95,6 +95,16 @@ pub enum DownloadError {
 }
 
 impl DownloadError {
+    /// The HTTP status behind this error, whether the server's answer was
+    /// checked by the engine or by the HTTP client.
+    pub fn http_status(&self) -> Option<u16> {
+        match self {
+            Self::HttpStatus { status } => Some(*status),
+            Self::Http(error) => error.status().map(|status| status.as_u16()),
+            _ => None,
+        }
+    }
+
     pub fn redacted_message(&self) -> String {
         match self {
             Self::InvalidUrl(message) => format!("invalid URL: {message}"),

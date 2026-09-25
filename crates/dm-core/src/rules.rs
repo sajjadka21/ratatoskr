@@ -5,7 +5,12 @@ use reqwest::Url;
 pub struct RuleDecision {
     pub rule_id: Option<String>,
     pub explanation: String,
+    /// The name of the rule that decided, when one did.
+    pub rule_name: Option<String>,
     pub category_id: Option<String>,
+    /// The category's own name, for showing why without parsing
+    /// `explanation`.
+    pub category_name: Option<String>,
     pub queue_id: Option<String>,
     pub priority: Option<DownloadPriority>,
     pub destination_directory: Option<String>,
@@ -106,10 +111,18 @@ pub fn evaluate_rules(
         )
     };
 
+    let category_name = category_id.as_deref().and_then(|id| {
+        categories
+            .iter()
+            .find(|category| category.id == id)
+            .map(|category| category.name.clone())
+    });
     Some(RuleDecision {
         rule_id: matched.map(|rule| rule.id.clone()),
         explanation,
+        rule_name: matched.map(|rule| rule.name.clone()),
         category_id,
+        category_name,
         queue_id: matched.and_then(|rule| rule.queue_id.clone()),
         priority: matched.and_then(|rule| rule.priority),
         destination_directory: matched.and_then(|rule| rule.destination_directory.clone()),

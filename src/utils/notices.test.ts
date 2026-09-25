@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createTranslator } from "../i18n/I18n";
-import { isAlarm, noticeText } from "./notices";
+import { isAlarm, noticeDetail, noticeText } from "./notices";
 
 describe("notices", () => {
   it("keeps warnings about a finished file visible", () => {
@@ -21,5 +21,15 @@ describe("notices", () => {
     const en = createTranslator("en");
     expect(noticeText("something_new", "Plain text", en, "en")).toBe("Plain text");
     expect(noticeText("threat_found", null, en, "en")).toBeNull();
+  });
+
+  it("never shows the engine's English for network and server failures in Persian", () => {
+    const fa = createTranslator("fa");
+    const text = noticeText("rate_limited", "the download server returned HTTP status 429", fa, "fa");
+    expect(text).toContain("۴۲۹");
+    expect(text).not.toMatch(/[A-Za-z]{4,}/);
+    expect(noticeText("not_found", "status 404", fa, "fa")).toContain("وجود ندارد");
+    expect(noticeDetail("rate_limited", "status 429")).toBeNull();
+    expect(noticeDetail("filesystem_error", "filesystem error: access denied")).toContain("access denied");
   });
 });

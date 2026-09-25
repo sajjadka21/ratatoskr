@@ -164,6 +164,16 @@ pub struct FfmpegStatusResponse {
     pub version: Option<String>,
 }
 
+/// Why a download is filed where it is: the rule that decided, or else the
+/// category its type or site belongs to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuleExplanationResponse {
+    pub rule_name: Option<String>,
+    pub category_id: Option<String>,
+    pub category_name: Option<String>,
+}
+
 /// One day on the statistics page.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

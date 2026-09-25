@@ -455,7 +455,10 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     return result;
   }, [downloads]);
 
+  // What actually came over the network today, the same figure the traffic
+  // chip and Statistics show; finished files only until that is known.
   const bytesToday = useMemo(() => {
+    if (traffic) return traffic.todayDomesticBytes + traffic.todayInternationalBytes;
     const midnight = new Date();
     midnight.setHours(0, 0, 0, 0);
     const since = midnight.getTime() / 1000;
@@ -467,7 +470,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
           : 0),
       0,
     );
-  }, [downloads]);
+  }, [downloads, traffic]);
 
   const visibleDownloads = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();

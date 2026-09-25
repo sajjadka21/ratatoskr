@@ -14,7 +14,31 @@ const TRANSLATED_NOTICES = new Set([
   "ffmpeg_failed",
   "integrity_failed",
   "threat_found",
+  "stream_error",
+  "rate_limited",
+  "server_busy",
+  "server_error",
+  "not_found",
+  "access_denied",
+  "http_refused",
+  "network_error",
+  "filesystem_error",
+  "incomplete_transfer",
+  "invalid_range_response",
+  "segment_overflow",
+  "storage_error",
+  "invalid_source",
+  "download_error",
 ]);
+
+/**
+ * The engine's own English wording, worth showing beside the translated
+ * notice only when it adds something (a file-system reason, say).
+ */
+export function noticeDetail(code: string | null, message: string | null): string | null {
+  if (!message || !code || !TRANSLATED_NOTICES.has(code)) return null;
+  return ["filesystem_error", "http_refused", "server_error", "download_error"].includes(code) ? message : null;
+}
 
 /**
  * Notices about a finished file that must stay visible: the file is

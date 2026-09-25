@@ -237,10 +237,12 @@ const DownloadTableRow = memo(function DownloadTableRow({
   const rate = transferring ? fmt.rate(metrics?.bytesPerSecond ?? null) : null;
   const remaining =
     status === "retrying" && item.retryAt !== null && nowSeconds > 0
-      ? t("table.retryIn", {
-          attempt: fmt.number(item.attempts + 1),
-          time: fmt.duration(Math.max(0, item.retryAt - nowSeconds)) ?? "",
-        })
+      ? item.retryAt - nowSeconds > 0
+        ? t("table.retryIn", {
+            attempt: fmt.number(item.attempts + 1),
+            time: fmt.duration(item.retryAt - nowSeconds) ?? "",
+          })
+        : t("table.retryingNow")
       : transferring
         ? fmt.duration(metrics?.etaSeconds ?? null)
         : null;

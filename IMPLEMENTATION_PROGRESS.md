@@ -1501,3 +1501,8 @@ the local network (a NAS, a router), went through the proxy.
   no bypass list: 73 failed without the rule, all 226 pass with it.
 - `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo test --workspace` (337 tests), `npm test` (65), `npm run build` - passed.
+- Confirmed on Windows (owner's computer, v2rayN running) with
+  `scripts/check-all.cmd`: npm install, 65 interface tests, the interface
+  build, `cargo fmt`, clippy and `cargo test --workspace --no-fail-fast` all
+  passed - 343 Rust tests, including the Windows-only ones in dm-system and
+  the native-messaging integration tests.

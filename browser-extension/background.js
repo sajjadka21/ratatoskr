@@ -67,14 +67,41 @@ async function sendLink(url, referrer) {
   });
 }
 
+// Video pages Ratatosk downloads with yt-dlp.
+const VIDEO_PAGES = [
+  "*://*.youtube.com/*",
+  "*://youtu.be/*",
+  "*://*.aparat.com/*",
+  "*://*.vimeo.com/*",
+  "*://*.instagram.com/*",
+  "*://*.x.com/*",
+  "*://*.twitter.com/*",
+  "*://*.tiktok.com/*",
+  "*://*.dailymotion.com/*",
+  "*://*.twitch.tv/*",
+  "*://*.facebook.com/*",
+  "*://*.reddit.com/*",
+  "*://*.soundcloud.com/*"
+];
+
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({ id: "download-manager-link", title: "Download with Ratatosk", contexts: ["link"] });
-  chrome.contextMenus.create({ id: "download-manager-selection", title: "Send selected links to Ratatosk", contexts: ["selection"] });
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({ id: "download-manager-link", title: chrome.i18n.getMessage("menuLink"), contexts: ["link"] });
+    chrome.contextMenus.create({ id: "download-manager-selection", title: chrome.i18n.getMessage("menuSelection"), contexts: ["selection"] });
+    chrome.contextMenus.create({
+      id: "download-manager-page",
+      title: chrome.i18n.getMessage("menuPage"),
+      contexts: ["page", "video"],
+      documentUrlPatterns: VIDEO_PAGES
+    });
+  });
 });
 
 chrome.contextMenus.onClicked.addListener(async (info) => {
   if (info.menuItemId === "download-manager-link" && info.linkUrl) {
     await sendLink(info.linkUrl, info.pageUrl);
+  } else if (info.menuItemId === "download-manager-page" && info.pageUrl) {
+    await sendLink(info.pageUrl, null);
   } else if (info.selectionText) {
     await handoff({ type: "inspect", text: info.selectionText });
   }

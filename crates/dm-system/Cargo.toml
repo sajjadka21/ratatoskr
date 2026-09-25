@@ -19,8 +19,12 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_Ioctl",
     "Win32_System_Pipes",
     "Win32_System_Power",
+    "Win32_System_Registry",
     "Win32_System_Threading",
 ] }
 
 [target.'cfg(windows)'.dev-dependencies]
 tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "net", "io-util", "time"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"

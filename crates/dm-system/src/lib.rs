@@ -5,6 +5,7 @@
 //! Every function is safe to call on any platform; outside Windows the power
 //! actions report `Unsupported` and keep-awake does nothing.
 
+pub mod browser_hosts;
 pub mod disk;
 pub mod locate;
 pub mod session_channel;

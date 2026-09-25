@@ -10,6 +10,7 @@ use dm_core::{
     CoreService, TransferProgress,
 };
 mod automation;
+mod browser_setup;
 mod clipboard_watch;
 mod updates;
 mod tray;
@@ -656,6 +657,35 @@ fn set_auto_update_check(state: State<'_, AppState>, enabled: bool) -> Result<bo
         )
         .map_err(|error| error.to_string())?;
     Ok(updates::auto_check_enabled(&state.storage))
+}
+
+/// What the browser extension needs and what is already done.
+#[tauri::command]
+fn get_browser_connection(app: AppHandle) -> browser_setup::BrowserConnection {
+    browser_setup::connection(&app)
+}
+
+/// Registers the connector again, for when a browser was installed after
+/// the app started.
+#[tauri::command]
+fn connect_browsers(app: AppHandle) -> Result<browser_setup::BrowserConnection, String> {
+    browser_setup::register(&app)?;
+    Ok(browser_setup::connection(&app))
+}
+
+/// Shows the extension folder, to load it in the browser.
+#[tauri::command]
+fn reveal_extension_folder(app: AppHandle) -> Result<(), String> {
+    let folder = browser_setup::extension_folder(&app)
+        .ok_or_else(|| "the extension folder is missing".to_owned())?;
+    app.opener()
+        .reveal_item_in_dir(folder.join("manifest.json"))
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn open_browser_extensions_page(browser: String) -> Result<(), String> {
+    browser_setup::open_extensions_page(&browser)
 }
 
 /// Whether copied download links bring up the Add download dialog.
@@ -2614,6 +2644,8 @@ pub fn run() {
                 destination_directory.clone(),
             ));
 
+            browser_setup::register_quietly(app.handle());
+
             tauri::async_runtime::spawn(updates::run_background_checks(
                 app.handle().clone(),
                 Arc::clone(&storage),
@@ -2673,6 +2705,10 @@ pub fn run() {
             get_app_info,
             get_download_speed_limit,
             get_clipboard_watch,
+            get_browser_connection,
+            connect_browsers,
+            reveal_extension_folder,
+            open_browser_extensions_page,
             check_for_update,
             install_update,
             get_auto_update_check,

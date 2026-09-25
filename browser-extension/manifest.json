@@ -1,8 +1,16 @@
 {
   "manifest_version": 3,
-  "name": "Ratatosk",
-  "version": "1.0.0",
-  "description": "Send downloads from your browser to Ratatosk on this computer. Local only.",
+  "name": "__MSG_name__",
+  "version": "1.1.0",
+  "description": "__MSG_description__",
+  "default_locale": "en",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuU1qaYM82wkWvZUbK6dwMqD4hyoLbW6gvlOHQSseuAHpcZ9dF8+gMLDi1bOW8HXuI8IbhYqfxSwPYTM5Aqb0VDZxjTvuXVtnBk+tlUkYj9vLLp45bsoJu/1ZH6WuclGg7/gF1Go59vRyAadgXAywZ8E+EkjQ8iEzWSV7qRnP4f2loY6M01kT2m6JCSXxrOQSNcCndcalKjXM3opRe8qsM55H3Q1tMhSOIDp7O2WhC83QmwotB4eLPd5AQBls6gcuUx3IkZ9Px7rDQ093Iwc5MKtQcZaNNfDgCj61EjucqbWN2Z3RpoNMwLQIlrZgJkiHJUOsAH7BTRl6CmcLDM2AaQIDAQAB",
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
   "permissions": [
     "downloads",
     "storage",
@@ -16,11 +24,27 @@
     "<all_urls>"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "scripts": [
+      "background.js"
+    ]
   },
   "action": {
-    "default_title": "Ratatosk",
-    "default_popup": "popup.html"
+    "default_title": "__MSG_name__",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png"
+    }
   },
-  "options_page": "options.html"
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "browser@ratatosk.app",
+      "strict_min_version": "121.0"
+    }
+  }
 }

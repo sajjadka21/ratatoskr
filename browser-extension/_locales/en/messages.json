@@ -1,0 +1,62 @@
+{
+  "name": {
+    "message": "Ratatosk"
+  },
+  "description": {
+    "message": "Send downloads from your browser to Ratatosk on this computer. Nothing leaves your computer."
+  },
+  "menuLink": {
+    "message": "Download with Ratatosk"
+  },
+  "menuSelection": {
+    "message": "Send selected links to Ratatosk"
+  },
+  "menuPage": {
+    "message": "Download this video with Ratatosk"
+  },
+  "statusConnected": {
+    "message": "Connected to Ratatosk"
+  },
+  "statusNoApp": {
+    "message": "Ratatosk is not installed on this computer, or it was moved."
+  },
+  "statusNoHost": {
+    "message": "Not connected yet. Open Ratatosk once: it connects the browser by itself."
+  },
+  "takeoverOn": {
+    "message": "Browser downloads go to Ratatosk"
+  },
+  "takeoverOff": {
+    "message": "Browser downloads stay in the browser"
+  },
+  "openSettings": {
+    "message": "Settings"
+  },
+  "optionsTitle": {
+    "message": "Ratatosk for your browser"
+  },
+  "takeover": {
+    "message": "Send downloads from this browser to Ratatosk"
+  },
+  "takeoverHint": {
+    "message": "When a download starts in the browser, Ratatosk takes it over. If Ratatosk cannot, the browser keeps it."
+  },
+  "session": {
+    "message": "Hand over my browser login for downloads that need it"
+  },
+  "sessionHint": {
+    "message": "For that one download, the site's cookies go to Ratatosk on this computer. They are kept in memory only, sent only to the same site, and forgotten when the download ends or the app closes. Turning this on asks the browser for permission to read cookies; turning it off gives it back."
+  },
+  "minimumSize": {
+    "message": "Leave smaller files to the browser (MB)"
+  },
+  "excludedHosts": {
+    "message": "Sites the browser keeps (one per line)"
+  },
+  "excludedExtensions": {
+    "message": "File types the browser keeps (for example: pdf, jpg)"
+  },
+  "saved": {
+    "message": "Saved."
+  }
+}

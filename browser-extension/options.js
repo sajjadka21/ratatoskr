@@ -1,18 +1,19 @@
-const fields = ["takeover", "minimumBytes", "excludedHosts", "excludedExtensions"];
+const fields = ["takeover", "minimumSize", "excludedHosts", "excludedExtensions"];
+const MB = 1024 * 1024;
 
 // Reading cookies needs its own permission, which the extension does not hold
 // until the user asks for session handover, and gives back when they stop.
 const SESSION_PERMISSIONS = { permissions: ["cookies"], origins: ["<all_urls>"] };
 
 function saved() {
-  document.getElementById("saved").textContent = "Saved locally";
+  document.getElementById("saved").textContent = chrome.i18n.getMessage("saved");
 }
 
 chrome.storage.local.get(
   { takeoverEnabled: false, sessionHandover: false, minimumBytes: 0, excludedHosts: "", excludedExtensions: "" },
   async (values) => {
     document.getElementById("takeover").checked = values.takeoverEnabled;
-    document.getElementById("minimumBytes").value = values.minimumBytes;
+    document.getElementById("minimumSize").value = Math.round(Number(values.minimumBytes || 0) / MB);
     document.getElementById("excludedHosts").value = values.excludedHosts;
     document.getElementById("excludedExtensions").value = values.excludedExtensions;
 
@@ -25,7 +26,7 @@ chrome.storage.local.get(
 fields.forEach((id) => document.getElementById(id).addEventListener("change", () => {
   chrome.storage.local.set({
     takeoverEnabled: document.getElementById("takeover").checked,
-    minimumBytes: Math.max(0, Number(document.getElementById("minimumBytes").value || 0)),
+    minimumBytes: Math.max(0, Number(document.getElementById("minimumSize").value || 0)) * MB,
     excludedHosts: document.getElementById("excludedHosts").value,
     excludedExtensions: document.getElementById("excludedExtensions").value
   }, saved);

@@ -385,10 +385,16 @@ pub struct DownloadSettingsResponse {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NetworkSettingsResponse {
-    /// `off`, `system` or `manual`.
+    /// `off`, `system`, `manual` or `pac`.
     pub mode: String,
     /// `socks5://127.0.0.1:10808` and the like; never with credentials.
     pub proxy_url: Option<String>,
+    /// The proxy auto-configuration script, for `pac`.
+    #[serde(default)]
+    pub pac_url: Option<String>,
+    /// The setup script Windows itself is set to use, if any (read only).
+    #[serde(default)]
+    pub system_pac_url: Option<String>,
     /// Hosts that skip the proxy, one per line.
     pub direct_hosts: String,
     /// Domestic hosts skip the proxy too.

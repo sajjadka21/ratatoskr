@@ -24,6 +24,7 @@ pub const SETTING_PROXY_URL: &str = "network_proxy_url";
 pub const SETTING_DIRECT_HOSTS: &str = "network_direct_hosts";
 pub const SETTING_DOMESTIC_DIRECT: &str = "network_domestic_direct";
 pub const SETTING_DOMESTIC_HOSTS: &str = "traffic_domestic_hosts";
+pub const SETTING_PAC_URL: &str = "network_pac_url";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ProxyMode {
@@ -34,6 +35,8 @@ pub enum ProxyMode {
     System,
     /// The proxy in `proxy_url`, except for hosts that go direct.
     Manual,
+    /// A proxy auto-configuration script at `pac_url` decides per site.
+    Pac,
 }
 
 impl ProxyMode {
@@ -42,6 +45,7 @@ impl ProxyMode {
             Self::Off => "off",
             Self::System => "system",
             Self::Manual => "manual",
+            Self::Pac => "pac",
         }
     }
 
@@ -50,6 +54,7 @@ impl ProxyMode {
             "off" => Some(Self::Off),
             "system" => Some(Self::System),
             "manual" => Some(Self::Manual),
+            "pac" => Some(Self::Pac),
             _ => None,
         }
     }
@@ -59,6 +64,8 @@ impl ProxyMode {
 pub struct NetworkSettings {
     pub mode: ProxyMode,
     pub proxy_url: Option<String>,
+    /// The proxy auto-configuration script, for `ProxyMode::Pac`.
+    pub pac_url: Option<String>,
     /// Hosts (and their subdomains) that never use the proxy.
     pub direct_hosts: Vec<String>,
     /// Domestic hosts never use the proxy either.
@@ -72,6 +79,7 @@ impl Default for NetworkSettings {
         Self {
             mode: ProxyMode::System,
             proxy_url: None,
+            pac_url: None,
             direct_hosts: Vec::new(),
             domestic_direct: true,
             domestic_hosts: Vec::new(),
@@ -94,6 +102,9 @@ pub enum NetworkError {
 
     #[error("a manual proxy needs an address")]
     MissingProxyUrl,
+
+    #[error("the setup script must be an http or https address, such as http://127.0.0.1:10810/pac")]
+    InvalidPacUrl,
 }
 
 impl NetworkSettings {
@@ -107,6 +118,7 @@ impl NetworkSettings {
                 .and_then(ProxyMode::parse)
                 .unwrap_or_default(),
             proxy_url: text(SETTING_PROXY_URL).filter(|value| !value.trim().is_empty()),
+            pac_url: text(SETTING_PAC_URL).filter(|value| !value.trim().is_empty()),
             direct_hosts: text(SETTING_DIRECT_HOSTS)
                 .map(|value| parse_host_list(&value))
                 .unwrap_or_default(),
@@ -115,7 +127,7 @@ impl NetworkSettings {
                 .map(|value| parse_host_list(&value))
                 .unwrap_or_default(),
         };
-        if settings.mode == ProxyMode::Manual && settings.validate().is_err() {
+        if matches!(settings.mode, ProxyMode::Manual | ProxyMode::Pac) && settings.validate().is_err() {
             settings.mode = ProxyMode::System;
         }
         settings
@@ -124,6 +136,7 @@ impl NetworkSettings {
     pub fn save(&self, storage: &Storage) -> dm_storage::Result<()> {
         storage.set_setting(SETTING_PROXY_MODE, self.mode.as_str())?;
         storage.set_setting(SETTING_PROXY_URL, self.proxy_url.as_deref().unwrap_or(""))?;
+        storage.set_setting(SETTING_PAC_URL, self.pac_url.as_deref().unwrap_or(""))?;
         storage.set_setting(SETTING_DIRECT_HOSTS, &self.direct_hosts.join("\n"))?;
         storage.set_setting(
             SETTING_DOMESTIC_DIRECT,
@@ -141,9 +154,16 @@ impl NetworkSettings {
     /// is kept even in other modes, so switching back needs no retyping.
     pub fn validate(&self) -> Result<(), NetworkError> {
         match (&self.proxy_url, self.mode) {
-            (Some(url), _) => validate_proxy_url(url).map(|_| ()),
-            (None, ProxyMode::Manual) => Err(NetworkError::MissingProxyUrl),
-            (None, _) => Ok(()),
+            (Some(url), _) => validate_proxy_url(url).map(|_| ())?,
+            (None, ProxyMode::Manual) => return Err(NetworkError::MissingProxyUrl),
+            (None, _) => {}
+        }
+        match (&self.pac_url, self.mode) {
+            (Some(url), _) if crate::pac::validate_script_url(url).is_none() => {
+                Err(NetworkError::InvalidPacUrl)
+            }
+            (None, ProxyMode::Pac) => Err(NetworkError::InvalidPacUrl),
+            _ => Ok(()),
         }
     }
 
@@ -188,7 +208,16 @@ impl NetworkSettings {
 
         let builder = match self.mode {
             ProxyMode::Off => builder.no_proxy(),
-            ProxyMode::System => builder.proxy(system_proxy()),
+            // Windows may be set to a setup script (v2rayN's PAC mode sets
+            // one); the ordinary proxy settings are the fallback.
+            ProxyMode::System => builder.proxy(system_proxy(
+                self.clone(),
+                crate::pac::system_script_url().map(crate::pac::PacResolver::new),
+            )),
+            ProxyMode::Pac => builder.proxy(system_proxy(
+                self.clone(),
+                self.pac_url.clone().map(crate::pac::PacResolver::new),
+            )),
             ProxyMode::Manual => match self
                 .proxy_url
                 .as_deref()
@@ -217,7 +246,12 @@ impl NetworkSettings {
 /// ones proxy clients like v2rayN write - as domain names, so loopback and
 /// LAN downloads (a NAS, a router) went through the proxy. The bypass for
 /// local addresses is therefore decided here.
-fn system_proxy() -> Proxy {
+///
+/// With a setup script, the script decides first; the operating system's
+/// ordinary proxy is used when the script cannot be run. Sites that go
+/// direct (Iranian sites, when chosen, and the always-direct list) never use
+/// either.
+fn system_proxy(routing: NetworkSettings, script: Option<crate::pac::PacResolver>) -> Proxy {
     use hyper_util::client::proxy::matcher::Matcher;
     let matcher = std::sync::Arc::new(Matcher::from_system());
     let auth = "http://example.com/"
@@ -227,8 +261,14 @@ fn system_proxy() -> Proxy {
         .and_then(|intercept| intercept.basic_auth().cloned());
     let proxy = Proxy::custom(move |target: &Url| {
         let host = target.host_str()?;
-        if is_local_host(host) {
+        if routing.goes_direct(host) {
             return None;
+        }
+        if let Some(answer) = script.as_ref().and_then(|script| script.answer_for(target)) {
+            return match answer {
+                crate::pac::PacAnswer::Direct => None,
+                crate::pac::PacAnswer::Proxy(proxy) => Some(proxy),
+            };
         }
         let uri = target.as_str().parse::<http::Uri>().ok()?;
         matcher
@@ -330,6 +370,7 @@ mod tests {
         let manual = NetworkSettings {
             mode: ProxyMode::Manual,
             proxy_url: Some("socks5://127.0.0.1:10808".to_owned()),
+            pac_url: None,
             domestic_direct: false,
             ..NetworkSettings::default()
         };
@@ -366,6 +407,7 @@ mod tests {
         let settings = NetworkSettings {
             mode: ProxyMode::Manual,
             proxy_url: Some("socks5://127.0.0.1:10808".to_owned()),
+            pac_url: None,
             direct_hosts: vec!["lan.example".to_owned()],
             domestic_direct: true,
             domestic_hosts: vec!["arvancloud.com".to_owned()],
@@ -391,6 +433,7 @@ mod tests {
         let settings = NetworkSettings {
             mode: ProxyMode::Manual,
             proxy_url: Some("socks5://127.0.0.1:10808".to_owned()),
+            pac_url: None,
             direct_hosts: vec!["lan.example".to_owned()],
             domestic_direct: false,
             domestic_hosts: vec!["aparat.com".to_owned()],
@@ -406,13 +449,52 @@ mod tests {
 
     #[test]
     fn every_mode_builds_a_client() {
-        for mode in [ProxyMode::Off, ProxyMode::System, ProxyMode::Manual] {
+        for mode in [
+            ProxyMode::Off,
+            ProxyMode::System,
+            ProxyMode::Manual,
+            ProxyMode::Pac,
+        ] {
             let settings = NetworkSettings {
                 mode,
                 proxy_url: Some("socks5h://127.0.0.1:10808".to_owned()),
+                pac_url: Some("http://127.0.0.1:10810/pac".to_owned()),
                 ..NetworkSettings::default()
             };
             assert!(settings.build_client().is_ok());
         }
+    }
+
+    #[test]
+    fn a_setup_script_must_be_a_web_address() {
+        let pac = NetworkSettings {
+            mode: ProxyMode::Pac,
+            pac_url: Some("http://127.0.0.1:10810/pac/?t=1".to_owned()),
+            ..NetworkSettings::default()
+        };
+        assert_eq!(pac.validate(), Ok(()));
+        assert_eq!(
+            NetworkSettings {
+                pac_url: None,
+                ..pac.clone()
+            }
+            .validate(),
+            Err(NetworkError::InvalidPacUrl)
+        );
+        assert_eq!(
+            NetworkSettings {
+                pac_url: Some("file:///c:/p.pac".to_owned()),
+                ..pac.clone()
+            }
+            .validate(),
+            Err(NetworkError::InvalidPacUrl)
+        );
+
+        let directory = tempdir().unwrap();
+        let storage = Storage::open(directory.path().join("downloads.db")).unwrap();
+        pac.save(&storage).unwrap();
+        assert_eq!(NetworkSettings::load(&storage), pac);
+        storage.set_setting(SETTING_PAC_URL, "ftp://x/p").unwrap();
+        assert_eq!(NetworkSettings::load(&storage).mode, ProxyMode::System);
     }
 }

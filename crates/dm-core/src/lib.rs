@@ -9,6 +9,7 @@ pub mod hls;
 pub mod linkgrabber;
 pub mod media;
 pub mod network;
+pub mod pac;
 pub mod postprocess;
 pub mod queue;
 pub mod ratelimit;
@@ -1773,6 +1774,7 @@ mod tests {
         let settings = network::NetworkSettings {
             mode: network::ProxyMode::Manual,
             proxy_url: Some(proxy_url.trim_end_matches('/').to_owned()),
+            pac_url: None,
             direct_hosts: vec!["direct.invalid".to_owned()],
             domestic_direct: true,
             domestic_hosts: Vec::new(),

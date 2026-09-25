@@ -96,12 +96,16 @@ export type DownloadSettings = {
   maxConnections: number;
 };
 
-export type ProxyMode = "off" | "system" | "manual";
+export type ProxyMode = "off" | "system" | "manual" | "pac";
 
 /// How downloads reach the network. Host lists are one domain per line.
 export type NetworkSettings = {
   mode: ProxyMode;
   proxyUrl: string | null;
+  /// The setup script (PAC), for the `pac` mode.
+  pacUrl: string | null;
+  /// The setup script Windows itself uses, if any. Read only.
+  systemPacUrl: string | null;
   directHosts: string;
   domesticDirect: boolean;
   domesticHosts: string;

@@ -1513,6 +1513,8 @@ fn network_settings_response(settings: &NetworkSettings) -> NetworkSettingsRespo
     NetworkSettingsResponse {
         mode: settings.mode.as_str().to_owned(),
         proxy_url: settings.proxy_url.clone(),
+        pac_url: settings.pac_url.clone(),
+        system_pac_url: dm_core::pac::system_script_url(),
         direct_hosts: settings.direct_hosts.join("\n"),
         domestic_direct: settings.domestic_direct,
         domestic_hosts: settings.domestic_hosts.join("\n"),
@@ -1537,6 +1539,10 @@ fn set_network_settings(
         mode,
         proxy_url: settings
             .proxy_url
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty()),
+        pac_url: settings
+            .pac_url
             .map(|value| value.trim().to_owned())
             .filter(|value| !value.is_empty()),
         direct_hosts: parse_host_list(&settings.direct_hosts),

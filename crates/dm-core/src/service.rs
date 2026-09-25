@@ -1788,6 +1788,18 @@ impl DownloadService {
             _ if network.goes_direct(&host) => ProxyChoice::Direct,
             crate::network::ProxyMode::Off => ProxyChoice::Direct,
             crate::network::ProxyMode::System => ProxyChoice::System,
+            // yt-dlp cannot run a setup script; it gets the script's answer
+            // for the page when one is available.
+            crate::network::ProxyMode::Pac => network
+                .pac_url
+                .as_deref()
+                .map(crate::pac::PacResolver::new)
+                .zip(reqwest::Url::parse(&task.source_url).ok())
+                .and_then(|(resolver, url)| resolver.answer_for(&url))
+                .map_or(ProxyChoice::System, |answer| match answer {
+                    crate::pac::PacAnswer::Direct => ProxyChoice::Direct,
+                    crate::pac::PacAnswer::Proxy(proxy) => ProxyChoice::Url(proxy),
+                }),
             crate::network::ProxyMode::Manual => network
                 .proxy_url
                 .clone()
@@ -2041,6 +2053,7 @@ impl DownloadService {
         let route = match network.mode {
             crate::network::ProxyMode::Off => "direct".to_owned(),
             crate::network::ProxyMode::System => "system proxy".to_owned(),
+            crate::network::ProxyMode::Pac => "setup script (PAC)".to_owned(),
             crate::network::ProxyMode::Manual => format!(
                 "manual ({})",
                 network
@@ -2109,8 +2122,9 @@ impl DownloadService {
         let network = self.network_settings();
         let route = match network.mode {
             crate::network::ProxyMode::Off => "direct",
+            _ if network.goes_direct(&host) => "direct",
             crate::network::ProxyMode::System => "system",
-            crate::network::ProxyMode::Manual if network.goes_direct(&host) => "direct",
+            crate::network::ProxyMode::Pac => "pac",
             crate::network::ProxyMode::Manual => "proxy",
         };
         let started = std::time::Instant::now();

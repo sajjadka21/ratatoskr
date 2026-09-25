@@ -20,6 +20,7 @@ const MODES: Array<{ value: ProxyMode; label: MessageKey }> = [
   { value: "off", label: "network.modeOff" },
   { value: "system", label: "network.modeSystem" },
   { value: "manual", label: "network.modeManual" },
+  { value: "pac", label: "network.modePac" },
 ];
 
 /** Proxy route, direct exceptions, and whether Iranian sites skip the proxy. */
@@ -54,7 +55,10 @@ export function NetworkSection({
     if (!draft) return;
     setSaving(true);
     try {
-      setDraft(await invoke<NetworkSettings>("set_network_settings", { settings: draft }));
+      // A setup script shown from Windows' own setting is saved as typed.
+      const settings =
+        draft.mode === "pac" && !draft.pacUrl && draft.systemPacUrl ? { ...draft, pacUrl: draft.systemPacUrl } : draft;
+      setDraft(await invoke<NetworkSettings>("set_network_settings", { settings }));
       onSaved(t("network.saved"));
     } catch (reason) {
       onError(String(reason));
@@ -75,7 +79,7 @@ export function NetworkSection({
           <div className="settings-page__row-label">
             <strong>{t("network.mode")}</strong>
           </div>
-          <div className="settings-page__row-control">
+          <div className="settings-page__row-control settings-page__row-control--stack">
             <div className="settings-page__segmented" role="group" aria-label={t("network.mode")}>
               {MODES.map((mode) => (
                 <button
@@ -93,8 +97,35 @@ export function NetworkSection({
                 </button>
               ))}
             </div>
+            {draft.mode === "system" && draft.systemPacUrl ? (
+              <p className="settings-page__hint-inline">
+                {t("network.systemPac")} <bdi className="ltr">{draft.systemPacUrl}</bdi>
+              </p>
+            ) : null}
           </div>
         </div>
+
+        {draft.mode === "pac" ? (
+          <div className="settings-page__row">
+            <div className="settings-page__row-label">
+              <label htmlFor="pac-url">
+                <strong>{t("network.pacUrl")}</strong>
+              </label>
+              <span>{t("network.pacUrlHint")}</span>
+            </div>
+            <div className="settings-page__row-control">
+              <input
+                id="pac-url"
+                className="settings-page__text-input"
+                dir="ltr"
+                spellCheck={false}
+                placeholder="http://127.0.0.1:10810/pac/"
+                value={draft.pacUrl ?? draft.systemPacUrl ?? ""}
+                onChange={(event) => setDraft({ ...draft, pacUrl: event.target.value })}
+              />
+            </div>
+          </div>
+        ) : null}
 
         <div className="settings-page__row">
           <div className="settings-page__row-label">

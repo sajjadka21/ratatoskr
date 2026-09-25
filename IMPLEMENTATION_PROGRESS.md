@@ -1470,3 +1470,34 @@ control calls an existing or new backend command.
 
 - HTTP/1.1 against a real HTTP/2 server: the test server speaks HTTP/1.1
   only, so this rests on reqwest's `http1_only`.
+
+## Review follow-up - Step 10: First Windows run
+
+`scripts/check-all.cmd` runs every check on Windows and writes
+`target/check-all.log`. On the first run, on the owner's computer, npm
+install, the 65 interface tests, the interface build, `cargo fmt`, clippy and
+the CLI tests all passed; 12 engine tests failed with Windows error 10053/10054
+("connection aborted") while talking to the local test server.
+
+### Cause
+
+v2rayN sets the Windows system proxy and a bypass list (`ProxyOverride`)
+such as `localhost;127.*;10.*;192.168.*;<local>`. The HTTP library's system
+proxy support (hyper-util) turns entries like `127.*` into domain names, so
+IP addresses never match them: every request to 127.0.0.1, and in real use to
+the local network (a NAS, a router), went through the proxy.
+
+### Fix
+
+- System-proxy mode now uses hyper-util's system matcher directly, behind a
+  rule the engine owns: addresses on this computer or the local network
+  (loopback, private and link-local IPv4/IPv6, `localhost`, `.local` names,
+  names without a dot) never go through a proxy. Manual mode applies the
+  same rule in `goes_direct`.
+
+### Verification
+
+- Reproduced here by running the engine tests with a dead system proxy and
+  no bypass list: 73 failed without the rule, all 226 pass with it.
+- `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace` (337 tests), `npm test` (65), `npm run build` - passed.

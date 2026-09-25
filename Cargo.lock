@@ -1009,6 +1009,8 @@ dependencies = [
  "dm-common",
  "dm-storage",
  "dm-system",
+ "http",
+ "hyper-util",
  "md-5",
  "percent-encoding",
  "reqwest",

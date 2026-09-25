@@ -147,9 +147,13 @@ impl NetworkSettings {
         }
     }
 
-    /// Whether requests to `host` skip the manual proxy.
+    /// Whether requests to `host` skip the manual proxy. Addresses on this
+    /// computer or the local network always do.
     pub fn goes_direct(&self, host: &str) -> bool {
         let host = host.trim_end_matches('.').to_ascii_lowercase();
+        if is_local_host(&host) {
+            return true;
+        }
         let listed = self
             .direct_hosts
             .iter()
@@ -184,7 +188,7 @@ impl NetworkSettings {
 
         let builder = match self.mode {
             ProxyMode::Off => builder.no_proxy(),
-            ProxyMode::System => builder,
+            ProxyMode::System => builder.proxy(system_proxy()),
             ProxyMode::Manual => match self
                 .proxy_url
                 .as_deref()
@@ -202,6 +206,68 @@ impl NetworkSettings {
         };
 
         builder.build()
+    }
+}
+
+/// The operating system's proxy, except for addresses on this computer or the
+/// local network.
+///
+/// The HTTP library's own system-proxy support reads the Windows bypass list
+/// (`ProxyOverride`) but treats entries such as `127.*` and `192.168.*` - the
+/// ones proxy clients like v2rayN write - as domain names, so loopback and
+/// LAN downloads (a NAS, a router) went through the proxy. The bypass for
+/// local addresses is therefore decided here.
+fn system_proxy() -> Proxy {
+    use hyper_util::client::proxy::matcher::Matcher;
+    let matcher = std::sync::Arc::new(Matcher::from_system());
+    let auth = "http://example.com/"
+        .parse::<http::Uri>()
+        .ok()
+        .and_then(|uri| matcher.intercept(&uri))
+        .and_then(|intercept| intercept.basic_auth().cloned());
+    let proxy = Proxy::custom(move |target: &Url| {
+        let host = target.host_str()?;
+        if is_local_host(host) {
+            return None;
+        }
+        let uri = target.as_str().parse::<http::Uri>().ok()?;
+        matcher
+            .intercept(&uri)
+            .map(|intercept| intercept.uri().to_string())
+    });
+    match auth {
+        Some(header) => proxy.custom_http_auth(header),
+        None => proxy,
+    }
+}
+
+/// An address on this computer or the local network, which no proxy should
+/// carry: loopback, private and link-local addresses, `localhost`, `.local`
+/// names, and names without a dot (Windows' `<local>`).
+pub fn is_local_host(host: &str) -> bool {
+    use std::net::IpAddr;
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(ip)) => {
+            ip.is_loopback() || ip.is_private() || ip.is_link_local() || ip.is_unspecified()
+        }
+        Ok(IpAddr::V6(ip)) => {
+            if let Some(v4) = ip.to_ipv4_mapped() {
+                return v4.is_loopback() || v4.is_private() || v4.is_link_local();
+            }
+            let first = ip.segments()[0];
+            ip.is_loopback()
+                || ip.is_unspecified()
+                || (first & 0xfe00) == 0xfc00
+                || (first & 0xffc0) == 0xfe80
+        }
+        Err(_) => {
+            host == "localhost"
+                || host.ends_with(".localhost")
+                || host.ends_with(".local")
+                || (!host.is_empty() && !host.contains('.'))
+        }
     }
 }
 
@@ -230,6 +296,47 @@ pub fn validate_proxy_url(text: &str) -> Result<Url, NetworkError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_addresses_never_go_through_a_proxy() {
+        for host in [
+            "127.0.0.1",
+            "10.0.0.5",
+            "172.20.1.1",
+            "192.168.1.10",
+            "169.254.3.4",
+            "[::1]",
+            "fd00::1",
+            "fe80::1",
+            "::ffff:192.168.1.2",
+            "localhost",
+            "nas.local",
+            "nas",
+            "NAS.",
+        ] {
+            assert!(is_local_host(host), "{host}");
+        }
+        for host in [
+            "8.8.8.8",
+            "172.32.0.1",
+            "2001:db8::1",
+            "example.com",
+            "aparat.com",
+            "",
+        ] {
+            assert!(!is_local_host(host), "{host}");
+        }
+
+        let manual = NetworkSettings {
+            mode: ProxyMode::Manual,
+            proxy_url: Some("socks5://127.0.0.1:10808".to_owned()),
+            domestic_direct: false,
+            ..NetworkSettings::default()
+        };
+        assert!(manual.goes_direct("192.168.1.10"));
+        assert!(manual.goes_direct("127.0.0.1"));
+        assert!(!manual.goes_direct("example.com"));
+    }
     use tempfile::tempdir;
 
     #[test]

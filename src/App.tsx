@@ -65,6 +65,7 @@ type DownloadTaskEvent = {
 const DOWNLOAD_TASK_EVENT = "download-task-event";
 const LINK_INTAKE_EVENT = "link-intake";
 const CLIPBOARD_LINKS_EVENT = "clipboard-links";
+const UPDATE_AVAILABLE_EVENT = "update-available";
 const COMPLETION_ACTION_EVENT = "completion-action";
 
 /// Statuses a late progress event may move to "downloading". A progress event
@@ -448,7 +449,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   }, []);
 
   useEffect(() => {
-    const subscription = listen<{ version: string }>("update-available", ({ payload }) =>
+    const subscription = listen<{ version: string }>(UPDATE_AVAILABLE_EVENT, ({ payload }) =>
       reportSaved(t("update.toast", { version: payload.version })),
     );
     return () => void subscription.then((unlisten) => unlisten());

@@ -78,7 +78,8 @@ pub fn manifest(host: &Path, firefox: bool) -> serde_json::Value {
     if firefox {
         manifest["allowed_extensions"] = json!([FIREFOX_EXTENSION_ID]);
     } else {
-        manifest["allowed_origins"] = json!([format!("chrome-extension://{CHROMIUM_EXTENSION_ID}/")]);
+        manifest["allowed_origins"] =
+            json!([format!("chrome-extension://{CHROMIUM_EXTENSION_ID}/")]);
     }
     manifest
 }
@@ -100,7 +101,11 @@ pub fn register(host: &Path, folder: &Path) -> io::Result<Vec<Browser>> {
 
     let mut registered = Vec::new();
     for browser in Browser::ALL {
-        let path = if browser.is_firefox() { &firefox } else { &chromium };
+        let path = if browser.is_firefox() {
+            &firefox
+        } else {
+            &chromium
+        };
         if platform::set_default_value(&browser.registry_key(), &path.to_string_lossy()).is_ok() {
             registered.push(browser);
         }
@@ -244,7 +249,10 @@ mod tests {
         let host = Path::new(r"C:\Program Files\Ratatosk\dm-native-host.exe");
         let chromium = manifest(host, false);
         assert_eq!(chromium["name"], HOST_NAME);
-        assert_eq!(chromium["path"], r"C:\Program Files\Ratatosk\dm-native-host.exe");
+        assert_eq!(
+            chromium["path"],
+            r"C:\Program Files\Ratatosk\dm-native-host.exe"
+        );
         assert_eq!(
             chromium["allowed_origins"][0],
             "chrome-extension://ocefplbhcgfmihahfkaknodbdidflhle/"
@@ -277,11 +285,15 @@ mod tests {
         std::fs::write(&missing, b"").unwrap();
         let folder = directory.path().join("hosts");
         let _ = register(&missing, &folder).unwrap();
-        let written: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(folder.join("firefox-host.json")).unwrap())
-                .unwrap();
+        let written: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(folder.join("firefox-host.json")).unwrap(),
+        )
+        .unwrap();
         assert_eq!(written["allowed_extensions"][0], FIREFOX_EXTENSION_ID);
         assert!(folder.join("chromium-host.json").is_file());
-        assert_eq!(host_beside(&directory.path().join("Ratatosk.exe")).is_some(), cfg!(windows));
+        assert_eq!(
+            host_beside(&directory.path().join("Ratatosk.exe")).is_some(),
+            cfg!(windows)
+        );
     }
 }

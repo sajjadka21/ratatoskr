@@ -58,7 +58,7 @@ fn updater<R: Runtime>(
     // The update travels the way downloads do when a proxy is set by hand.
     let network = NetworkSettings::load(storage);
     let manual_proxy = (network.mode == ProxyMode::Manual)
-        .then(|| network.proxy_url.as_deref())
+        .then_some(network.proxy_url.as_deref())
         .flatten()
         .and_then(|url| url.parse::<tauri::Url>().ok());
     if let Some(proxy) = manual_proxy {
@@ -98,10 +98,8 @@ pub async fn install<R: Runtime>(app: &AppHandle<R>, storage: &Storage) -> Resul
         .download_and_install(
             move |chunk, total| {
                 downloaded += chunk as u64;
-                let _ = progress_app.emit(
-                    UPDATE_PROGRESS_EVENT,
-                    UpdateProgress { downloaded, total },
-                );
+                let _ =
+                    progress_app.emit(UPDATE_PROGRESS_EVENT, UpdateProgress { downloaded, total });
             },
             || {},
         )

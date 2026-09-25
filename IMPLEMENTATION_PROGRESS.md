@@ -1518,3 +1518,47 @@ Tested the running app by hand (real downloads from proof.ovh.net through the sy
 - The retry countdown says "trying again…" instead of "in 0 seconds".
 - "Why it went here" is built from structured data (rule name / category) and shown in the interface language, with built-in category names translated.
 - The sidebar's "downloaded today" uses today's traffic, the same figure as the traffic chip and Statistics.
+
+## Step 12: wording, colours, and five new capabilities
+
+- **Wording.** Persian and English text rewritten to be plain and polite:
+  no "engine" jargon ("Idle"/"بیکار" became "No active downloads"), no
+  decorative labels, consistent terms (رنگ‌بندی، نشانی جایگزین، …).
+- **Colours.** Turquoise (firouzeh) accent instead of saffron; chart series
+  re-validated with the dataviz checks (dark `#2a9d92`/`#b97d22`, light
+  `#0f8f82`/`#b87a1e`). The light theme is a soft grey-green, never pure
+  white. The Windows title bar follows the chosen theme. App and extension
+  icons regenerated from `scripts/brand/app-icon.svg`.
+- **Leftovers.** The link collector keeps what was pasted across pages (in
+  memory only); the details panel closes when its download is not in the
+  section switched to.
+- **Per-download speed limit.** Migration v13 (`download_limits`); a limiter
+  per download stacked with the global one and rule caps; changes reach a
+  running transfer at once. Details panel section with presets and a custom
+  value.
+- **yt-dlp.** `dm-core::ytdlp`: found like FFmpeg (Settings, next to the
+  app, PATH), never downloaded. Video pages (YouTube, Aparat, Instagram,
+  X, Vimeo, …) run through it with progress, quality from Settings, FFmpeg
+  for merging, the app's proxy route, the tightest speed limit, and a private
+  `.ratatosk-<id>` folder that pausing keeps and cancelling removes. Codes
+  `needs_ytdlp` and `ytdlp_failed` with translated notices.
+- **Clipboard watching.** Copying a link to a file or a video page anywhere
+  brings the window up with the Add dialog filled in (on by default, a
+  switch in Settings). The text is only compared by hash in memory; links
+  already in the list are ignored.
+- **PAC.** New proxy mode "setup script"; Windows' own setup script (for
+  example v2rayN's PAC mode) is followed in System mode. Scripts are run by
+  WinHTTP; answers cached per site; the ordinary system proxy is the
+  fallback. Iranian and always-direct sites now skip the system proxy too.
+- **Updates.** tauri-plugin-updater with a signing key (public key in
+  `tauri.conf.json`, private key in `.signing/`, git-ignored). Background
+  check daily when allowed, install only on request, proxy followed.
+  `scripts/release.cmd` and `RELEASING.md` describe releasing; the release
+  address is still to be filled in.
+- **Browser extension.** Fixed IDs (Chromium key in the manifest, Firefox
+  `browser@ratatosk.app`), one manifest for both, Persian and English UI,
+  a "Download this video" menu on video sites. The app registers the native
+  host for Chrome, Edge, Brave, Chromium and Firefox on every start; Settings
+  → Browser extension shows the state and opens the folder and each
+  browser's extensions page. Store addresses go in `STORE_PAGES` once
+  published.

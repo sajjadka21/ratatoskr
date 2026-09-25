@@ -103,7 +103,9 @@ pub enum NetworkError {
     #[error("a manual proxy needs an address")]
     MissingProxyUrl,
 
-    #[error("the setup script must be an http or https address, such as http://127.0.0.1:10810/pac")]
+    #[error(
+        "the setup script must be an http or https address, such as http://127.0.0.1:10810/pac"
+    )]
     InvalidPacUrl,
 }
 
@@ -127,7 +129,9 @@ impl NetworkSettings {
                 .map(|value| parse_host_list(&value))
                 .unwrap_or_default(),
         };
-        if matches!(settings.mode, ProxyMode::Manual | ProxyMode::Pac) && settings.validate().is_err() {
+        if matches!(settings.mode, ProxyMode::Manual | ProxyMode::Pac)
+            && settings.validate().is_err()
+        {
             settings.mode = ProxyMode::System;
         }
         settings

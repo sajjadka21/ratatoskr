@@ -129,7 +129,11 @@ impl PacResolver {
 /// Understands `PROXY host:port; DIRECT`, `SOCKS5 host:port`, plain
 /// `host:port` entries and WinHTTP's per-scheme `http=host:port` form.
 pub fn first_proxy(list: &str, scheme: &str) -> Option<String> {
-    for entry in list.split(';').map(str::trim).filter(|entry| !entry.is_empty()) {
+    for entry in list
+        .split(';')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+    {
         let upper = entry.to_ascii_uppercase();
         if upper == "DIRECT" {
             return None;
@@ -213,7 +217,13 @@ mod windows {
             let agent = wide("Ratatosk");
             // SAFETY: plain FFI call with valid, NUL-terminated arguments.
             let handle = unsafe {
-                WinHttpOpen(agent.as_ptr(), WINHTTP_ACCESS_TYPE_NO_PROXY, null(), null(), 0)
+                WinHttpOpen(
+                    agent.as_ptr(),
+                    WINHTTP_ACCESS_TYPE_NO_PROXY,
+                    null(),
+                    null(),
+                    0,
+                )
             };
             if handle.is_null() {
                 return None;
@@ -310,7 +320,10 @@ mod tests {
             Some("http://10.0.0.2:3129".into())
         );
         assert_eq!(
-            first_proxy("SOCKS4 1.1.1.1:1080; PROXY user@bad; PROXY 2.2.2.2:80", "http"),
+            first_proxy(
+                "SOCKS4 1.1.1.1:1080; PROXY user@bad; PROXY 2.2.2.2:80",
+                "http"
+            ),
             Some("http://2.2.2.2:80".into())
         );
         assert_eq!(first_proxy("", "http"), None);

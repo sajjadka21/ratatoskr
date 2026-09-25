@@ -12,8 +12,8 @@ use dm_core::{
 mod automation;
 mod browser_setup;
 mod clipboard_watch;
-mod updates;
 mod tray;
+mod updates;
 
 use automation::Automation;
 use dm_ipc::UiPreferencesResponse;

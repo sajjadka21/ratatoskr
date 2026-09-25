@@ -7,6 +7,8 @@ import { useEffect, useState } from "react";
 import { useI18n } from "../../i18n/I18n";
 import { Switch } from "./Switch";
 
+const UPDATE_PROGRESS_EVENT = "update-progress";
+
 type UpdateInfo = { version: string; currentVersion: string; notes: string | null };
 type UpdateProgress = { downloaded: number; total: number | null };
 
@@ -32,7 +34,7 @@ export function UpdateSection({ onError }: { onError: (message: string) => void 
   useEffect(() => {
     void getVersion().then(setVersion).catch(() => setVersion(null));
     void invoke<boolean>("get_auto_update_check").then(setAutoCheck).catch(() => setAutoCheck(null));
-    const subscription = listen<UpdateProgress>("update-progress", ({ payload }) =>
+    const subscription = listen<UpdateProgress>(UPDATE_PROGRESS_EVENT, ({ payload }) =>
       setState((current) => (current.kind === "installing" ? { ...current, progress: payload } : current)),
     );
     return () => void subscription.then((unlisten) => unlisten());

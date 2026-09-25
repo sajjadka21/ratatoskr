@@ -5,7 +5,7 @@
 use dm_system::browser_hosts::{self, Browser};
 use serde::Serialize;
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager, Runtime, path::BaseDirectory};
+use tauri::{path::BaseDirectory, AppHandle, Manager, Runtime};
 use tracing::{info, warn};
 
 #[derive(Debug, Clone, Serialize)]
@@ -44,7 +44,8 @@ pub fn extension_folder<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
 /// Registers the connector for every supported browser. Quiet when the
 /// connector program is not there (a development build without it).
 pub fn register<R: Runtime>(app: &AppHandle<R>) -> Result<Vec<Browser>, String> {
-    let host = host_program().ok_or_else(|| "the browser connector program is missing".to_owned())?;
+    let host =
+        host_program().ok_or_else(|| "the browser connector program is missing".to_owned())?;
     let folder = manifests_folder(app).ok_or_else(|| "no application data folder".to_owned())?;
     let registered = browser_hosts::register(&host, &folder).map_err(|error| error.to_string())?;
     info!(browsers = registered.len(), "browser connector registered");

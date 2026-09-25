@@ -28,7 +28,7 @@ describe("notices", () => {
     const text = noticeText("rate_limited", "the download server returned HTTP status 429", fa, "fa");
     expect(text).toContain("۴۲۹");
     expect(text).not.toMatch(/[A-Za-z]{4,}/);
-    expect(noticeText("not_found", "status 404", fa, "fa")).toContain("وجود ندارد");
+    expect(noticeText("not_found", "status 404", fa, "fa")).toContain("پیدا نشد");
     expect(noticeDetail("rate_limited", "status 429")).toBeNull();
     expect(noticeDetail("filesystem_error", "filesystem error: access denied")).toContain("access denied");
   });

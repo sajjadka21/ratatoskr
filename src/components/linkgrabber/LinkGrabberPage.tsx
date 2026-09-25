@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Copy, Filter, Radar, ScanLine, Sparkles, Wand2 } from "lucide-react";
+import { Check, Copy, Filter, Radar, Wand2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 
 import type { DownloadQueue } from "../../types/download";
@@ -8,6 +8,13 @@ import { useI18n } from "../../i18n/I18n";
 import { LARGE_BATCH, batchAction, readDroppedText } from "../../utils/linkgrabber";
 
 import "./LinkGrabberPage.css";
+
+/**
+ * What was pasted survives leaving the page and coming back, for as long as
+ * the app is open. It lives only in memory and is never saved.
+ */
+let draft = "";
+let draftIntake = 0;
 
 type LinkCandidate = { url: string; host: string; extension: string | null };
 
@@ -32,8 +39,12 @@ type Props = {
 
 export function LinkGrabberPage({ queues, engineReady, submitting = false, onSubmit, intake = null }: Props) {
   const { t, fmt } = useI18n();
-  const [input, setInput] = useState(() => intake?.urls.join("\n") ?? "");
-  const [appliedIntake, setAppliedIntake] = useState(intake?.id ?? 0);
+  const [input, setInput] = useState(() => draft);
+  const [appliedIntake, setAppliedIntake] = useState(draftIntake);
+  useEffect(() => {
+    draft = input;
+    draftIntake = appliedIntake;
+  }, [input, appliedIntake]);
 
   useEffect(() => {
     if (!intake || intake.id === appliedIntake) return;
@@ -152,11 +163,9 @@ export function LinkGrabberPage({ queues, engineReady, submitting = false, onSub
   return <div className="linkgrabber-page">
     <section className="linkgrabber-page__hero">
       <div>
-        <span className="eyebrow"><ScanLine size={14} /> {t("grabber.eyebrow")}</span>
         <h2>{t("grabber.title")}</h2>
         <p>{t("grabber.hint")}</p>
       </div>
-      <div className="linkgrabber-page__hero-mark"><Sparkles size={28} /><span>{t("grabber.badge")}</span></div>
     </section>
 
     <section className="linkgrabber-page__workbench">

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FolderOpen, HardDrive, RotateCcw, Tag } from "lucide-react";
+import { FolderOpen, HardDrive, RotateCcw } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 
 import { useI18n } from "../../i18n/I18n";
@@ -54,9 +54,6 @@ export function CategoriesPage({ onError }: CategoriesPageProps) {
     <div className="categories-page">
       <header className="categories-page__intro">
         <div>
-          <span className="eyebrow">
-            <Tag size={14} /> {t("categories.eyebrow")}
-          </span>
           <h2>{t("categories.title")}</h2>
           <p>{t("categories.hint")}</p>
         </div>

@@ -56,7 +56,7 @@ var(--bg-elevated);
   display: grid;
   place-items: center;
 
-  color: #7aa9ff;
+  color: var(--accent-text);
   background: var(--accent-soft);
 
   border: 1px solid color-mix(in srgb, var(--info) 22%, transparent);
@@ -240,7 +240,7 @@ var(--bg-elevated);
 .add-download-modal__submit {
   min-width: 108px;
 
-  color: #fff;
+  color: var(--accent-ink);
   background: var(--accent);
 }
 
@@ -273,7 +273,7 @@ var(--bg-elevated);
   display: grid;
   place-items: center;
 
-  color: #fff;
+  color: var(--accent-ink);
   background: var(--accent);
 
   border-inline-start: 1px solid color-mix(in srgb, var(--text-primary) 20%, transparent);
@@ -385,7 +385,7 @@ var(--bg-elevated);
 .add-download-modal__create-queue button {
   padding: 7px 8px;
   align-items: center;
-  color: #dce8ff;
+  color: var(--text-primary);
   background: var(--accent-soft);
 }
 
@@ -444,7 +444,7 @@ var(--bg-elevated);
   display: inline-flex;
   align-items: center;
 
-  color: #aac8ff;
+  color: var(--accent-text);
   background: color-mix(in srgb, var(--info) 11%, transparent);
 
   border: 1px solid color-mix(in srgb, var(--info) 20%, transparent);

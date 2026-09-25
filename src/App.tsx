@@ -1032,6 +1032,9 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     setPage("downloads");
     setSection(next);
     clearSelection();
+    // The details panel belongs to the list it was opened from.
+    const focused = downloads.find((item) => item.id === focusedId);
+    if (!focused || !matchesSection(next, focused.status.toLowerCase())) setDetailsOpen(false);
   }
 
   function goToPage(next: WorkspacePage) {

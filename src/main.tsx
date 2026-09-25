@@ -1,6 +1,7 @@
 import { StrictMode, useCallback, useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import App from "./App";
 import { I18nProvider } from "./i18n/I18n";
@@ -17,6 +18,14 @@ function applyToDocument(preferences: UiPreferences) {
   root.dir = preferences.language === "fa" ? "rtl" : "ltr";
   root.dataset.theme = preferences.theme;
   document.title = preferences.language === "fa" ? "راتاتوسک" : "Ratatosk";
+  // The Windows title bar follows the chosen theme too.
+  try {
+    void getCurrentWindow()
+      .setTheme(preferences.theme === "system" ? null : preferences.theme)
+      .catch(() => {});
+  } catch {
+    // Outside Tauri (tests, a plain browser) there is no window to theme.
+  }
 }
 
 function Root() {

@@ -193,8 +193,8 @@
   left: 4px;
   top: 4px;
 
-  border-left: 2px solid white;
-  border-bottom: 2px solid white;
+  border-left: 2px solid #fff;
+  border-bottom: 2px solid #fff;
 
   transform: rotate(-45deg);
 }
@@ -296,7 +296,7 @@
 }
 
 .remove-history-dialog__remove {
-  color: #fff;
+  color: var(--accent-ink);
   background: var(--accent);
 }
 

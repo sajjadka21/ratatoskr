@@ -25,6 +25,7 @@ import { FileBadge } from "../common/FileBadge";
 import { Sparkline } from "../common/Sparkline";
 import { ChecksSection } from "./ChecksSection";
 import { MirrorsEditor } from "./MirrorsEditor";
+import { SpeedLimitSection } from "./SpeedLimitSection";
 
 import "./DownloadDetailsPanel.css";
 
@@ -295,6 +296,9 @@ export function DownloadDetailsPanel({
           ) : null}
         </dl>
 
+        {status !== "completed" && status !== "cancelled" ? (
+          <SpeedLimitSection downloadId={current.id} onError={onError} />
+        ) : null}
         {status !== "completed" ? <MirrorsEditor downloadId={current.id} onError={onError} /> : null}
 
         <ChecksSection downloadId={current.id} completed={status === "completed"} onError={onError} />

@@ -12,6 +12,7 @@ mod categories;
 mod checks;
 mod downloads;
 mod host_profiles;
+mod limits;
 mod mirrors;
 mod queues;
 mod request_context;
@@ -27,7 +28,7 @@ pub use backup::{
 pub use checks::DownloadChecks;
 pub use traffic::{TrafficScope, TrafficTotals};
 
-const LATEST_SCHEMA_VERSION: i32 = 12;
+const LATEST_SCHEMA_VERSION: i32 = 13;
 
 const MIGRATION_V1: &str = r#"
 BEGIN IMMEDIATE;
@@ -400,6 +401,21 @@ COMMIT;
 
 /// What was checked or done after a download finished: its checksum, a
 /// virus scan, archive extraction and the user's command.
+/// A speed limit chosen for one download, apart from the global one.
+const MIGRATION_V13: &str = r#"
+BEGIN IMMEDIATE;
+
+CREATE TABLE download_limits (
+    download_id TEXT PRIMARY KEY NOT NULL
+        REFERENCES downloads(id) ON DELETE CASCADE,
+    bytes_per_second INTEGER NOT NULL CHECK (bytes_per_second > 0)
+);
+
+PRAGMA user_version = 13;
+
+COMMIT;
+"#;
+
 const MIGRATION_V12: &str = r#"
 BEGIN IMMEDIATE;
 
@@ -683,6 +699,12 @@ fn run_migrations(connection: &Connection) -> Result<()> {
 
     if version == 11 {
         connection.execute_batch(MIGRATION_V12)?;
+    }
+
+    let version: i32 = connection.query_row("PRAGMA user_version;", [], |row| row.get(0))?;
+
+    if version == 12 {
+        connection.execute_batch(MIGRATION_V13)?;
     }
 
     Ok(())

@@ -1568,6 +1568,33 @@ fn set_default_download_directory(
 }
 
 /// Bytes per second for every download together; `None` or 0 is unlimited.
+/// One download's own speed limit in bytes per second, if it has one.
+#[tauri::command]
+fn get_download_speed_limit(state: State<'_, AppState>, id: String) -> Result<Option<u64>, String> {
+    state
+        .downloads
+        .task_speed_limit(&id)
+        .map_err(|error| error.to_string())
+}
+
+/// Sets or removes one download's own speed limit; a running transfer
+/// follows at once.
+#[tauri::command]
+fn set_download_speed_limit(
+    state: State<'_, AppState>,
+    id: String,
+    bytes_per_second: Option<u64>,
+) -> Result<Option<u64>, String> {
+    state
+        .downloads
+        .set_task_speed_limit(&id, bytes_per_second)
+        .map_err(|error| error.to_string())?;
+    state
+        .downloads
+        .task_speed_limit(&id)
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 fn set_global_speed_limit(
     app: AppHandle,
@@ -2538,6 +2565,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_app_info,
+            get_download_speed_limit,
+            set_download_speed_limit,
             health_check,
             list_downloads,
             get_add_download_input_mode,

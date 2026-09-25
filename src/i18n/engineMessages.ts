@@ -131,6 +131,10 @@ export const engineEn = {
   "details.categoryMatched": "It belongs to the “{name}” category.",
   "details.noCategory": "No rule or category matched; saved in the default folder.",
   "table.retryingNow": "Trying again…",
+  "taskLimit.title": "Speed limit for this download",
+  "taskLimit.custom": "Custom, in KB/s",
+  "taskLimit.apply": "Apply",
+  "taskLimit.hint": "Applies straight away. The overall limit in Settings still applies on top.",
 
   "checks.title": "Integrity and safety",
   "checks.hint": "Paste the checksum the site publishes (MD5, SHA-1 or SHA-256) to make sure the file arrived intact.",
@@ -303,6 +307,10 @@ export const engineFa: Record<EngineMessageKey, string> = {
   "details.categoryMatched": "در دسته‌ی «{name}» قرار می‌گیرد.",
   "details.noCategory": "هیچ قانون یا دسته‌ای جور نشد؛ در پوشه‌ی پیش‌فرض ذخیره شد.",
   "table.retryingNow": "در حال تلاش دوباره…",
+  "taskLimit.title": "سقف سرعت این دانلود",
+  "taskLimit.custom": "مقدار دلخواه به کیلوبایت بر ثانیه",
+  "taskLimit.apply": "اعمال",
+  "taskLimit.hint": "بلافاصله اعمال می‌شود. سقف سرعت کلی در تنظیمات هم همچنان برقرار است.",
 
   "checks.title": "سلامت و امنیت فایل",
   "checks.hint": "اگر سایت چک‌سام فایل را منتشر کرده (MD5، SHA-1 یا SHA-256)، آن را اینجا وارد کنید تا از سالم بودن فایل مطمئن شوید.",

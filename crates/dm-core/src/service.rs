@@ -246,6 +246,9 @@ pub struct DownloadService {
     global_limiter: Arc<RateLimiter>,
     /// Rule-derived limits of transfers running now, by task id.
     overrides: Arc<Mutex<HashMap<String, TaskOverrides>>>,
+    /// Limits the user set on single downloads, by task id. Kept while the
+    /// app runs so a change reaches a running transfer at once.
+    task_limiters: Arc<Mutex<HashMap<String, Arc<RateLimiter>>>>,
     /// Browser sessions handed over for tasks, by task id. Memory only: a
     /// session is never written to storage and is forgotten on restart.
     sessions: Arc<Mutex<HashMap<String, Arc<BrowserSession>>>>,
@@ -284,6 +287,7 @@ impl DownloadService {
             utc_offset_seconds: Arc::new(AtomicI32::new(0)),
             global_limiter: Arc::new(RateLimiter::new(global_limit)),
             overrides: Arc::new(Mutex::new(HashMap::new())),
+            task_limiters: Arc::new(Mutex::new(HashMap::new())),
             sessions: Arc::new(Mutex::new(HashMap::new())),
             post_events: tokio::sync::broadcast::channel(64).0,
             stall_timeout: crate::network::DEFAULT_STALL_TIMEOUT,
@@ -364,6 +368,42 @@ impl DownloadService {
             .set_setting(SETTING_GLOBAL_SPEED_LIMIT, &limit.unwrap_or(0).to_string())?;
         self.global_limiter.set_limit(limit);
         Ok(())
+    }
+
+    /// The limit set on one download, in bytes per second, if any.
+    pub fn task_speed_limit(&self, download_id: &str) -> Result<Option<u64>> {
+        Ok(self.storage.get_speed_limit(download_id)?)
+    }
+
+    /// Persists and applies one download's own limit; `None` removes it. A
+    /// running transfer follows the change immediately. The global limit
+    /// still applies on top.
+    pub fn set_task_speed_limit(&self, download_id: &str, limit: Option<u64>) -> Result<()> {
+        let limit = limit.filter(|value| *value > 0);
+        self.storage.set_speed_limit(download_id, limit)?;
+        if let Ok(limiters) = self.task_limiters.lock()
+            && let Some(limiter) = limiters.get(download_id)
+        {
+            limiter.set_limit(limit);
+        }
+        Ok(())
+    }
+
+    /// The limiter a transfer of this download draws from, created the first
+    /// time it is needed.
+    fn task_limiter(&self, download_id: &str) -> Result<Arc<RateLimiter>> {
+        let limit = self.storage.get_speed_limit(download_id)?;
+        let mut limiters = self
+            .task_limiters
+            .lock()
+            .map_err(|_| DownloadServiceError::ControlRegistryUnavailable)?;
+        let limiter = limiters
+            .entry(download_id.to_owned())
+            .or_insert_with(|| Arc::new(RateLimiter::new(limit)));
+        if limiter.limit() != limit {
+            limiter.set_limit(limit);
+        }
+        Ok(Arc::clone(limiter))
     }
 
     /// The folder new downloads go to when no rule or category names one.
@@ -681,7 +721,8 @@ impl DownloadService {
             .base_downloader()
             .with_context(&context)
             .with_session(self.browser_session_for(download_id))
-            .with_limiter(Arc::clone(&self.global_limiter));
+            .with_limiter(Arc::clone(&self.global_limiter))
+            .with_limiter(self.task_limiter(download_id)?);
 
         if let Some(limiter) = self
             .task_overrides(download_id)
@@ -3672,6 +3713,54 @@ mod tests {
             .await
             .unwrap();
         assert!(started.elapsed() >= Duration::from_millis(500));
+    }
+
+    #[tokio::test]
+    async fn a_download_limit_slows_only_that_download_and_changes_live() {
+        let server = TestServer::start(ServerBehaviour {
+            body: vec![3_u8; 200_000],
+            chunk_size: 4_096,
+            supports_range: false,
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+
+        let free = harness.service.create_task(&server.url("free.bin")).unwrap();
+        let started = std::time::Instant::now();
+        harness
+            .service
+            .start_task(&free.id, &harness.destination)
+            .await
+            .unwrap();
+        assert!(started.elapsed() < Duration::from_millis(600));
+
+        // 20 KB/s would take ten seconds; lifting the limit part-way lets
+        // the running transfer finish at full speed.
+        let limited = harness.service.create_task(&server.url("slow.bin")).unwrap();
+        harness
+            .service
+            .set_task_speed_limit(&limited.id, Some(20_000))
+            .unwrap();
+        assert_eq!(
+            harness.service.task_speed_limit(&limited.id).unwrap(),
+            Some(20_000)
+        );
+        let service = harness.service.clone();
+        let id = limited.id.clone();
+        let destination = harness.destination.clone();
+        let started = std::time::Instant::now();
+        let transfer = tokio::spawn(async move { service.start_task(&id, &destination).await });
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        let partway = harness.service.get_task(&limited.id).unwrap().downloaded_bytes;
+        assert!(partway < 100_000, "limited transfer ran ahead: {partway}");
+        harness
+            .service
+            .set_task_speed_limit(&limited.id, None)
+            .unwrap();
+        let record = transfer.await.unwrap().unwrap();
+        assert_eq!(record.status, DownloadStatus::Completed);
+        assert!(started.elapsed() < Duration::from_secs(4));
     }
 
     #[tokio::test]

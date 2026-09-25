@@ -31,6 +31,7 @@ import {
 } from "../../utils/settingsFormat";
 
 import { Switch } from "./Switch";
+import { UpdateSection } from "./UpdateSection";
 import { AfterDownloadSection } from "./AfterDownloadSection";
 import { BackupSection, DiagnosticsSection } from "./MaintenanceSections";
 import { EngineSection, NetworkSection, TrafficSection } from "./NetworkSections";
@@ -124,6 +125,8 @@ export function SettingsPage({
       <BackupSection onError={onError} onSaved={onSaved} />
 
       <DiagnosticsSection onError={onError} onSaved={onSaved} />
+
+      <UpdateSection onError={onError} />
 
       <div className="settings-page__section">
         <div className="settings-page__section-heading">

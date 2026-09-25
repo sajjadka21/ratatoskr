@@ -11,6 +11,7 @@ use dm_core::{
 };
 mod automation;
 mod clipboard_watch;
+mod updates;
 mod tray;
 
 use automation::Automation;
@@ -622,6 +623,39 @@ fn get_add_download_input_mode(state: State<'_, AppState>) -> Result<String, Str
         Some("clipboard") | None => Ok("clipboard".to_owned()),
         Some(_) => Ok("clipboard".to_owned()),
     }
+}
+
+/// Looks for a newer version now. `not_configured` when no release address
+/// is set up.
+#[tauri::command]
+async fn check_for_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<updates::UpdateInfo>, String> {
+    updates::check(&app, &state.storage).await
+}
+
+/// Installs the newer version and restarts into it.
+#[tauri::command]
+async fn install_update(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    updates::install(&app, &state.storage).await
+}
+
+#[tauri::command]
+fn get_auto_update_check(state: State<'_, AppState>) -> bool {
+    updates::auto_check_enabled(&state.storage)
+}
+
+#[tauri::command]
+fn set_auto_update_check(state: State<'_, AppState>, enabled: bool) -> Result<bool, String> {
+    state
+        .storage
+        .set_setting(
+            updates::SETTING_AUTO_UPDATE_CHECK,
+            if enabled { "true" } else { "false" },
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(updates::auto_check_enabled(&state.storage))
 }
 
 /// Whether copied download links bring up the Add download dialog.
@@ -2464,6 +2498,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(move |app| {
             let app_data_dir = app.path().app_data_dir()?;
@@ -2579,6 +2614,11 @@ pub fn run() {
                 destination_directory.clone(),
             ));
 
+            tauri::async_runtime::spawn(updates::run_background_checks(
+                app.handle().clone(),
+                Arc::clone(&storage),
+            ));
+
             tauri::async_runtime::spawn(clipboard_watch::run(
                 app.handle().clone(),
                 Arc::clone(&storage),
@@ -2633,6 +2673,10 @@ pub fn run() {
             get_app_info,
             get_download_speed_limit,
             get_clipboard_watch,
+            check_for_update,
+            install_update,
+            get_auto_update_check,
+            set_auto_update_check,
             set_clipboard_watch,
             get_ytdlp_status,
             set_ytdlp_path,

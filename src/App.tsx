@@ -447,6 +447,13 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     return () => void subscription.then((unlisten) => unlisten());
   }, []);
 
+  useEffect(() => {
+    const subscription = listen<{ version: string }>("update-available", ({ payload }) =>
+      reportSaved(t("update.toast", { version: payload.version })),
+    );
+    return () => void subscription.then((unlisten) => unlisten());
+  }, [reportSaved, t]);
+
   const hasPendingRetry = downloads.some((item) => item.status.toLowerCase() === "retrying" && item.retryAt !== null);
   useEffect(() => {
     if (!hasPendingRetry) return;

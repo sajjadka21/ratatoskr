@@ -28,3 +28,6 @@ dist-ssr
 node_modules/
 dist/
 /target/
+
+# The update signing key. Never commit it; keep a backup somewhere safe.
+/.signing/

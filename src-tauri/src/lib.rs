@@ -683,6 +683,12 @@ fn reveal_extension_folder(app: AppHandle) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
+/// Asks Firefox to add the signed extension package that ships with the app.
+#[tauri::command]
+fn install_firefox_extension(app: AppHandle) -> Result<(), String> {
+    browser_setup::install_in_firefox(&app)
+}
+
 #[tauri::command]
 fn open_browser_extensions_page(browser: String) -> Result<(), String> {
     browser_setup::open_extensions_page(&browser)
@@ -2709,6 +2715,7 @@ pub fn run() {
             connect_browsers,
             reveal_extension_folder,
             open_browser_extensions_page,
+            install_firefox_extension,
             check_for_update,
             install_update,
             get_auto_update_check,

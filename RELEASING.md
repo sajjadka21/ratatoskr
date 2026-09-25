@@ -48,3 +48,23 @@ app contacts nothing.
 
 Installed copies check once a day (if allowed in Settings) and offer the new
 version; nothing installs without the user choosing it.
+
+## The browser extension in the stores
+
+`node scripts/package-extension.mjs` writes
+`target/extension/ratatosk-extension-<version>.zip`, the file every store
+takes.
+
+- **Firefox (free).** At addons.mozilla.org, submit the zip as "On your own"
+  (self-distributed). Mozilla signs it, usually within minutes, and gives a
+  `.xpi` file. Save it as `src-tauri/extras/ratatosk-firefox.xpi` before
+  building: Settings then installs it in Firefox with one confirmation. A
+  listed (public) entry is free too; put its address in `STORE_PAGES.firefox`
+  in `src/components/settings/BrowserSection.tsx`.
+- **Edge (free).** Microsoft Partner Center accounts for extensions cost
+  nothing. After publishing, add the store's extension ID to
+  `STORE_EXTENSION_IDS` in `crates/dm-system/src/browser_hosts.rs` and the
+  address to `STORE_PAGES.edge`.
+- **Chrome.** The Chrome Web Store asks a one-time 5 USD registration fee.
+  Until then, Chrome users load the folder by hand (Settings opens it), or
+  use the clipboard watching, which needs no extension at all.

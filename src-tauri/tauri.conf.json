@@ -36,7 +36,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../browser-extension/": "browser-extension/"
+      "../browser-extension/": "browser-extension/",
+      "extras/": "extras/"
     }
   },
   "plugins": {

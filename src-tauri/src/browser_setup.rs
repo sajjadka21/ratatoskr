@@ -19,6 +19,9 @@ pub struct BrowserConnection {
     /// The extension folder shipped with the app, for loading it by hand.
     pub extension_folder: Option<String>,
     pub chromium_extension_id: String,
+    /// A Firefox package signed by Mozilla ships with the app, so Firefox
+    /// can install it with one confirmation.
+    pub firefox_package: bool,
 }
 
 fn manifests_folder<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
@@ -70,7 +73,24 @@ pub fn connection<R: Runtime>(app: &AppHandle<R>) -> BrowserConnection {
             .collect(),
         extension_folder: extension_folder(app).map(|folder| folder.to_string_lossy().into_owned()),
         chromium_extension_id: browser_hosts::CHROMIUM_EXTENSION_ID.to_owned(),
+        firefox_package: firefox_package(app).is_some(),
     }
+}
+
+/// The Mozilla-signed extension package, when it ships with the app
+/// (`src-tauri/extras/ratatosk-firefox.xpi`; see RELEASING.md).
+pub fn firefox_package<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
+    app.path()
+        .resolve("extras/ratatosk-firefox.xpi", BaseDirectory::Resource)
+        .ok()
+        .filter(|path| path.is_file())
+}
+
+/// Opens the signed package in Firefox, which asks once to add it.
+pub fn install_in_firefox<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    let package = firefox_package(app)
+        .ok_or_else(|| "no Firefox package ships with this build".to_owned())?;
+    launch("firefox", &package.to_string_lossy())
 }
 
 /// Opens a browser's extensions page, where the extension folder is loaded.
@@ -83,13 +103,19 @@ pub fn open_extensions_page(browser: &str) -> Result<(), String> {
         "firefox" => ("firefox", "about:debugging#/runtime/this-firefox"),
         _ => return Err("unknown browser".to_owned()),
     };
+    launch(program, page)
+}
+
+/// Starts a browser program with one argument. Only fixed browser names
+/// reach here.
+fn launch(program: &str, argument: &str) -> Result<(), String> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         // `start` finds the browser through Windows' App Paths registration.
         std::process::Command::new("cmd")
-            .args(["/C", "start", "", program, page])
+            .args(["/C", "start", "", program, argument])
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .map(|_| ())
@@ -98,7 +124,7 @@ pub fn open_extensions_page(browser: &str) -> Result<(), String> {
     #[cfg(not(windows))]
     {
         std::process::Command::new(program)
-            .arg(page)
+            .arg(argument)
             .spawn()
             .map(|_| ())
             .map_err(|error| error.to_string())

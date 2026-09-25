@@ -19,6 +19,9 @@ use std::{
 pub const HOST_NAME: &str = "com.download_manager.native";
 /// The extension's ID in Chrome, Edge, Brave and other Chromium browsers.
 pub const CHROMIUM_EXTENSION_ID: &str = "ocefplbhcgfmihahfkaknodbdidflhle";
+/// IDs the stores give the published extension (a store assigns its own).
+/// Add each one here once the extension is published there.
+pub const STORE_EXTENSION_IDS: &[&str] = &[];
 /// The extension's ID in Firefox.
 pub const FIREFOX_EXTENSION_ID: &str = "browser@ratatosk.app";
 
@@ -78,8 +81,12 @@ pub fn manifest(host: &Path, firefox: bool) -> serde_json::Value {
     if firefox {
         manifest["allowed_extensions"] = json!([FIREFOX_EXTENSION_ID]);
     } else {
-        manifest["allowed_origins"] =
-            json!([format!("chrome-extension://{CHROMIUM_EXTENSION_ID}/")]);
+        manifest["allowed_origins"] = json!(
+            std::iter::once(CHROMIUM_EXTENSION_ID)
+                .chain(STORE_EXTENSION_IDS.iter().copied())
+                .map(|id| format!("chrome-extension://{id}/"))
+                .collect::<Vec<_>>()
+        );
     }
     manifest
 }

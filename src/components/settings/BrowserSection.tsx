@@ -10,6 +10,7 @@ type BrowserConnection = {
   registered: string[];
   extensionFolder: string | null;
   chromiumExtensionId: string;
+  firefoxPackage: boolean;
 };
 
 /**
@@ -142,11 +143,17 @@ export function BrowserSection({ onError }: { onError: (message: string) => void
         <div className="settings-page__row">
           <div className="settings-page__row-label">
             <strong>Firefox</strong>
-            <span>{STORE_PAGES.firefox ? t("browser.storeHint") : t("browser.firefoxHint")}</span>
+            <span>
+              {STORE_PAGES.firefox || connection.firefoxPackage ? t("browser.firefoxReady") : t("browser.firefoxHint")}
+            </span>
           </div>
           <div className="settings-page__row-control">
             <span className="settings-page__button-row">
-              {STORE_PAGES.firefox ? (
+              {connection.firefoxPackage ? (
+                <button type="button" className="settings-page__primary-button" onClick={() => void run("install_firefox_extension")}>
+                  <ExternalLink size={14} /> {t("browser.addTo", { browser: "Firefox" })}
+                </button>
+              ) : STORE_PAGES.firefox ? (
                 <button type="button" className="settings-page__primary-button" onClick={() => void openUrl(STORE_PAGES.firefox!)}>
                   <ExternalLink size={14} /> {t("browser.addTo", { browser: "Firefox" })}
                 </button>

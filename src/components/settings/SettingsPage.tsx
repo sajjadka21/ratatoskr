@@ -153,6 +153,7 @@ export function SettingsPage({
           <div className="settings-page__hint">
             {t("settings.inputHint")}
           </div>
+          <ClipboardWatchRow onError={onError} />
           {error ? <div className="settings-page__error">{error}</div> : null}
         </div>
       </div>
@@ -1043,6 +1044,51 @@ function RulesSection({
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** Whether a download link copied anywhere opens the Add download dialog. */
+function ClipboardWatchRow({ onError }: { onError: (message: string) => void }) {
+  const { t } = useI18n();
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    invoke<boolean>("get_clipboard_watch")
+      .then((value) => {
+        if (!cancelled) setEnabled(value);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (enabled === null) return null;
+
+  return (
+    <div className="settings-page__row settings-page__row--divided">
+      <div className="settings-page__row-label">
+        <strong>{t("settings.clipboardWatch")}</strong>
+        <span>{t("settings.clipboardWatchHint")}</span>
+      </div>
+      <div className="settings-page__row-control">
+        <Switch
+          id="clipboard-watch"
+          checked={enabled}
+          label={t("settings.clipboardWatch")}
+          onChange={(next) => {
+            setEnabled(next);
+            invoke<boolean>("set_clipboard_watch", { enabled: next })
+              .then(setEnabled)
+              .catch((reason) => {
+                setEnabled(!next);
+                onError(String(reason));
+              });
+          }}
+        />
+      </div>
     </div>
   );
 }

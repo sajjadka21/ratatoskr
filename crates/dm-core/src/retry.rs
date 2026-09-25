@@ -42,7 +42,9 @@ pub fn classify_failure(error: &DownloadError) -> FailureClass {
         DownloadError::Io(error) => classify_io(error.kind()),
 
         // What the stream is does not change on a second attempt.
-        DownloadError::YtDlp { temporary: true, .. } => FailureClass::Retryable,
+        DownloadError::YtDlp {
+            temporary: true, ..
+        } => FailureClass::Retryable,
         DownloadError::YtDlp { .. } | DownloadError::NeedsYtDlp => FailureClass::Permanent,
 
         DownloadError::Stream(_) | DownloadError::TooLarge { .. } | DownloadError::Ffmpeg(_) => {

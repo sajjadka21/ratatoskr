@@ -57,7 +57,9 @@ mod tests {
     fn a_download_keeps_its_own_limit_until_removed() {
         let directory = tempdir().unwrap();
         let storage = Storage::open(directory.path().join("downloads.db")).unwrap();
-        let task = storage.create_download("https://example.com/a.iso", 1).unwrap();
+        let task = storage
+            .create_download("https://example.com/a.iso", 1)
+            .unwrap();
 
         assert_eq!(storage.get_speed_limit(&task.id).unwrap(), None);
         storage.set_speed_limit(&task.id, Some(500_000)).unwrap();

@@ -10,6 +10,7 @@ use dm_core::{
     CoreService, TransferProgress,
 };
 mod automation;
+mod clipboard_watch;
 mod tray;
 
 use automation::Automation;
@@ -621,6 +622,24 @@ fn get_add_download_input_mode(state: State<'_, AppState>) -> Result<String, Str
         Some("clipboard") | None => Ok("clipboard".to_owned()),
         Some(_) => Ok("clipboard".to_owned()),
     }
+}
+
+/// Whether copied download links bring up the Add download dialog.
+#[tauri::command]
+fn get_clipboard_watch(state: State<'_, AppState>) -> bool {
+    clipboard_watch::enabled(&state.storage)
+}
+
+#[tauri::command]
+fn set_clipboard_watch(state: State<'_, AppState>, enabled: bool) -> Result<bool, String> {
+    state
+        .storage
+        .set_setting(
+            clipboard_watch::SETTING_CLIPBOARD_WATCH,
+            if enabled { "true" } else { "false" },
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(clipboard_watch::enabled(&state.storage))
 }
 
 #[tauri::command]
@@ -2554,6 +2573,11 @@ pub fn run() {
                 destination_directory.clone(),
             ));
 
+            tauri::async_runtime::spawn(clipboard_watch::run(
+                app.handle().clone(),
+                Arc::clone(&storage),
+            ));
+
             tauri::async_runtime::spawn(run_queue_scheduler(
                 app.handle().clone(),
                 Arc::clone(&storage),
@@ -2602,6 +2626,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_app_info,
             get_download_speed_limit,
+            get_clipboard_watch,
+            set_clipboard_watch,
             get_ytdlp_status,
             set_ytdlp_path,
             set_download_speed_limit,

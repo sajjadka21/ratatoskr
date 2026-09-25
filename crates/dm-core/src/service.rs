@@ -1774,7 +1774,8 @@ impl DownloadService {
             last_modified: None,
             range_supported: true,
         };
-        self.storage.set_transfer_plan(&task.id, &plan(&filename, None))?;
+        self.storage
+            .set_transfer_plan(&task.id, &plan(&filename, None))?;
 
         let scope = self.traffic_scope_of(&task.source_url);
         self.ensure_quota_allows(scope)?;
@@ -3946,7 +3947,10 @@ mod tests {
         .await;
         let harness = harness();
 
-        let free = harness.service.create_task(&server.url("free.bin")).unwrap();
+        let free = harness
+            .service
+            .create_task(&server.url("free.bin"))
+            .unwrap();
         let started = std::time::Instant::now();
         harness
             .service
@@ -3957,7 +3961,10 @@ mod tests {
 
         // 20 KB/s would take ten seconds; lifting the limit part-way lets
         // the running transfer finish at full speed.
-        let limited = harness.service.create_task(&server.url("slow.bin")).unwrap();
+        let limited = harness
+            .service
+            .create_task(&server.url("slow.bin"))
+            .unwrap();
         harness
             .service
             .set_task_speed_limit(&limited.id, Some(20_000))
@@ -3972,7 +3979,11 @@ mod tests {
         let started = std::time::Instant::now();
         let transfer = tokio::spawn(async move { service.start_task(&id, &destination).await });
         tokio::time::sleep(Duration::from_millis(700)).await;
-        let partway = harness.service.get_task(&limited.id).unwrap().downloaded_bytes;
+        let partway = harness
+            .service
+            .get_task(&limited.id)
+            .unwrap()
+            .downloaded_bytes;
         assert!(partway < 100_000, "limited transfer ran ahead: {partway}");
         harness
             .service
@@ -5996,15 +6007,9 @@ mkdir -p \"$w\"
         )
         .unwrap();
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-        harness
-            .service
-            .set_ytdlp_path(Some(&script))
-            .unwrap();
+        harness.service.set_ytdlp_path(Some(&script)).unwrap();
 
-        let task = harness
-            .service
-            .create_task("https://youtu.be/abc")
-            .unwrap();
+        let task = harness.service.create_task("https://youtu.be/abc").unwrap();
         let record = harness
             .service
             .start_task(&task.id, &harness.destination)

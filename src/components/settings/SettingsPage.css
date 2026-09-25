@@ -1087,3 +1087,9 @@
   line-height: 1.55;
   resize: vertical;
 }
+
+.settings-page__row--divided {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+}

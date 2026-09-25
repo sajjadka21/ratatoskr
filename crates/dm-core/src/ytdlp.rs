@@ -9,6 +9,7 @@
 //! removes that folder only.
 
 use crate::control::TaskControl;
+use reqwest::Url;
 use std::{
     env,
     path::{Path, PathBuf},
@@ -19,7 +20,6 @@ use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, BufReader},
     process::Command,
 };
-use reqwest::Url;
 
 /// Marks the lines this application asked yt-dlp to print.
 const PROGRESS_TAG: &str = "RATATOSK|";
@@ -501,7 +501,10 @@ mod tests {
             .into_iter()
             .map(|value| value.to_string_lossy().into_owned())
             .collect();
-        let proxy = arguments.iter().position(|value| value == "--proxy").unwrap();
+        let proxy = arguments
+            .iter()
+            .position(|value| value == "--proxy")
+            .unwrap();
         assert_eq!(arguments[proxy + 1], "");
         assert!(!arguments.iter().any(|value| value == "--limit-rate"));
         assert!(!arguments.iter().any(|value| value == "--ffmpeg-location"));

@@ -64,6 +64,7 @@ type DownloadTaskEvent = {
 
 const DOWNLOAD_TASK_EVENT = "download-task-event";
 const LINK_INTAKE_EVENT = "link-intake";
+const CLIPBOARD_LINKS_EVENT = "clipboard-links";
 const COMPLETION_ACTION_EVENT = "completion-action";
 
 /// Statuses a late progress event may move to "downloading". A progress event
@@ -425,6 +426,24 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     }
     void collectIntake();
     const subscription = listen(LINK_INTAKE_EVENT, () => void collectIntake());
+    return () => void subscription.then((unlisten) => unlisten());
+  }, []);
+
+  // A download link copied anywhere opens the Add dialog with it filled in;
+  // links copied while the dialog is open are added to what it holds.
+  const modalOpenRef = useRef(false);
+  modalOpenRef.current = modalOpen;
+  useEffect(() => {
+    const subscription = listen<string[]>(CLIPBOARD_LINKS_EVENT, ({ payload }) => {
+      if (!payload.length) return;
+      if (modalOpenRef.current) {
+        setUrl((current) => [...new Set([...extractHttpUrls(current), ...payload])].join("\n"));
+        return;
+      }
+      setAddError(null);
+      setUrl(payload.join("\n"));
+      setModalOpen(true);
+    });
     return () => void subscription.then((unlisten) => unlisten());
   }, []);
 

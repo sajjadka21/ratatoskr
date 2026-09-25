@@ -70,6 +70,47 @@ pub fn candidate_for(value: &str) -> Option<LinkCandidate> {
     })
 }
 
+/// File types that are worth offering as a download when a link to one is
+/// copied. Web pages, scripts and images embedded in pages are left alone.
+const DOWNLOAD_EXTENSIONS: &[&str] = &[
+    "zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "zst", "exe", "msi", "msix", "appx",
+    "apk", "dmg", "pkg", "deb", "rpm", "appimage", "iso", "img", "vhd", "vhdx", "mp4", "mkv",
+    "webm", "mov", "avi", "wmv", "flv", "m4v", "ts", "mp3", "m4a", "aac", "flac", "wav", "ogg",
+    "opus", "wma", "pdf", "epub", "djvu", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "torrent",
+    "bin", "part1", "001",
+];
+
+/// Most copied text looked at; anything longer is not a link someone copied.
+const MAX_WATCHED_TEXT: usize = 64 * 1024;
+/// Most links offered from one copy.
+const MAX_WATCHED_LINKS: usize = 50;
+
+/// The links in copied text that look like downloads: files of a known type,
+/// or video pages yt-dlp can read. Used by the clipboard watcher, so it
+/// stays quiet for ordinary web pages.
+pub fn downloadable_links(text: &str) -> Vec<String> {
+    if text.len() > MAX_WATCHED_TEXT {
+        return Vec::new();
+    }
+    extract_links(text)
+        .into_iter()
+        .filter(|link| {
+            crate::ytdlp::handles(&link.url)
+                || link
+                    .extension
+                    .as_deref()
+                    .is_some_and(|extension| DOWNLOAD_EXTENSIONS.contains(&extension))
+                || link.extension.as_deref().is_some_and(|extension| {
+                    extension.starts_with('r')
+                        && extension[1..].chars().all(|c| c.is_ascii_digit())
+                        && extension.len() == 3
+                })
+        })
+        .map(|link| link.url)
+        .take(MAX_WATCHED_LINKS)
+        .collect()
+}
+
 /// Expands a pattern into validated links, keeping the pattern's order so a
 /// numbered series stays numbered.
 pub fn generate_links(pattern: &str) -> Result<Vec<LinkCandidate>, PatternError> {
@@ -312,6 +353,22 @@ fn unreachable(url: String, error: String) -> LinkProbe {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_download_links_are_offered_from_the_clipboard() {
+        let copied = "see https://example.com/about.html and https://cdn.example.com/setup.exe, \
+            https://files.example.org/part.r01 https://youtu.be/abc https://example.com/blog/post";
+        assert_eq!(
+            downloadable_links(copied),
+            vec![
+                "https://cdn.example.com/setup.exe",
+                "https://files.example.org/part.r01",
+                "https://youtu.be/abc",
+            ]
+        );
+        assert!(downloadable_links("just words").is_empty());
+        assert!(downloadable_links(&"x".repeat(70 * 1024)).is_empty());
+    }
     use crate::testing::{DEFAULT_BODY, ServerBehaviour, TestServer};
 
     #[test]

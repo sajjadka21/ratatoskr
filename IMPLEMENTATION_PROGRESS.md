@@ -1506,3 +1506,15 @@ the local network (a NAS, a router), went through the proxy.
   build, `cargo fmt`, clippy and `cargo test --workspace --no-fail-fast` all
   passed - 343 Rust tests, including the Windows-only ones in dm-system and
   the native-messaging integration tests.
+
+## Step 11: fixes from hands-on testing on Windows
+
+Tested the running app by hand (real downloads from proof.ovh.net through the system proxy, pause/resume, LinkGrabber, statistics, settings, database check, connection test, diagnostics report, both languages and themes). Fixed what came up:
+
+- Network and server failures now carry specific codes (`rate_limited`, `server_busy`, `server_error`, `not_found`, `access_denied`, `http_refused`, `network_error`), also when the HTTP client rather than the engine saw the status. Every engine code has a Persian and English notice, so the Persian interface no longer shows English error sentences; the engine's wording stays as a small detail line where it adds something.
+- The failure heading in the details panel no longer shows the raw code.
+- The retry scheduler publishes the task as soon as it claims a retry, so the old error and "retrying" state do not linger while the download is running again.
+- A 429 or 503 without `Retry-After` waits at least 30 seconds before the next attempt.
+- The retry countdown says "trying again…" instead of "in 0 seconds".
+- "Why it went here" is built from structured data (rule name / category) and shown in the interface language, with built-in category names translated.
+- The sidebar's "downloaded today" uses today's traffic, the same figure as the traffic chip and Statistics.

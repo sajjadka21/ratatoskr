@@ -1869,7 +1869,8 @@ impl DownloadService {
         let mut last = 0_u64;
         let mut counted = 0_u64;
         let mut last_saved = Instant::now();
-        let mut named = task.filename.is_some();
+        // The name taken from the link ("watch") is replaced by the title.
+        let mut named = false;
         let task_id = task.id.clone();
         let storage = Arc::clone(&self.storage);
         let result = ytdlp

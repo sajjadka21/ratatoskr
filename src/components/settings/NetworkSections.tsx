@@ -466,6 +466,7 @@ export function EngineSection({
   const [draft, setDraft] = useState<EngineSettings | null>(null);
   const [ffmpeg, setFfmpeg] = useState<FfmpegStatus | null>(null);
   const [ytdlp, setYtdlp] = useState<FfmpegStatus | null>(null);
+  const [ytdlpBusy, setYtdlpBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -530,6 +531,18 @@ export function EngineSection({
       }
     } catch (reason) {
       onError(String(reason));
+    }
+  }
+
+  async function updateYtdlp() {
+    setYtdlpBusy(true);
+    try {
+      setYtdlp(await invoke<FfmpegStatus>("update_ytdlp"));
+      onSaved(t("ytdlp.updated"));
+    } catch (reason) {
+      onError(t("ytdlp.updateFailed", { reason: String(reason) }));
+    } finally {
+      setYtdlpBusy(false);
     }
   }
 
@@ -637,14 +650,24 @@ export function EngineSection({
             <span className={`settings-page__ffmpeg ${ytdlp?.foundPath ? "settings-page__ffmpeg--found" : ""}`}>
               <MonitorPlay size={14} aria-hidden="true" />
               {ytdlp?.foundPath ? (
-                <span title={ytdlp.version ?? undefined}>
-                  {t("ffmpeg.found")} <bdi className="ltr">{ytdlp.foundPath}</bdi>
+                <span title={ytdlp.foundPath}>
+                  {t("ytdlp.ready", { version: ytdlp.version ?? "?" })}
                 </span>
               ) : (
                 <span>{t("ffmpeg.missing")}</span>
               )}
             </span>
             <span className="settings-page__button-row">
+              {!ytdlp?.configuredPath ? (
+                <button
+                  type="button"
+                  className="settings-page__secondary-button"
+                  disabled={ytdlpBusy}
+                  onClick={() => void updateYtdlp()}
+                >
+                  <RotateCcw size={14} /> {ytdlpBusy ? t("ytdlp.working") : ytdlp?.foundPath ? t("ytdlp.update") : t("ytdlp.install")}
+                </button>
+              ) : null}
               <button type="button" className="settings-page__secondary-button" onClick={() => void chooseYtdlp()}>
                 <FolderOpen size={14} /> {t("ffmpeg.choose")}
               </button>

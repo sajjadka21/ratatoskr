@@ -18,6 +18,7 @@ set "TAURI_SIGNING_PRIVATE_KEY_PATH=%CD%\.signing\ratatosk-updater.key"
 set "TAURI_SIGNING_PRIVATE_KEY_PASSWORD="
 
 call npm install || exit /b 1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\fetch-ytdlp.ps1 || exit /b 1
 call npx tauri build --config src-tauri\tauri.release.json || exit /b 1
 call node scripts\make-latest-json.mjs "%~1" || exit /b 1
 

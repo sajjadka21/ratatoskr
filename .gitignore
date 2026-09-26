@@ -31,3 +31,6 @@ dist/
 
 # The update signing key. Never commit it; keep a backup somewhere safe.
 /.signing/
+
+# Helper programs fetched at release time (scripts/fetch-ytdlp.ps1).
+/src-tauri/extras/*.exe

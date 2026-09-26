@@ -251,6 +251,8 @@ pub struct DownloadService {
     /// Limits the user set on single downloads, by task id. Kept while the
     /// app runs so a change reaches a running transfer at once.
     task_limiters: Arc<Mutex<HashMap<String, Arc<RateLimiter>>>>,
+    /// Folders searched for helper programs (yt-dlp) before `PATH`.
+    tool_dirs: Arc<RwLock<Vec<PathBuf>>>,
     /// Browser sessions handed over for tasks, by task id. Memory only: a
     /// session is never written to storage and is forgotten on restart.
     sessions: Arc<Mutex<HashMap<String, Arc<BrowserSession>>>>,
@@ -290,6 +292,7 @@ impl DownloadService {
             global_limiter: Arc::new(RateLimiter::new(global_limit)),
             overrides: Arc::new(Mutex::new(HashMap::new())),
             task_limiters: Arc::new(Mutex::new(HashMap::new())),
+            tool_dirs: Arc::new(RwLock::new(Vec::new())),
             sessions: Arc::new(Mutex::new(HashMap::new())),
             post_events: tokio::sync::broadcast::channel(64).0,
             stall_timeout: crate::network::DEFAULT_STALL_TIMEOUT,
@@ -1701,7 +1704,63 @@ impl DownloadService {
 
     /// yt-dlp, from Settings or found next to the application or on `PATH`.
     pub fn ytdlp(&self) -> Option<crate::ytdlp::YtDlp> {
-        crate::ytdlp::YtDlp::locate(self.ytdlp_path_setting().map(PathBuf::from).as_deref())
+        let dirs = self
+            .tool_dirs
+            .read()
+            .map(|dirs| dirs.clone())
+            .unwrap_or_default();
+        crate::ytdlp::YtDlp::locate(
+            self.ytdlp_path_setting().map(PathBuf::from).as_deref(),
+            &dirs,
+        )
+    }
+
+    /// Folders searched for helper programs before `PATH`: the app's own
+    /// kept-up-to-date copies first, then the ones shipped with it.
+    pub fn set_tool_dirs(&self, dirs: Vec<PathBuf>) {
+        if let Ok(mut current) = self.tool_dirs.write() {
+            *current = dirs;
+        }
+    }
+
+    /// How helper programs such as yt-dlp reach `url`, following the
+    /// network setting.
+    pub fn tool_proxy_for(&self, url: &str) -> crate::ytdlp::ProxyChoice {
+        use crate::ytdlp::ProxyChoice;
+        let network = self.network_settings();
+        let host = normalized_host(url).unwrap_or_default();
+        match network.mode {
+            _ if network.goes_direct(&host) => ProxyChoice::Direct,
+            crate::network::ProxyMode::Off => ProxyChoice::Direct,
+            crate::network::ProxyMode::System => ProxyChoice::System,
+            crate::network::ProxyMode::Pac => network
+                .pac_url
+                .as_deref()
+                .map(crate::pac::PacResolver::new)
+                .zip(reqwest::Url::parse(url).ok())
+                .and_then(|(resolver, url)| resolver.answer_for(&url))
+                .map_or(ProxyChoice::System, |answer| match answer {
+                    crate::pac::PacAnswer::Direct => ProxyChoice::Direct,
+                    crate::pac::PacAnswer::Proxy(proxy) => ProxyChoice::Url(proxy),
+                }),
+            crate::network::ProxyMode::Manual => network
+                .proxy_url
+                .clone()
+                .map_or(ProxyChoice::System, ProxyChoice::Url),
+        }
+    }
+
+    /// Installs the latest official yt-dlp into `target` through the
+    /// app's own network route (checksum verified).
+    pub async fn install_ytdlp(&self, target: &Path) -> Result<()> {
+        crate::ytdlp::install_latest(&self.base_downloader(), target)
+            .await
+            .map_err(|error| {
+                DownloadServiceError::Download(DownloadError::YtDlp {
+                    message: error.to_string(),
+                    temporary: true,
+                })
+            })
     }
 
     pub fn ytdlp_path_setting(&self) -> Option<String> {
@@ -1741,7 +1800,7 @@ impl DownloadService {
     where
         F: FnMut(&str, TransferProgress) + Send,
     {
-        use crate::ytdlp::{ProxyChoice, YtDlpError, YtDlpRequest};
+        use crate::ytdlp::{YtDlpError, YtDlpRequest};
 
         let ytdlp = self.ytdlp().ok_or(DownloadError::NeedsYtDlp)?;
         let decision = evaluate_rules(
@@ -1782,29 +1841,7 @@ impl DownloadService {
         self.storage
             .mark_downloading(&task.id, unix_timestamp_seconds()?)?;
 
-        let network = self.network_settings();
-        let host = normalized_host(&task.source_url).unwrap_or_default();
-        let proxy = match network.mode {
-            _ if network.goes_direct(&host) => ProxyChoice::Direct,
-            crate::network::ProxyMode::Off => ProxyChoice::Direct,
-            crate::network::ProxyMode::System => ProxyChoice::System,
-            // yt-dlp cannot run a setup script; it gets the script's answer
-            // for the page when one is available.
-            crate::network::ProxyMode::Pac => network
-                .pac_url
-                .as_deref()
-                .map(crate::pac::PacResolver::new)
-                .zip(reqwest::Url::parse(&task.source_url).ok())
-                .and_then(|(resolver, url)| resolver.answer_for(&url))
-                .map_or(ProxyChoice::System, |answer| match answer {
-                    crate::pac::PacAnswer::Direct => ProxyChoice::Direct,
-                    crate::pac::PacAnswer::Proxy(proxy) => ProxyChoice::Url(proxy),
-                }),
-            crate::network::ProxyMode::Manual => network
-                .proxy_url
-                .clone()
-                .map_or(ProxyChoice::System, ProxyChoice::Url),
-        };
+        let proxy = self.tool_proxy_for(&task.source_url);
         // yt-dlp takes one fixed rate: the tightest limit at the start.
         let rate_limit = [
             self.global_limiter.limit(),

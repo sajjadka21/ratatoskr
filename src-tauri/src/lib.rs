@@ -12,6 +12,7 @@ use dm_core::{
 mod automation;
 mod browser_setup;
 mod clipboard_watch;
+mod tools;
 mod tray;
 mod updates;
 
@@ -1216,6 +1217,16 @@ async fn ytdlp_status(state: &AppState) -> FfmpegStatusResponse {
 /// Where yt-dlp is and which version, for Settings.
 #[tauri::command]
 async fn get_ytdlp_status(state: State<'_, AppState>) -> Result<FfmpegStatusResponse, String> {
+    Ok(ytdlp_status(&state).await)
+}
+
+/// Installs yt-dlp if it is missing, or updates the app's own copy.
+#[tauri::command]
+async fn update_ytdlp(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<FfmpegStatusResponse, String> {
+    tools::ensure_ytdlp(&app, &state.downloads, true).await?;
     Ok(ytdlp_status(&state).await)
 }
 
@@ -2652,6 +2663,13 @@ pub fn run() {
 
             browser_setup::register_quietly(app.handle());
 
+            tools::configure(app.handle(), &downloads);
+            tauri::async_runtime::spawn(tools::run_maintenance(
+                app.handle().clone(),
+                downloads.clone(),
+                Arc::clone(&storage),
+            ));
+
             tauri::async_runtime::spawn(updates::run_background_checks(
                 app.handle().clone(),
                 Arc::clone(&storage),
@@ -2723,6 +2741,7 @@ pub fn run() {
             set_clipboard_watch,
             get_ytdlp_status,
             set_ytdlp_path,
+            update_ytdlp,
             set_download_speed_limit,
             health_check,
             list_downloads,

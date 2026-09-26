@@ -1562,3 +1562,21 @@ Tested the running app by hand (real downloads from proof.ovh.net through the sy
   → Browser extension shows the state and opens the folder and each
   browser's extensions page. Store addresses go in `STORE_PAGES` once
   published.
+
+## Step 13: yt-dlp ships with Ratatosk
+
+- The installer carries `yt-dlp.exe` (`scripts/fetch-ytdlp.ps1`, run by
+  `release.cmd`, downloads the official release and checks its published
+  SHA-256). On first start the app copies it into its data folder
+  (`tools/`), where it can update itself; a daily `yt-dlp -U` runs when
+  automatic updates are on, through the app's proxy route.
+- Without a shipped copy (development builds), the app downloads the latest
+  official yt-dlp once through its own network route and keeps it only if
+  the checksum matches.
+- Search order: the path chosen in Settings, the app's own copy, the shipped
+  copy, next to the app, `PATH`. A path the user chose is never replaced.
+- Settings shows the version, with Install / Update now.
+- Also: a command's answer no longer overwrites a newer row from an engine
+  event (a download that failed at once stayed "Checking link"); `.dat`
+  links count as downloads for clipboard watching; `check-all.cmd` no longer
+  uses `RC` as a variable (it is the resource compiler's path).

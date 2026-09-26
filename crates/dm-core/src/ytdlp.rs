@@ -184,28 +184,55 @@ impl YtDlp {
         Self { path: path.into() }
     }
 
-    /// yt-dlp as configured, or found next to the application or on `PATH`.
-    pub fn locate(configured: Option<&Path>) -> Option<Self> {
+    /// yt-dlp as configured, or else the first found in `tool_dirs` (the
+    /// app's own kept-up-to-date copy, then the one shipped with it), next to
+    /// the application, or on `PATH`.
+    pub fn locate(configured: Option<&Path>, tool_dirs: &[PathBuf]) -> Option<Self> {
         if let Some(path) = configured {
             return path.is_file().then(|| Self::new(path));
         }
-        let names: &[&str] = if cfg!(windows) {
-            &["yt-dlp.exe"]
-        } else {
-            &["yt-dlp"]
-        };
         let beside_app = env::current_exe()
             .ok()
             .and_then(|exe| exe.parent().map(Path::to_path_buf));
         let on_path = env::var_os("PATH")
             .map(|paths| env::split_paths(&paths).collect::<Vec<_>>())
             .unwrap_or_default();
-        beside_app
-            .into_iter()
+        tool_dirs
+            .iter()
+            .cloned()
+            .chain(beside_app)
             .chain(on_path)
-            .flat_map(|directory| names.iter().map(move |name| directory.join(name)))
+            .map(|directory| directory.join(program_name()))
             .find(|candidate| candidate.is_file())
             .map(Self::new)
+    }
+
+    /// Updates this copy in place with yt-dlp's own updater (`-U`), which
+    /// verifies what it downloads. Returns the version afterwards.
+    pub async fn self_update(&self, proxy: &ProxyChoice) -> Result<Option<String>, YtDlpError> {
+        let mut command = self.command();
+        command.arg("-U");
+        match proxy {
+            ProxyChoice::System => {}
+            ProxyChoice::Direct => {
+                command.args(["--proxy", ""]);
+            }
+            ProxyChoice::Url(url) => {
+                command.args(["--proxy", url]);
+            }
+        }
+        let output = command
+            .stdin(Stdio::null())
+            .output()
+            .await
+            .map_err(|error| YtDlpError::Start(error.to_string()))?;
+        if !output.status.success() {
+            return Err(YtDlpError::Failed(error_summary(
+                &String::from_utf8_lossy(&output.stderr),
+                output.status,
+            )));
+        }
+        Ok(self.version().await)
     }
 
     pub fn path(&self) -> &Path {
@@ -371,6 +398,89 @@ impl YtDlp {
         }
         command
     }
+}
+
+/// The program's file name on this system.
+pub const fn program_name() -> &'static str {
+    if cfg!(windows) {
+        "yt-dlp.exe"
+    } else {
+        "yt-dlp"
+    }
+}
+
+/// Where yt-dlp's official releases are published.
+pub const RELEASE_BASE: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download";
+/// yt-dlp is about 18 MB; anything much larger is not it.
+const MAX_PROGRAM_BYTES: usize = 64 * 1024 * 1024;
+
+/// The SHA-256 the release lists for `asset` in its `SHA2-256SUMS` file.
+pub fn listed_checksum(sums: &str, asset: &str) -> Option<String> {
+    sums.lines().find_map(|line| {
+        let (hash, name) = line.trim().split_once(char::is_whitespace)?;
+        let name = name.trim().trim_start_matches('*');
+        (name == asset && hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit()))
+            .then(|| hash.to_ascii_lowercase())
+    })
+}
+
+/// Downloads the latest official yt-dlp to `target`, through the app's own
+/// network route, and keeps it only if it matches the checksum the release
+/// publishes.
+pub async fn install_latest(
+    downloader: &crate::Downloader,
+    target: &Path,
+) -> Result<(), YtDlpError> {
+    use sha2::{Digest, Sha256};
+    let control = TaskControl::new();
+    let failed = |error: crate::DownloadError| YtDlpError::Failed(error.redacted_message());
+    let sums = downloader
+        .fetch_bytes(
+            &format!("{RELEASE_BASE}/SHA2-256SUMS"),
+            None,
+            64 * 1024,
+            &control,
+        )
+        .await
+        .map_err(failed)?;
+    let expected = listed_checksum(&String::from_utf8_lossy(&sums), program_name())
+        .ok_or_else(|| YtDlpError::Failed("the release lists no checksum for yt-dlp".to_owned()))?;
+    let program = downloader
+        .fetch_bytes(
+            &format!("{RELEASE_BASE}/{}", program_name()),
+            None,
+            MAX_PROGRAM_BYTES,
+            &control,
+        )
+        .await
+        .map_err(failed)?;
+    let actual = format!("{:x}", Sha256::digest(&program));
+    if actual != expected {
+        return Err(YtDlpError::Failed(
+            "the downloaded yt-dlp does not match its published checksum".to_owned(),
+        ));
+    }
+    write_program(target, &program)
+        .await
+        .map_err(|error| YtDlpError::Start(error.to_string()))
+}
+
+/// Puts a program in place without ever leaving a half-written one.
+pub async fn write_program(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    if let Some(parent) = target.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    let mut partial = target.as_os_str().to_owned();
+    partial.push(".partial");
+    let partial = PathBuf::from(partial);
+    tokio::fs::write(&partial, bytes).await?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        tokio::fs::set_permissions(&partial, std::fs::Permissions::from_mode(0o755)).await?;
+    }
+    let _ = tokio::fs::remove_file(target).await;
+    tokio::fs::rename(&partial, target).await
 }
 
 fn parse_line(line: &str) -> Option<Line> {
@@ -557,6 +667,51 @@ mod tests {
         let permanent = YtDlpError::Failed("ERROR: [youtube] x: Private video".into());
         assert!(!permanent.is_temporary());
         assert!(!YtDlpError::NoFile.is_temporary());
+    }
+
+    #[test]
+    fn the_published_checksum_is_found_for_the_program() {
+        let hash = "a".repeat(64);
+        let sums = format!(
+            "{} yt-dlp\n{}  yt-dlp.exe\n{} *yt-dlp_macos\n",
+            "b".repeat(64),
+            hash,
+            "c".repeat(64)
+        );
+        assert_eq!(listed_checksum(&sums, "yt-dlp.exe"), Some(hash));
+        assert_eq!(listed_checksum(&sums, "yt-dlp_macos"), Some("c".repeat(64)));
+        assert_eq!(listed_checksum(&sums, "yt-dlp_x86.exe"), None);
+        assert_eq!(listed_checksum("short yt-dlp.exe", "yt-dlp.exe"), None);
+    }
+
+    #[test]
+    fn a_tool_folder_comes_before_the_path() {
+        let directory = tempdir().unwrap();
+        std::fs::write(directory.path().join(program_name()), b"").unwrap();
+        assert_eq!(
+            YtDlp::locate(None, &[directory.path().to_path_buf()]),
+            Some(YtDlp::new(directory.path().join(program_name())))
+        );
+        assert_eq!(
+            YtDlp::locate(
+                Some(&directory.path().join("nope")),
+                &[directory.path().to_path_buf()]
+            ),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn a_program_is_replaced_whole() {
+        let directory = tempdir().unwrap();
+        let target = directory.path().join("tools").join(program_name());
+        write_program(&target, b"one").await.unwrap();
+        write_program(&target, b"two").await.unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"two");
+        assert_eq!(
+            std::fs::read_dir(target.parent().unwrap()).unwrap().count(),
+            1
+        );
     }
 
     #[test]

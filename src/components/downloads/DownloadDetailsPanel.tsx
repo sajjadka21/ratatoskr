@@ -18,7 +18,7 @@ import { explainRule, type RuleExplanation } from "../../utils/categories";
 import { engineReasonText, noticeDetail, noticeText } from "../../utils/notices";
 import type { MessageKey } from "../../i18n/messages";
 import type { DownloadListItem, TaskAction, TransferMetrics } from "../../types/download";
-import { displayName } from "../../utils/fileKind";
+import { displayName, fileKind } from "../../utils/fileKind";
 import { formatHost } from "../../utils/format";
 import { availableActions } from "../../utils/taskActions";
 import { FileBadge } from "../common/FileBadge";
@@ -139,7 +139,7 @@ export function DownloadDetailsPanel({
           <span>
             <span className="ltr">{formatHost(current.resolvedUrl ?? current.sourceUrl)}</span>
             {" · "}
-            {current.mimeType ?? t("details.unknownType")}
+            {current.mimeType ?? kindLabel(current, t)}
           </span>
         </div>
         <button type="button" className="details__close" onClick={onClose} aria-label={t("details.close")}>
@@ -342,4 +342,10 @@ function CopyButton({ done, label, onClick }: { done: boolean; label: string; on
       {done ? <Check size={13} /> : <Copy size={13} />}
     </button>
   );
+}
+
+/** A readable kind when the server gave no MIME type (yt-dlp downloads never do). */
+function kindLabel(item: DownloadListItem, t: (key: MessageKey) => string): string {
+  const kind = fileKind(item);
+  return kind === "other" ? t("details.unknownType") : t(`stats.kind.${kind}`);
 }

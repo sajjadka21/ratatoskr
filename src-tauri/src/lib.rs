@@ -1220,6 +1220,17 @@ async fn get_ytdlp_status(state: State<'_, AppState>) -> Result<FfmpegStatusResp
     Ok(ytdlp_status(&state).await)
 }
 
+/// Downloads FFmpeg (checksum verified) into the app's own tools folder.
+#[tauri::command]
+async fn install_ffmpeg(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<FfmpegStatusResponse, String> {
+    let folder = tools::managed_dir(&app).ok_or_else(|| "no application data folder".to_owned())?;
+    state.downloads.install_ffmpeg(&folder).await?;
+    Ok(ffmpeg_status(&state).await)
+}
+
 /// Installs yt-dlp if it is missing, or updates the app's own copy.
 #[tauri::command]
 async fn update_ytdlp(
@@ -2742,6 +2753,7 @@ pub fn run() {
             get_ytdlp_status,
             set_ytdlp_path,
             update_ytdlp,
+            install_ffmpeg,
             set_download_speed_limit,
             health_check,
             list_downloads,

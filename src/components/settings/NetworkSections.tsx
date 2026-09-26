@@ -1,4 +1,4 @@
-import { CalendarClock, Clapperboard, FolderOpen, Globe2, MonitorPlay, RotateCcw, Save } from "lucide-react";
+import { CalendarClock, Clapperboard, Download, FolderOpen, Globe2, MonitorPlay, RotateCcw, Save } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -467,6 +467,7 @@ export function EngineSection({
   const [ffmpeg, setFfmpeg] = useState<FfmpegStatus | null>(null);
   const [ytdlp, setYtdlp] = useState<FfmpegStatus | null>(null);
   const [ytdlpBusy, setYtdlpBusy] = useState(false);
+  const [ffmpegBusy, setFfmpegBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -531,6 +532,18 @@ export function EngineSection({
       }
     } catch (reason) {
       onError(String(reason));
+    }
+  }
+
+  async function installFfmpeg() {
+    setFfmpegBusy(true);
+    try {
+      setFfmpeg(await invoke<FfmpegStatus>("install_ffmpeg"));
+      onSaved(t("ffmpeg.installed"));
+    } catch (reason) {
+      onError(t("ffmpeg.installFailed", { reason: String(reason) }));
+    } finally {
+      setFfmpegBusy(false);
     }
   }
 
@@ -629,6 +642,16 @@ export function EngineSection({
               )}
             </span>
             <span className="settings-page__button-row">
+              {!ffmpeg?.foundPath ? (
+                <button
+                  type="button"
+                  className="settings-page__primary-button"
+                  disabled={ffmpegBusy}
+                  onClick={() => void installFfmpeg()}
+                >
+                  <Download size={14} /> {ffmpegBusy ? t("ffmpeg.installing") : t("ffmpeg.install")}
+                </button>
+              ) : null}
               <button type="button" className="settings-page__secondary-button" onClick={() => void chooseFfmpeg()}>
                 <FolderOpen size={14} /> {t("ffmpeg.choose")}
               </button>

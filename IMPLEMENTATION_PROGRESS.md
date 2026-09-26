@@ -1580,3 +1580,8 @@ Tested the running app by hand (real downloads from proof.ovh.net through the sy
   event (a download that failed at once stayed "Checking link"); `.dat`
   links count as downloads for clipboard watching; `check-all.cmd` no longer
   uses `RC` as a variable (it is the resource compiler's path).
+- FFmpeg can be installed with one click in Settings (never without being
+  asked: it is about 140 MB, and international traffic is metered). The static
+  Windows build published with yt-dlp is downloaded through the app's own
+  route, checked against its published SHA-256, and only `ffmpeg.exe` and
+  `ffprobe.exe` are kept, in the app's tools folder, which is searched first.

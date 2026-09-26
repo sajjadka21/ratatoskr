@@ -39,6 +39,20 @@ impl Ffmpeg {
         Self { path: path.into() }
     }
 
+    /// FFmpeg as configured, or else the first found in `tool_dirs` (the
+    /// app's own copy), next to the application, or on `PATH`.
+    pub fn locate_in(configured: Option<&Path>, tool_dirs: &[PathBuf]) -> Option<Self> {
+        if configured.is_none()
+            && let Some(found) = tool_dirs
+                .iter()
+                .map(|directory| directory.join(program_name()))
+                .find(|candidate| candidate.is_file())
+        {
+            return Some(Self::new(found));
+        }
+        Self::locate(configured)
+    }
+
     /// FFmpeg as configured, or found next to the application or on `PATH`.
     pub fn locate(configured: Option<&Path>) -> Option<Self> {
         if let Some(path) = configured {
@@ -183,10 +197,164 @@ impl Ffmpeg {
     }
 }
 
+/// The program's file name on this system.
+pub const fn program_name() -> &'static str {
+    if cfg!(windows) {
+        "ffmpeg.exe"
+    } else {
+        "ffmpeg"
+    }
+}
+
+/// Static Windows builds published with yt-dlp, with a checksum list.
+pub const BUILD_BASE: &str = "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest";
+pub const BUILD_ASSET: &str = "ffmpeg-master-latest-win64-gpl.zip";
+
+/// Downloads the FFmpeg build into `tools_dir` through the app's own route,
+/// checks it against the published checksum, and keeps only `ffmpeg.exe`
+/// and `ffprobe.exe` from the archive. Windows only.
+pub async fn install_latest(
+    downloader: &crate::Downloader,
+    tools_dir: &Path,
+) -> Result<PathBuf, String> {
+    if !cfg!(windows) {
+        return Err("FFmpeg is installed automatically only on Windows".to_owned());
+    }
+    let control = TaskControl::new();
+    let sums = downloader
+        .fetch_bytes(
+            &format!("{BUILD_BASE}/checksums.sha256"),
+            None,
+            256 * 1024,
+            &control,
+        )
+        .await
+        .map_err(|error| error.redacted_message())?;
+    let expected = crate::ytdlp::listed_checksum(&String::from_utf8_lossy(&sums), BUILD_ASSET)
+        .ok_or_else(|| "the FFmpeg release lists no checksum".to_owned())?;
+
+    tokio::fs::create_dir_all(tools_dir)
+        .await
+        .map_err(|error| error.to_string())?;
+    let archive = tools_dir.join("ffmpeg-download.zip");
+    let partial = tools_dir.join("ffmpeg-download.zip.partial");
+    let url = format!("{BUILD_BASE}/{BUILD_ASSET}");
+    downloader
+        .transfer(
+            crate::TransferRequest {
+                source_url: &url,
+                temp_path: &partial,
+                destination_path: &archive,
+                start_offset: 0,
+                total_bytes: None,
+            },
+            &control,
+            |_| Ok(()),
+        )
+        .await
+        .map_err(|error| error.redacted_message())?;
+
+    let result = extract_checked(&archive, &expected, tools_dir).await;
+    let _ = tokio::fs::remove_file(&archive).await;
+    result
+}
+
+async fn extract_checked(
+    archive: &Path,
+    expected: &str,
+    tools_dir: &Path,
+) -> Result<PathBuf, String> {
+    let archive = archive.to_path_buf();
+    let expected = expected.to_owned();
+    let programs =
+        tokio::task::spawn_blocking(move || -> Result<Vec<(String, Vec<u8>)>, String> {
+            use sha2::{Digest, Sha256};
+            use std::io::Read;
+            let mut file = std::fs::File::open(&archive).map_err(|error| error.to_string())?;
+            let mut hasher = Sha256::new();
+            std::io::copy(&mut file, &mut hasher).map_err(|error| error.to_string())?;
+            if format!("{:x}", hasher.finalize()) != expected {
+                return Err(
+                    "the downloaded FFmpeg does not match its published checksum".to_owned(),
+                );
+            }
+            let file = std::fs::File::open(&archive).map_err(|error| error.to_string())?;
+            let mut zip = zip::ZipArchive::new(file).map_err(|error| error.to_string())?;
+            let mut programs = Vec::new();
+            for index in 0..zip.len() {
+                let mut entry = zip.by_index(index).map_err(|error| error.to_string())?;
+                let name = entry.name().replace('\\', "/");
+                let Some(file_name) = name.rsplit('/').next() else {
+                    continue;
+                };
+                if name.contains("/bin/") && matches!(file_name, "ffmpeg.exe" | "ffprobe.exe") {
+                    let mut bytes = Vec::with_capacity(entry.size() as usize);
+                    entry
+                        .read_to_end(&mut bytes)
+                        .map_err(|error| error.to_string())?;
+                    programs.push((file_name.to_owned(), bytes));
+                }
+            }
+            Ok(programs)
+        })
+        .await
+        .map_err(|error| error.to_string())??;
+
+    if !programs.iter().any(|(name, _)| name == "ffmpeg.exe") {
+        return Err("the FFmpeg archive has no ffmpeg.exe".to_owned());
+    }
+    for (name, bytes) in &programs {
+        crate::ytdlp::write_program(&tools_dir.join(name), bytes)
+            .await
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(tools_dir.join("ffmpeg.exe"))
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    fn build_archive(path: &Path) -> String {
+        use sha2::{Digest, Sha256};
+        use std::io::Write;
+        let file = std::fs::File::create(path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+        for (name, data) in [
+            ("ffmpeg-master/bin/ffmpeg.exe", b"FFMPEG".as_slice()),
+            ("ffmpeg-master/bin/ffprobe.exe", b"FFPROBE".as_slice()),
+            ("ffmpeg-master/doc/ffmpeg.exe", b"NOT THIS".as_slice()),
+        ] {
+            zip.start_file(name, options).unwrap();
+            zip.write_all(data).unwrap();
+        }
+        zip.finish().unwrap();
+        format!("{:x}", Sha256::digest(std::fs::read(path).unwrap()))
+    }
+
+    #[tokio::test]
+    async fn only_the_checked_programs_are_taken_from_the_archive() {
+        let directory = tempdir().unwrap();
+        let archive = directory.path().join("ffmpeg.zip");
+        let hash = build_archive(&archive);
+        let tools = directory.path().join("tools");
+
+        assert!(
+            extract_checked(&archive, &"0".repeat(64), &tools)
+                .await
+                .is_err()
+        );
+        assert!(!tools.join("ffmpeg.exe").exists());
+
+        let found = extract_checked(&archive, &hash, &tools).await.unwrap();
+        assert_eq!(std::fs::read(&found).unwrap(), b"FFMPEG");
+        assert_eq!(
+            std::fs::read(tools.join("ffprobe.exe")).unwrap(),
+            b"FFPROBE"
+        );
+    }
 
     /// The real FFmpeg, when this machine has one. Tests that need it are
     /// skipped (and say so) where it is missing.

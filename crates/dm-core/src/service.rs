@@ -1954,7 +1954,17 @@ impl DownloadService {
             .flatten()
             .filter(|value| !value.trim().is_empty())
             .map(PathBuf::from);
-        crate::ffmpeg::Ffmpeg::locate(configured.as_deref())
+        let dirs = self
+            .tool_dirs
+            .read()
+            .map(|dirs| dirs.clone())
+            .unwrap_or_default();
+        crate::ffmpeg::Ffmpeg::locate_in(configured.as_deref(), &dirs)
+    }
+
+    /// Installs FFmpeg into `tools_dir` through the app's own route.
+    pub async fn install_ffmpeg(&self, tools_dir: &Path) -> std::result::Result<PathBuf, String> {
+        crate::ffmpeg::install_latest(&self.base_downloader(), tools_dir).await
     }
 
     pub fn ffmpeg_path_setting(&self) -> Option<String> {

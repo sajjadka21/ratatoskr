@@ -269,6 +269,9 @@ pub struct DownloadService {
     sessions: Arc<Mutex<HashMap<String, Arc<BrowserSession>>>>,
     /// Ids of downloads whose after-download steps just changed.
     post_events: tokio::sync::broadcast::Sender<String>,
+    /// Bumped whenever the share of bandwidth a yt-dlp run should get may
+    /// have changed: a limit was set, or a transfer started or ended.
+    rate_epoch: Arc<tokio::sync::watch::Sender<u64>>,
 }
 
 impl DownloadService {
@@ -306,6 +309,7 @@ impl DownloadService {
             tool_dirs: Arc::new(RwLock::new(Vec::new())),
             sessions: Arc::new(Mutex::new(HashMap::new())),
             post_events: tokio::sync::broadcast::channel(64).0,
+            rate_epoch: Arc::new(tokio::sync::watch::channel(0).0),
             stall_timeout: crate::network::DEFAULT_STALL_TIMEOUT,
         })
     }
@@ -383,7 +387,39 @@ impl DownloadService {
         self.storage
             .set_setting(SETTING_GLOBAL_SPEED_LIMIT, &limit.unwrap_or(0).to_string())?;
         self.global_limiter.set_limit(limit);
+        self.bump_rates();
         Ok(())
+    }
+
+    fn bump_rates(&self) {
+        self.rate_epoch
+            .send_modify(|epoch| *epoch = epoch.wrapping_add(1));
+    }
+
+    /// The rate one yt-dlp run may use. yt-dlp limits itself to a fixed
+    /// rate, so the global limit is shared out: an equal part for every
+    /// transfer running now, capped by the download's own limit and its
+    /// rule's.
+    fn ytdlp_rate(&self, download_id: &str, rule_cap: Option<u64>) -> Option<u64> {
+        let running = self
+            .controls
+            .lock()
+            .map(|controls| controls.len())
+            .unwrap_or(1)
+            .max(1) as u64;
+        let share = self
+            .global_limiter
+            .limit()
+            .map(|limit| (limit / running).max(MIN_YTDLP_RATE.min(limit)));
+        [
+            share,
+            self.task_speed_limit(download_id).ok().flatten(),
+            rule_cap,
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|limit| *limit > 0)
+        .min()
     }
 
     /// The limit set on one download, in bytes per second, if any.
@@ -402,6 +438,7 @@ impl DownloadService {
         {
             limiter.set_limit(limit);
         }
+        self.bump_rates();
         Ok(())
     }
 
@@ -1062,6 +1099,7 @@ impl DownloadService {
         let control = self.register_control(download_id)?;
         let _guard = ControlGuard {
             controls: Arc::clone(&self.controls),
+            rate_epoch: Arc::clone(&self.rate_epoch),
             overrides: Arc::clone(&self.overrides),
             download_id: download_id.to_owned(),
         };
@@ -1884,32 +1922,15 @@ impl DownloadService {
             .mark_downloading(&task.id, unix_timestamp_seconds()?)?;
 
         let proxy = self.tool_proxy_for(&task.source_url);
-        // yt-dlp takes one fixed rate: the tightest limit at the start.
-        let rate_limit = [
-            self.global_limiter.limit(),
-            self.task_speed_limit(&task.id)?,
-            decision.as_ref().and_then(|decision| decision.speed_cap),
-        ]
-        .into_iter()
-        .flatten()
-        .filter(|limit| *limit > 0)
-        .min();
+        let rule_cap = decision.as_ref().and_then(|decision| decision.speed_cap);
         let ffmpeg = self.ffmpeg();
         let (max_height, audio_only) = self.quality_for(&task.source_url);
-        let request = YtDlpRequest {
-            url: &task.source_url,
-            work_dir: &work_dir,
-            max_height,
-            audio_only,
-            ffmpeg: ffmpeg.as_ref().map(|ffmpeg| ffmpeg.path()),
-            proxy,
-            rate_limit,
-        };
 
         // Picture and sound arrive one after the other, each counting from
         // zero; earlier parts are carried in `finished_parts`. A resumed part
-        // starts from what is already on disk, which is not new traffic, so
-        // only growth after a part's first report is counted.
+        // (after a pause, or a restart for a new rate) starts from what is
+        // already on disk, which is not new traffic, so only growth after a
+        // part's first report is counted.
         let mut finished_parts = 0_u64;
         let mut last = 0_u64;
         let mut part_started = false;
@@ -1918,42 +1939,88 @@ impl DownloadService {
         let mut named = false;
         let task_id = task.id.clone();
         let storage = Arc::clone(&self.storage);
-        let result = ytdlp
-            .download(&request, control.as_ref(), |progress| {
-                if progress.downloaded < last {
-                    finished_parts += last;
+        let mut epoch = self.rate_epoch.subscribe();
+
+        // yt-dlp limits itself to one fixed rate, so it runs with its share
+        // of the limits and is restarted (continuing its partial files) when
+        // that share changes a lot: another download started or ended, or a
+        // limit was changed.
+        let result = loop {
+            let rate_limit = self.ytdlp_rate(&task.id, rule_cap);
+            let request = YtDlpRequest {
+                url: &task.source_url,
+                work_dir: &work_dir,
+                max_height,
+                audio_only,
+                ffmpeg: ffmpeg.as_ref().map(|ffmpeg| ffmpeg.path()),
+                proxy: proxy.clone(),
+                rate_limit,
+            };
+            epoch.mark_unchanged();
+            let started = Instant::now();
+            let epoch_ref = &mut epoch;
+            let rate_moved = async move {
+                loop {
+                    if epoch_ref.changed().await.is_err() {
+                        std::future::pending::<()>().await;
+                    }
+                    if !rate_changed_enough(rate_limit, self.ytdlp_rate(&task.id, rule_cap)) {
+                        continue;
+                    }
+                    tokio::time::sleep(YTDLP_RATE_SETTLE.saturating_sub(started.elapsed())).await;
+                    if rate_changed_enough(rate_limit, self.ytdlp_rate(&task.id, rule_cap)) {
+                        return;
+                    }
+                }
+            };
+            let outcome = ytdlp
+                .download_until(&request, control.as_ref(), rate_moved, |progress| {
+                    if progress.downloaded < last {
+                        finished_parts += last;
+                        part_started = false;
+                    }
+                    if part_started && progress.downloaded > last {
+                        let fresh = progress.downloaded - last;
+                        self.count_traffic(scope, fresh);
+                        // Other transfers make room for what yt-dlp took.
+                        self.global_limiter
+                            .record(usize::try_from(fresh).unwrap_or(usize::MAX));
+                    }
+                    part_started = true;
+                    last = progress.downloaded;
+                    let downloaded = finished_parts + progress.downloaded;
+                    let total = progress.total.map(|total| finished_parts + total);
+                    if !named && let Some(title) = &progress.title {
+                        named = true;
+                        filename = crate::sanitize_filename(title);
+                        let _ = storage.set_transfer_plan(&task_id, &plan(&filename, total));
+                    }
+                    if last_saved.elapsed() >= PROGRESS_PERSIST_INTERVAL {
+                        last_saved = Instant::now();
+                        let _ = storage.update_progress(&task_id, downloaded, total);
+                    }
+                    on_progress(
+                        &task_id,
+                        TransferProgress {
+                            downloaded_bytes: downloaded,
+                            total_bytes: total,
+                            bytes_per_second: progress.bytes_per_second.map(|rate| rate as u64),
+                            eta_seconds: progress.eta_seconds,
+                            active_connections: Some(1),
+                            max_connections: Some(1),
+                            adaptive_reason: Some("downloading with yt-dlp"),
+                        },
+                    );
+                })
+                .await;
+            match outcome {
+                Err(YtDlpError::Interrupted) => {
                     part_started = false;
+                    continue;
                 }
-                if part_started && progress.downloaded > last {
-                    self.count_traffic(scope, progress.downloaded - last);
-                }
-                part_started = true;
-                last = progress.downloaded;
-                let downloaded = finished_parts + progress.downloaded;
-                let total = progress.total.map(|total| finished_parts + total);
-                if !named && let Some(title) = &progress.title {
-                    named = true;
-                    filename = crate::sanitize_filename(title);
-                    let _ = storage.set_transfer_plan(&task_id, &plan(&filename, total));
-                }
-                if last_saved.elapsed() >= PROGRESS_PERSIST_INTERVAL {
-                    last_saved = Instant::now();
-                    let _ = storage.update_progress(&task_id, downloaded, total);
-                }
-                on_progress(
-                    &task_id,
-                    TransferProgress {
-                        downloaded_bytes: downloaded,
-                        total_bytes: total,
-                        bytes_per_second: progress.bytes_per_second.map(|rate| rate as u64),
-                        eta_seconds: progress.eta_seconds,
-                        active_connections: Some(1),
-                        max_connections: Some(1),
-                        adaptive_reason: Some("downloading with yt-dlp"),
-                    },
-                );
-            })
-            .await;
+                other => break other,
+            }
+        };
 
         let file = match result {
             Ok(file) => file,
@@ -3029,6 +3096,7 @@ impl DownloadService {
             .lock()
             .map_err(|_| DownloadServiceError::ControlRegistryUnavailable)?
             .insert(download_id.to_owned(), Arc::clone(&control));
+        self.bump_rates();
 
         Ok(control)
     }
@@ -3090,6 +3158,7 @@ impl DownloadService {
 /// Unregisters the control handle when a transfer ends, however it ends.
 struct ControlGuard {
     controls: Arc<Mutex<HashMap<String, Arc<TaskControl>>>>,
+    rate_epoch: Arc<tokio::sync::watch::Sender<u64>>,
     overrides: Arc<Mutex<HashMap<String, TaskOverrides>>>,
     download_id: String,
 }
@@ -3102,6 +3171,8 @@ impl Drop for ControlGuard {
         if let Ok(mut overrides) = self.overrides.lock() {
             overrides.remove(&self.download_id);
         }
+        self.rate_epoch
+            .send_modify(|epoch| *epoch = epoch.wrapping_add(1));
     }
 }
 
@@ -3591,6 +3662,28 @@ async fn remove_partial_file(temp_path: Option<&str>) {
     if let Some(path) = temp_path {
         let _ = tokio::fs::remove_file(stream_record_path(Path::new(path))).await;
         let _ = tokio::fs::remove_file(path).await;
+    }
+}
+
+/// yt-dlp is never given less than this, however many transfers share the
+/// limit: slower than this, sites start dropping the connection.
+const MIN_YTDLP_RATE: u64 = 32 * 1024;
+/// A yt-dlp run is restarted for a new rate only when it differs this much
+/// from the one it has (a restart costs a few seconds of looking the video
+/// up again)...
+const YTDLP_RATE_TOLERANCE: f64 = 0.25;
+/// ...and not sooner than this after it started.
+const YTDLP_RATE_SETTLE: Duration = Duration::from_secs(15);
+
+/// Whether a run limited to `current` should restart to follow `wanted`.
+fn rate_changed_enough(current: Option<u64>, wanted: Option<u64>) -> bool {
+    match (current, wanted) {
+        (None, None) => false,
+        (None, Some(_)) | (Some(_), None) => true,
+        (Some(current), Some(wanted)) => {
+            let current = current as f64;
+            ((wanted as f64 - current) / current).abs() > YTDLP_RATE_TOLERANCE
+        }
     }
 }
 
@@ -6199,6 +6292,33 @@ mkdir -p \"$w\"
             .await;
         let row = harness.storage.get_download(&task.id).unwrap().unwrap();
         assert_eq!(row.error_code.as_deref(), Some("needs_muxing"));
+    }
+
+    #[test]
+    fn a_ytdlp_run_restarts_only_for_a_real_change_of_rate() {
+        assert!(!rate_changed_enough(None, None));
+        assert!(rate_changed_enough(None, Some(100_000)));
+        assert!(rate_changed_enough(Some(100_000), None));
+        assert!(!rate_changed_enough(Some(100_000), Some(110_000)));
+        assert!(rate_changed_enough(Some(100_000), Some(50_000)));
+    }
+
+    #[test]
+    fn ytdlp_gets_its_share_of_the_global_limit() {
+        let harness = harness();
+        let service = &harness.service;
+        assert_eq!(service.ytdlp_rate("a", None), None);
+        service.set_global_speed_limit(Some(1_000_000)).unwrap();
+        // Alone, it may use the whole limit; a rule can lower it.
+        assert_eq!(service.ytdlp_rate("a", None), Some(1_000_000));
+        assert_eq!(service.ytdlp_rate("a", Some(300_000)), Some(300_000));
+        // With others running, it gets an equal part.
+        let _first = service.register_control("a").unwrap();
+        let _second = service.register_control("b").unwrap();
+        assert_eq!(service.ytdlp_rate("a", None), Some(500_000));
+        // Never so little that sites drop the connection.
+        service.set_global_speed_limit(Some(40_000)).unwrap();
+        assert_eq!(service.ytdlp_rate("a", None), Some(MIN_YTDLP_RATE));
     }
 
     #[test]

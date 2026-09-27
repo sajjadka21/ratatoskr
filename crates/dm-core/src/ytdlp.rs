@@ -73,6 +73,9 @@ pub enum YtDlpError {
     NoFile,
     #[error("stopped")]
     Stopped,
+    /// Stopped to start again with a different speed limit.
+    #[error("restarting with a new speed limit")]
+    Interrupted,
 }
 
 impl YtDlpError {
@@ -363,10 +366,27 @@ impl YtDlp {
         &self,
         request: &YtDlpRequest<'_>,
         control: &TaskControl,
+        on_progress: F,
+    ) -> Result<PathBuf, YtDlpError>
+    where
+        F: FnMut(YtDlpProgress) + Send,
+    {
+        self.download_until(request, control, std::future::pending(), on_progress)
+            .await
+    }
+
+    /// Like `download`, but stops (keeping the partial files, as a pause
+    /// does) and returns `Interrupted` as soon as `interrupt` completes.
+    pub async fn download_until<F, I>(
+        &self,
+        request: &YtDlpRequest<'_>,
+        control: &TaskControl,
+        interrupt: I,
         mut on_progress: F,
     ) -> Result<PathBuf, YtDlpError>
     where
         F: FnMut(YtDlpProgress) + Send,
+        I: std::future::Future<Output = ()> + Send,
     {
         tokio::fs::create_dir_all(request.work_dir)
             .await
@@ -412,6 +432,10 @@ impl YtDlp {
             _ = control.stopped() => {
                 kill_tree(&mut child).await;
                 return Err(YtDlpError::Stopped);
+            }
+            _ = interrupt => {
+                kill_tree(&mut child).await;
+                return Err(YtDlpError::Interrupted);
             }
             status = async {
                 read.await;
@@ -1310,6 +1334,42 @@ mod tests {
             .unwrap();
         assert_eq!(seen, vec![50, 100]);
         assert_eq!(file, work.join("Clip [x].mp4"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_interrupted_run_stops_and_says_so() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempdir().unwrap();
+        let script = directory.path().join("yt-dlp");
+        std::fs::write(
+            &script,
+            "#!/bin/sh\necho 'RATATOSK|10|100|NA|NA|NA|Clip'\nsleep 30\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let work = directory.path().join(".ratatosk-i");
+        let request = YtDlpRequest {
+            url: "https://youtu.be/x",
+            work_dir: &work,
+            max_height: None,
+            audio_only: false,
+            ffmpeg: None,
+            proxy: ProxyChoice::System,
+            rate_limit: Some(100_000),
+        };
+        let started = std::time::Instant::now();
+        let error = YtDlp::new(&script)
+            .download_until(
+                &request,
+                &TaskControl::new(),
+                tokio::time::sleep(std::time::Duration::from_millis(300)),
+                |_| {},
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error, YtDlpError::Interrupted);
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
     }
 
     #[cfg(unix)]

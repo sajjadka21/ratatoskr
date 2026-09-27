@@ -78,6 +78,13 @@ impl RateLimiter {
         }
     }
 
+    /// Counts `bytes` another program already transferred (yt-dlp, which
+    /// limits itself), without waiting. Connections drawing from this
+    /// limiter then slow down to leave room for them.
+    pub fn record(&self, bytes: usize) {
+        let _ = self.reserve(bytes, Instant::now());
+    }
+
     /// Takes `bytes` from the bucket and returns how long the caller must
     /// wait before the budget is back out of debt.
     fn reserve(&self, bytes: usize, now: Instant) -> Duration {

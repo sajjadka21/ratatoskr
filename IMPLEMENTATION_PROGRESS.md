@@ -1574,7 +1574,8 @@ Tested the running app by hand (real downloads from proof.ovh.net through the sy
   official yt-dlp once through its own network route and keeps it only if
   the checksum matches.
 - Search order: the path chosen in Settings, the app's own copy, the shipped
-  copy, next to the app, `PATH`. A path the user chose is never replaced.
+  copy, next to the app, `PATH`. A path the user chose is never replaced;
+  if that file is gone, the other copies are used.
 - Settings shows the version, with Install / Update now.
 - Also: a command's answer no longer overwrites a newer row from an engine
   event (a download that failed at once stayed "Checking link"); `.dat`
@@ -1585,3 +1586,36 @@ Tested the running app by hand (real downloads from proof.ovh.net through the sy
   Windows build published with yt-dlp is downloaded through the app's own
   route, checked against its published SHA-256, and only `ffmpeg.exe` and
   `ffprobe.exe` are kept, in the app's tools folder, which is searched first.
+
+## Step 14: Quality per video, and a full review
+
+- **Quality per video.** The Add dialog looks a video page up with yt-dlp
+  (`probe_video`: `--dump-single-json --flat-playlist`) and offers its
+  qualities with estimated sizes, plus "Sound only". The choice travels in
+  the link's fragment (`#rud-quality=720|best|audio`), which yt-dlp never
+  sees; without one the Settings default applies. Several video links get
+  one choice for all. A playlist link offers to add every video as its own
+  download; otherwise only its first video downloads (`--playlist-items 1`).
+  Video pages sent from the browser open the Add dialog instead of starting
+  at once. More than three links started together go through a "Group
+  downloads" queue that runs three at a time.
+- **Folder per download** (schema v14, `download_folders`): the Add dialog
+  can save what is added now in another folder.
+- **Start with Windows** (HKCU `Run` value, `--hidden` opens in the tray).
+- **System notification** when a download finishes or fails while the
+  window is hidden or in the background; queue and power-action messages
+  follow the UI language.
+- Tray: Add link and Resume all.
+- The Add dialog warns when a link is already in the list.
+- Fixes from the review: queue downloads now show their completion toasts
+  and can no longer be overwritten by a stale command reply; removing a
+  paused video download deletes its working folder; resuming a yt-dlp
+  download no longer counts the bytes on disk as new traffic; stopping
+  yt-dlp stops FFmpeg with it (`taskkill /T`); transfer errors are logged
+  without links; social sites go to yt-dlp only for their video pages;
+  HTML drag and drop works on Windows (`dragDropEnabled: false`); removing
+  several downloads asks first and can delete their files; shortcuts work
+  with a Persian keyboard layout; common backend refusals are shown in the
+  user's language; the browser extension's size and type filters work when
+  the browser does not know the file name yet; small text sizes raised.
+

@@ -6,6 +6,8 @@ import { listen } from "@tauri-apps/api/event";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { AddDownloadModal, type AddDownloadAction } from "./components/downloads/AddDownloadModal";
+import { Welcome } from "./components/onboarding/Welcome";
+import { SHOW_WELCOME_EVENT } from "./utils/appEvents";
 import { BulkActionBar, type BulkAction } from "./components/downloads/BulkActionBar";
 import { DownloadContextMenu } from "./components/downloads/DownloadContextMenu";
 import { DownloadDetailsPanel, type ActivityEntry } from "./components/downloads/DownloadDetailsPanel";
@@ -137,6 +139,18 @@ function App({ preferences, onPreferencesChange }: AppProps) {
 
   const [health, setHealth] = useState<HealthCheckResponse | null>(null);
   const [downloads, setDownloads] = useState<DownloadListItem[]>([]);
+  // The first-run guide; also opened again from Settings.
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
+  useEffect(() => {
+    invoke<boolean>("get_onboarding_done")
+      .then((done) => {
+        if (!done) setWelcomeOpen(true);
+      })
+      .catch(() => {});
+    const reopen = () => setWelcomeOpen(true);
+    window.addEventListener(SHOW_WELCOME_EVENT, reopen);
+    return () => window.removeEventListener(SHOW_WELCOME_EVENT, reopen);
+  }, []);
   // Links already in the list, without the quality fragment, to warn about
   // adding one twice.
   const knownLinks = useMemo(
@@ -1058,7 +1072,12 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   // ---- keyboard -----------------------------------------------------------
 
   const overlayOpen =
-    modalOpen || paletteOpen || Boolean(contextMenu) || removeCandidates.length > 0 || Boolean(refreshCandidate);
+    modalOpen ||
+    paletteOpen ||
+    welcomeOpen ||
+    Boolean(contextMenu) ||
+    removeCandidates.length > 0 ||
+    Boolean(refreshCandidate);
   const keyboard = useRef<(event: KeyboardEvent) => void>(() => {});
   keyboard.current = (event: KeyboardEvent) => {
     const control = event.ctrlKey || event.metaKey;
@@ -1407,6 +1426,15 @@ function App({ preferences, onPreferencesChange }: AppProps) {
       ) : null}
 
       <CommandPalette open={paletteOpen} commands={paletteCommands} onClose={() => setPaletteOpen(false)} />
+
+      {welcomeOpen ? (
+        <Welcome
+          preferences={preferences}
+          onPreferencesChange={onPreferencesChange}
+          onError={reportError}
+          onDone={() => setWelcomeOpen(false)}
+        />
+      ) : null}
 
       <AddDownloadModal
         open={modalOpen}

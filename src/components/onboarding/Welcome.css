@@ -1,0 +1,267 @@
+.welcome__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--bg-app) 55%, rgba(0, 0, 0, 0.55));
+  backdrop-filter: blur(3px);
+}
+
+.welcome {
+  display: flex;
+  flex-direction: column;
+  width: min(680px, 100%);
+  max-height: min(640px, calc(100vh - 48px));
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.welcome__steps {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 18px 24px 0;
+  list-style: none;
+}
+
+.welcome__dot {
+  width: 28px;
+  height: 4px;
+  background: var(--border-subtle);
+  border-radius: 999px;
+}
+
+.welcome__dot--done {
+  background: color-mix(in srgb, var(--accent) 50%, var(--border-subtle));
+}
+
+.welcome__dot--current {
+  background: var(--accent);
+}
+
+.welcome__content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 26px;
+  overflow-y: auto;
+  max-width: none;
+}
+
+.welcome__heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.welcome__heading h2 {
+  margin: 2px 0 6px;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+}
+
+.welcome__heading p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.welcome__icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 42px;
+  height: 42px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--radius-md);
+}
+
+.welcome__path {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The browser section brings its own heading; the step already has one. */
+.welcome__embedded .settings-page__section-heading {
+  display: none;
+}
+
+.welcome__embedded .settings-page__section {
+  margin: 0;
+}
+
+.welcome__choices {
+  display: grid;
+  gap: 8px;
+}
+
+.welcome__choice {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  color: var(--text-primary);
+  text-align: start;
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  font: inherit;
+  cursor: pointer;
+}
+
+.welcome__choice strong {
+  font-size: 13.5px;
+}
+
+.welcome__choice span {
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.welcome__choice:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.welcome__choice--selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.welcome__proxy {
+  display: flex;
+  gap: 8px;
+}
+
+.welcome__proxy input {
+  flex: 1;
+  min-height: 34px;
+  padding: 0 10px;
+  color: var(--text-primary);
+  background: var(--bg-app);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+
+.welcome__test {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.welcome__ok {
+  color: var(--success-text);
+}
+
+.welcome__bad {
+  color: var(--danger-text);
+}
+
+.welcome__tips {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.welcome__tips li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.7;
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.welcome__tip-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 28px;
+  height: 28px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--radius-sm);
+}
+
+.welcome__footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 24px 18px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.welcome__spacer {
+  flex: 1;
+}
+
+.welcome__primary,
+.welcome__secondary,
+.welcome__ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 16px;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.welcome__primary {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  font-weight: 600;
+}
+
+.welcome__secondary {
+  color: var(--text-primary);
+  background: var(--bg-app);
+  border: 1px solid var(--border-strong);
+}
+
+.welcome__ghost {
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+.welcome button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.welcome__content.settings-page {
+  width: auto;
+  gap: 14px;
+  padding-bottom: 20px;
+}

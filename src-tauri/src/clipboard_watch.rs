@@ -1,7 +1,7 @@
 //! Watches the clipboard for download links while the app runs.
 //!
-//! Copying a link to a file (or a video page yt-dlp can read) brings the
-//! window forward with the Add download dialog filled in. The copied text
+//! Copying a link to a file (or a video page yt-dlp can read) opens the
+//! small download window with it (or the main window's Add dialog). The copied text
 //! is only read and compared in memory: it is never stored or logged, and
 //! only a hash of the last text is kept to notice a change.
 
@@ -75,6 +75,12 @@ pub async fn run(app: AppHandle, storage: Arc<Storage>) {
         }
         let links = new_links(&storage, dm_core::linkgrabber::downloadable_links(&text));
         if links.is_empty() {
+            continue;
+        }
+        // The small window, unless the user is in the main window already
+        // (its own Add dialog then opens) or chose the main window.
+        if crate::mini::compact(&storage) && !crate::mini::main_in_view(&app) {
+            crate::mini::open_add(&app, links);
             continue;
         }
         show_main_window(&app);

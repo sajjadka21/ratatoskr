@@ -4,10 +4,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import App from "./App";
+import { MiniWindow } from "./mini/MiniWindow";
 import { I18nProvider } from "./i18n/I18n";
 import type { UiPreferences } from "./types/download";
 
 import "./styles/global.css";
+
+/** The small download windows load the same page with `?view=mini`. */
+const IS_MINI = new URLSearchParams(window.location.search).get("view") === "mini";
 
 const DEFAULT_PREFERENCES: UiPreferences = { language: "fa", theme: "system", closeToTray: true };
 
@@ -17,7 +21,7 @@ function applyToDocument(preferences: UiPreferences) {
   root.lang = preferences.language;
   root.dir = preferences.language === "fa" ? "rtl" : "ltr";
   root.dataset.theme = preferences.theme;
-  document.title = preferences.language === "fa" ? "راتاتوسک" : "Ratatosk";
+  if (!IS_MINI) document.title = preferences.language === "fa" ? "راتاتوسک" : "Ratatosk";
   // The Windows title bar follows the chosen theme too.
   try {
     void getCurrentWindow()
@@ -57,7 +61,11 @@ function Root() {
 
   return (
     <I18nProvider language={preferences.language}>
-      <App preferences={preferences} onPreferencesChange={(next) => void change(next)} />
+      {IS_MINI ? (
+        <MiniWindow />
+      ) : (
+        <App preferences={preferences} onPreferencesChange={(next) => void change(next)} />
+      )}
     </I18nProvider>
   );
 }

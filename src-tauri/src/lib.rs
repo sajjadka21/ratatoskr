@@ -12,6 +12,7 @@ use dm_core::{
 mod automation;
 mod browser_setup;
 mod clipboard_watch;
+mod mini;
 mod tools;
 mod tray;
 mod updates;
@@ -64,6 +65,8 @@ pub struct AppState {
     queues: QueueService,
     /// Links a browser sent before the window could receive them.
     pending_link_intake: Mutex<Vec<String>>,
+    /// Links waiting for the small add window to collect them.
+    pending_mini_links: Mutex<Vec<String>>,
     automation: Automation,
     tray_menu: Mutex<Option<tray::TrayMenu>>,
     /// What happened to a restore that waited for this start; shown once.
@@ -2285,7 +2288,7 @@ fn handle_launch_requests(app: &AppHandle, requests: Vec<LaunchRequest>) {
         match request {
             LaunchRequest::HandoffTasks(ids) => {
                 for id in ids {
-                    if let Err(error) = start_handoff_task(app, &state, &id) {
+                    if let Err(error) = hand_over(app, &state, &id) {
                         warn!(download_id = %id, error = %error, "browser handoff could not start");
                     }
                 }
@@ -2305,12 +2308,23 @@ fn handle_launch_requests(app: &AppHandle, requests: Vec<LaunchRequest>) {
                         .create_task(&handoff.url)
                         .map_err(|error| error.to_string())
                 })
-                .and_then(|task| start_handoff_task(app, &state, &task.id));
+                .and_then(|task| hand_over(app, &state, &task.id));
                 if let Err(error) = started {
                     warn!(error = %error, "browser handoff could not start");
                 }
             }
             LaunchRequest::GrabLinks(urls) => {
+                // A video page from the browser opens the small window, where
+                // its quality is chosen; other links go to LinkGrabber.
+                let videos = !urls.is_empty()
+                    && urls.len() <= 20
+                    && urls
+                        .iter()
+                        .all(|url| dm_core::ytdlp::handles(dm_core::ytdlp::without_fragment(url)));
+                if videos && mini::compact(&state.storage) && !mini::main_in_view(app) {
+                    mini::open_add(app, urls);
+                    continue;
+                }
                 if let Ok(mut pending) = state.pending_link_intake.lock() {
                     pending.extend(urls.iter().cloned());
                 }
@@ -2470,6 +2484,128 @@ fn start_queue_now(
 /// download that stopped part-way, that download continues instead (see
 /// `DownloadService::adopt_fresh_link`); the check needs a request to the
 /// server, so it runs in the background.
+/// A download the browser handed over: shown in the small window, which
+/// asks where to save it before it starts, or (with the main window chosen
+/// in Settings) started at once.
+fn hand_over(app: &AppHandle, state: &AppState, task_id: &str) -> Result<(), String> {
+    if mini::compact(&state.storage) {
+        EventPublisher::new(app.clone()).download_refreshed(task_id);
+        mini::open_task(app, task_id, true);
+        return Ok(());
+    }
+    start_handoff_task(app, state, task_id)
+}
+
+/// Starts a download the small window confirmed, and answers with the id
+/// that is actually downloading: a fresh link can continue an earlier,
+/// stopped download of the same file instead.
+#[tauri::command]
+async fn start_handoff(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<String, String> {
+    let target = if state.downloads.may_adopt(&id) {
+        match state.downloads.adopt_fresh_link(&id).await {
+            Ok(Some(adopted)) => {
+                info!(download_id = %adopted.id, "fresh link continues a stopped download");
+                EventPublisher::new(app.clone()).download_removed(&id);
+                adopted.id
+            }
+            _ => id,
+        }
+    } else {
+        id
+    };
+    match state.storage.get_download(&target) {
+        Ok(Some(record))
+            if record.queue_id.is_some() && record.status == DownloadStatus::Created =>
+        {
+            resume_now(&app, &state, &target).map(|_| ())?;
+        }
+        _ => start_handoff_task_now(&app, &state, &target)?,
+    }
+    Ok(target)
+}
+
+/// One download, as the list shows it.
+#[tauri::command]
+fn get_download(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Option<DownloadListItemResponse>, String> {
+    state
+        .storage
+        .get_download(&id)
+        .map(|record| record.map(download_list_item_response))
+        .map_err(|error| error.to_string())
+}
+
+/// Links for the small add window; each is returned once.
+#[tauri::command]
+fn take_mini_links(state: State<'_, AppState>) -> Vec<String> {
+    state
+        .pending_mini_links
+        .lock()
+        .map(|mut pending| std::mem::take(&mut *pending))
+        .unwrap_or_default()
+}
+
+/// Opens the progress window of a download started from the add window.
+#[tauri::command]
+async fn open_download_window(app: AppHandle, id: String) {
+    mini::open_task(&app, &id, false);
+}
+
+#[tauri::command]
+fn show_main_window(app: AppHandle) {
+    tray::show_main_window(&app);
+}
+
+const SETTING_ONBOARDING_DONE: &str = "onboarding_done";
+
+/// Whether the first-run guide has been completed or skipped.
+#[tauri::command]
+fn get_onboarding_done(state: State<'_, AppState>) -> bool {
+    state
+        .storage
+        .get_setting(SETTING_ONBOARDING_DONE)
+        .ok()
+        .flatten()
+        .as_deref()
+        == Some("true")
+}
+
+#[tauri::command]
+fn set_onboarding_done(state: State<'_, AppState>, done: bool) -> Result<(), String> {
+    state
+        .storage
+        .set_setting(SETTING_ONBOARDING_DONE, if done { "true" } else { "false" })
+        .map_err(|error| error.to_string())
+}
+
+/// `compact` for the small download window, `main` for the main window.
+#[tauri::command]
+fn get_intake_window(state: State<'_, AppState>) -> String {
+    if mini::compact(&state.storage) {
+        "compact".to_owned()
+    } else {
+        "main".to_owned()
+    }
+}
+
+#[tauri::command]
+fn set_intake_window(state: State<'_, AppState>, value: String) -> Result<String, String> {
+    if !matches!(value.as_str(), "compact" | "main") {
+        return Err("unknown window choice".to_owned());
+    }
+    state
+        .storage
+        .set_setting(mini::SETTING_INTAKE_WINDOW, &value)
+        .map_err(|error| error.to_string())?;
+    Ok(value)
+}
+
 fn start_handoff_task(app: &AppHandle, state: &AppState, task_id: &str) -> Result<(), String> {
     if !state.downloads.may_adopt(task_id) {
         return start_handoff_task_now(app, state, task_id);
@@ -2593,14 +2729,16 @@ fn receive_browser_session(
         return HandoffReply::refused(error.to_string());
     }
 
-    if let Err(error) = start_handoff_task(app, &state, task_id) {
+    if let Err(error) = hand_over(app, &state, task_id) {
         state.downloads.forget_browser_session(task_id);
         warn!(download_id = %task_id, error = %error, "browser handoff could not start");
         return HandoffReply::refused(error);
     }
 
-    info!(download_id = %task_id, "browser handoff started with a browser session");
-    tray::show_main_window(app);
+    info!(download_id = %task_id, "browser handoff accepted with a browser session");
+    if !mini::compact(&state.storage) {
+        tray::show_main_window(app);
+    }
     HandoffReply::accepted()
 }
 
@@ -2744,6 +2882,7 @@ pub fn run() {
                 downloads: downloads.clone(),
                 queues: queues.clone(),
                 pending_link_intake: Mutex::new(Vec::new()),
+                pending_mini_links: Mutex::new(Vec::new()),
                 automation: Automation::new(),
                 tray_menu: Mutex::new(None),
                 restore_outcome: Mutex::new(restore_outcome),
@@ -2766,8 +2905,16 @@ pub fn run() {
 
             // Started by Windows at sign-in: stay in the tray. Without a tray
             // the window is the only way back, so it stays visible.
-            let started_hidden =
-                std::env::args().any(|argument| argument == dm_system::autostart::HIDDEN_ARGUMENT);
+            // Also when started only to take a download from the browser:
+            // the small download window is all that should appear.
+            let started_hidden = std::env::args().any(|argument| {
+                argument == dm_system::autostart::HIDDEN_ARGUMENT
+                    || (mini::compact(&storage)
+                        && matches!(
+                            argument.as_str(),
+                            ARG_HANDOFF_TASK | ARG_BROWSER_HANDOFF | ARG_GRAB_LINKS
+                        ))
+            });
             if started_hidden && tray_ready {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.hide();
@@ -2926,6 +3073,15 @@ pub fn run() {
             list_stream_variants,
             probe_video,
             set_download_folder,
+            start_handoff,
+            get_download,
+            take_mini_links,
+            open_download_window,
+            show_main_window,
+            get_intake_window,
+            set_intake_window,
+            get_onboarding_done,
+            set_onboarding_done,
             get_engine_settings,
             get_ffmpeg_status,
             set_ffmpeg_path,

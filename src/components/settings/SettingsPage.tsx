@@ -31,6 +31,7 @@ import {
 } from "../../utils/settingsFormat";
 
 import { Switch } from "./Switch";
+import { SHOW_WELCOME_EVENT } from "../../utils/appEvents";
 import { UpdateSection } from "./UpdateSection";
 import { BrowserSection } from "./BrowserSection";
 import { AfterDownloadSection } from "./AfterDownloadSection";
@@ -163,6 +164,7 @@ export function SettingsPage({
           <div className="settings-page__hint">
             {t("settings.inputHint")}
           </div>
+          <IntakeWindowRow onError={onError} />
           <ClipboardWatchRow onError={onError} />
           {error ? <div className="settings-page__error">{error}</div> : null}
         </div>
@@ -344,6 +346,22 @@ function AppearanceSection({
               label={t("settings.closeToTray")}
               onChange={(closeToTray) => onChange({ ...preferences, closeToTray })}
             />
+          </div>
+        </div>
+
+        <div className="settings-page__row settings-page__row--divided">
+          <div className="settings-page__row-label">
+            <strong>{t("welcome.reopen")}</strong>
+            <span>{t("welcome.reopenHint")}</span>
+          </div>
+          <div className="settings-page__row-control">
+            <button
+              type="button"
+              className="settings-page__secondary-button"
+              onClick={() => window.dispatchEvent(new Event(SHOW_WELCOME_EVENT))}
+            >
+              {t("welcome.reopenButton")}
+            </button>
           </div>
         </div>
 
@@ -1071,7 +1089,7 @@ function RulesSection({
 }
 
 /** Whether a download link copied anywhere opens the Add download dialog. */
-function ClipboardWatchRow({ onError }: { onError: (message: string) => void }) {
+export function ClipboardWatchRow({ onError }: { onError: (message: string) => void }) {
   const { t } = useI18n();
   return (
     <BackendSwitchRow
@@ -1085,8 +1103,61 @@ function ClipboardWatchRow({ onError }: { onError: (message: string) => void }) 
   );
 }
 
+/** Where a download from the browser or the clipboard shows up. */
+export function IntakeWindowRow({ onError }: { onError: (message: string) => void }) {
+  const { t } = useI18n();
+  const [value, setValue] = useState<"compact" | "main" | null>(null);
+
+  useEffect(() => {
+    invoke<"compact" | "main">("get_intake_window")
+      .then(setValue)
+      .catch(() => {});
+  }, []);
+
+  if (value === null) return null;
+
+  const choose = (next: "compact" | "main") => {
+    const previous = value;
+    setValue(next);
+    invoke<"compact" | "main">("set_intake_window", { value: next })
+      .then(setValue)
+      .catch((reason) => {
+        setValue(previous);
+        onError(String(reason));
+      });
+  };
+
+  return (
+    <div className="settings-page__row settings-page__row--divided">
+      <div className="settings-page__row-label">
+        <strong>{t("settings.intakeWindow")}</strong>
+        <span>{t("settings.intakeWindowHint")}</span>
+      </div>
+      <div className="settings-page__row-control">
+        <div className="settings-page__segmented" role="group" aria-label={t("settings.intakeWindow")}>
+          {(["compact", "main"] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={value === option}
+              className={
+                value === option
+                  ? "settings-page__segment settings-page__segment--active"
+                  : "settings-page__segment"
+              }
+              onClick={() => choose(option)}
+            >
+              {option === "compact" ? t("settings.intakeCompact") : t("settings.intakeMain")}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** An on/off setting kept by the application, not in the preferences. */
-function BackendSwitchRow({
+export function BackendSwitchRow({
   id,
   label,
   hint,

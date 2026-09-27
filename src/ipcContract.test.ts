@@ -204,7 +204,10 @@ describe("IPC contract", () => {
       ...typescript.matchAll(/const [A-Z_]+_EVENT = "([a-z-]+)";/g),
     ].map((match) => match[1]);
 
+    // Several windows (the main one and the small download windows) may
+    // listen to the same event, so names are compared as sets.
+    const unique = (names: string[]) => [...new Set(names)].sort();
     expect(published.length).toBeGreaterThan(0);
-    expect(listened.sort()).toEqual(published.sort());
+    expect(unique(listened)).toEqual(unique(published));
   });
 });

@@ -78,17 +78,23 @@ export function AddDownloadModal({
   const [newQueueName, setNewQueueName] = useState("");
   const [videoQuality, setVideoQuality] = useState<VideoQuality | null>(null);
   const [folder, setFolder] = useState<string | null>(null);
+  const [playlist, setPlaylist] = useState<string[] | null>(null);
+  const [lookingUp, setLookingUp] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setVideoQuality(null);
     setFolder(null);
+    setPlaylist(null);
+    setLookingUp(false);
   }, [open]);
 
   function submit(action: AddDownloadAction) {
+    // A playlist link adds each of its videos, not just the first.
+    const text = playlist && linkCount === 1 ? playlist.join("\n") : url;
     onSubmit(
       action,
-      videoQuality === null ? url : withVideoQualityForAll(url, videoQuality),
+      videoQuality === null ? text : withVideoQualityForAll(text, videoQuality),
       folder,
     );
   }
@@ -108,8 +114,11 @@ export function AddDownloadModal({
   }
 
   const isBatch = linkCount > 1;
+  // Until a playlist or channel link is looked up, adding it would take
+  // only its first video.
+  const waitingForList = lookingUp && linkCount === 1 && looksLikeList(url);
   const actionsDisabled =
-    submitting || !engineReady || linkCount === 0;
+    submitting || !engineReady || linkCount === 0 || waitingForList;
 
   useEffect(() => {
     if (!open) return;
@@ -310,6 +319,8 @@ export function AddDownloadModal({
               quality={videoQuality}
               onQualityChange={setVideoQuality}
               onReplaceLinks={onUrlChange}
+              onPlaylist={setPlaylist}
+              onBusy={setLookingUp}
             />
           ) : null}
 
@@ -475,4 +486,22 @@ export function AddDownloadModal({
       </section>
     </div>
   );
+}
+
+/** A playlist or channel link, which holds many videos. */
+function looksLikeList(text: string): boolean {
+  try {
+    const url = new URL(text.trim());
+    const path = url.pathname.toLowerCase();
+    return (
+      path.startsWith("/playlist") ||
+      path.startsWith("/@") ||
+      path.startsWith("/channel/") ||
+      path.startsWith("/c/") ||
+      path.startsWith("/user/") ||
+      (url.searchParams.has("list") && !url.searchParams.has("v"))
+    );
+  } catch {
+    return false;
+  }
 }

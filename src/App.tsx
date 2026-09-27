@@ -29,7 +29,7 @@ import { engineReasonText, friendlyError, noticeText } from "./utils/notices";
 import { isVideoPage } from "./utils/videoPages";
 import { CommandPalette } from "./components/common/CommandPalette";
 import type { PaletteCommand } from "./utils/commandSearch";
-import type { MessageKey } from "./i18n/messages";
+import { messages, type MessageKey } from "./i18n/messages";
 import type {
   CompletionActionEvent,
   DownloadListItem,
@@ -451,6 +451,10 @@ function App({ preferences, onPreferencesChange }: AppProps) {
         // A video page sent from the browser opens the Add dialog, where its
         // quality can be chosen; other links go to LinkGrabber for review.
         if (urls.length <= 20 && urls.every((link) => isVideoPage(link))) {
+          if (modalOpenRef.current) {
+            setUrl((current) => [...new Set([...extractHttpUrls(current), ...urls])].join("\n"));
+            return;
+          }
           setAddError(null);
           setUrl(urls.join("\n"));
           setModalOpen(true);
@@ -470,7 +474,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   // The tray menu's "Add link" and "Resume all".
   const trayActions = useRef<(action: string) => void>(() => undefined);
   trayActions.current = (action) => {
-    if (action === "add" && !modalOpen) void openAddDownload();
+    if (action === "add" && !overlayOpen) void openAddDownload();
     else if (action === "resume-all") void resumeAll();
   };
   useEffect(() => {
@@ -837,7 +841,10 @@ function App({ preferences, onPreferencesChange }: AppProps) {
       const throughQueue = action.kind === "start-now" && links.length > BATCH_START_LIMIT;
       if (throughQueue) {
         const name = t("add.batchQueueName");
-        const existing = queues.find((queue) => queue.name === name);
+        // Found by its name in either language, so switching language does
+        // not make a second one.
+        const names = new Set([name, messages.en["add.batchQueueName"], messages.fa["add.batchQueueName"]]);
+        const existing = queues.find((queue) => names.has(queue.name));
         targetQueueId =
           existing?.id ??
           (
@@ -853,18 +860,14 @@ function App({ preferences, onPreferencesChange }: AppProps) {
       for (const link of links) {
         let task: DownloadListItem;
         try {
-          task = await invoke<DownloadListItem>("create_download_task", { url: link });
+          task = await invoke<DownloadListItem>("create_download_task", {
+            url: link,
+            directory: folder,
+          });
         } catch (reason) {
           console.error("Task creation failed:", reason);
           failedLinks.push(link);
           continue;
-        }
-        if (folder) {
-          try {
-            await invoke("set_download_folder", { id: task.id, directory: folder });
-          } catch (reason) {
-            report(String(reason));
-          }
         }
         if (targetQueueId) {
           try {
@@ -896,8 +899,12 @@ function App({ preferences, onPreferencesChange }: AppProps) {
         );
       }
       if (throughQueue && targetQueueId && created.length > 0) {
-        await startQueue(targetQueueId);
-        notify("info", t("toast.batchQueued", { count: fmt.number(created.length) }));
+        try {
+          await startQueue(targetQueueId);
+          notify("info", t("toast.batchQueued", { count: fmt.number(created.length) }));
+        } catch (reason) {
+          notify("error", t("toast.queueFailed", { reason: String(reason) }));
+        }
       } else if (action.kind === "start-now") {
         for (const task of created) void startPersistedTask(task.id);
       }
@@ -1065,7 +1072,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     }
     if (control && code === "KeyN") {
       event.preventDefault();
-      if (!modalOpen) void openAddDownload();
+      if (!overlayOpen) void openAddDownload();
       return;
     }
     // Leaving the page behind an open dialog would strand the dialog.

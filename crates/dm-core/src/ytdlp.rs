@@ -444,6 +444,23 @@ impl YtDlp {
         proxy: &ProxyChoice,
         has_ffmpeg: bool,
     ) -> Result<VideoProbe, YtDlpError> {
+        let mut info = self.dump(without_fragment(url), proxy).await?;
+        // A channel lists its tabs; its videos are one level further in.
+        if let Some(tab) = channel_tab(&info) {
+            let mut inner = self.dump(&tab, proxy).await?;
+            if inner.get("title").is_none()
+                && let Some(title) = info.get("title").cloned()
+            {
+                inner["title"] = title;
+            }
+            info = inner;
+        }
+        Ok(VideoProbe::from_info(&info, has_ffmpeg))
+    }
+
+    /// yt-dlp's description of a link, without downloading it. Gives up (and
+    /// stops yt-dlp with everything it started) after `PROBE_TIMEOUT`.
+    async fn dump(&self, url: &str, proxy: &ProxyChoice) -> Result<serde_json::Value, YtDlpError> {
         let mut command = self.command();
         command.args([
             "--dump-single-json",
@@ -457,23 +474,49 @@ impl YtDlp {
         push_proxy(&mut command, proxy);
         command
             .arg("--")
-            .arg(without_fragment(url))
+            .arg(url)
             .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .kill_on_drop(true);
-        let output = tokio::time::timeout(PROBE_TIMEOUT, command.output())
-            .await
-            .map_err(|_| YtDlpError::Failed("the site did not answer in time".to_owned()))?
+        let mut child = command
+            .spawn()
             .map_err(|error| YtDlpError::Start(error.to_string()))?;
-        if !output.status.success() {
+        let mut stdout = child.stdout.take();
+        let mut stderr = child.stderr.take();
+        let output = tokio::spawn(async move {
+            let mut bytes = Vec::new();
+            if let Some(stdout) = stdout.as_mut() {
+                let _ = stdout.read_to_end(&mut bytes).await;
+            }
+            bytes
+        });
+        let errors = tokio::spawn(async move {
+            let mut bytes = Vec::new();
+            if let Some(stderr) = stderr.as_mut() {
+                let _ = stderr.read_to_end(&mut bytes).await;
+            }
+            String::from_utf8_lossy(&bytes).into_owned()
+        });
+        let status = match tokio::time::timeout(PROBE_TIMEOUT, child.wait()).await {
+            Ok(status) => status.map_err(|error| YtDlpError::Start(error.to_string()))?,
+            Err(_) => {
+                kill_tree(&mut child).await;
+                return Err(YtDlpError::Failed(
+                    "the site did not answer in time".to_owned(),
+                ));
+            }
+        };
+        let output = output.await.unwrap_or_default();
+        if !status.success() {
             return Err(YtDlpError::Failed(error_summary(
-                &String::from_utf8_lossy(&output.stderr),
-                output.status,
+                &errors.await.unwrap_or_default(),
+                status,
             )));
         }
-        let info: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|_| {
+        serde_json::from_slice(&output).map_err(|_| {
             YtDlpError::Failed("yt-dlp gave an answer that could not be read".to_owned())
-        })?;
-        Ok(VideoProbe::from_info(&info, has_ffmpeg))
+        })
     }
 
     fn command(&self) -> Command {
@@ -580,11 +623,7 @@ impl VideoProbe {
                     entries
                         .iter()
                         .filter_map(|entry| {
-                            let url = text(entry, "url")
-                                .or_else(|| text(entry, "webpage_url"))
-                                .filter(|url| {
-                                    url.starts_with("http://") || url.starts_with("https://")
-                                })?;
+                            let url = entry_link(entry)?;
                             Some(PlaylistEntry {
                                 url,
                                 title: text(entry, "title"),
@@ -613,11 +652,25 @@ impl VideoProbe {
             .and_then(serde_json::Value::as_array)
             .map(|formats| formats.iter().collect())
             .unwrap_or_default();
-        let codec = |format: &serde_json::Value, key: &str| {
+        // yt-dlp leaves a codec out when it does not know it (common for HLS
+        // formats), and says "none" only when the track is absent.
+        let field = |format: &serde_json::Value, key: &str| {
             format
                 .get(key)
                 .and_then(serde_json::Value::as_str)
-                .is_some_and(|codec| codec != "none")
+                .map(str::to_owned)
+        };
+        let height_of =
+            |format: &serde_json::Value| format.get("height").and_then(serde_json::Value::as_u64);
+        let has_picture = |format: &serde_json::Value| match field(format, "vcodec").as_deref() {
+            Some("none") => false,
+            Some(_) => true,
+            None => height_of(format).is_some(),
+        };
+        let may_have_sound =
+            |format: &serde_json::Value| field(format, "acodec").as_deref() != Some("none");
+        let sound_only = |format: &serde_json::Value| {
+            field(format, "acodec").is_some_and(|codec| codec != "none") && !has_picture(format)
         };
         let size = |format: &serde_json::Value| {
             format
@@ -636,19 +689,17 @@ impl VideoProbe {
                 .map(|bytes| bytes as u64)
         };
 
-        let audio = best(
-            formats
-                .iter()
-                .copied()
-                .filter(|format| codec(format, "acodec") && !codec(format, "vcodec")),
-        );
+        let audio = best(formats.iter().copied().filter(|format| sound_only(format)));
         let audio_bytes = audio.and_then(size);
 
+        let usable = |format: &serde_json::Value| {
+            has_picture(format) && (has_ffmpeg || may_have_sound(format))
+        };
         let mut heights: Vec<u32> = formats
             .iter()
-            .filter(|format| codec(format, "vcodec"))
-            .filter(|format| has_ffmpeg || codec(format, "acodec"))
-            .filter_map(|format| format.get("height").and_then(serde_json::Value::as_u64))
+            .copied()
+            .filter(|format| usable(format))
+            .filter_map(height_of)
             .filter(|height| *height >= 144)
             .map(|height| height as u32)
             .collect();
@@ -662,16 +713,12 @@ impl VideoProbe {
                     formats
                         .iter()
                         .copied()
-                        .filter(|format| codec(format, "vcodec"))
-                        .filter(|format| has_ffmpeg || codec(format, "acodec"))
-                        .filter(|format| {
-                            format.get("height").and_then(serde_json::Value::as_u64)
-                                == Some(u64::from(height))
-                        }),
+                        .filter(|format| usable(format))
+                        .filter(|format| height_of(format) == Some(u64::from(height))),
                 );
                 let bytes = picture.and_then(|picture| {
                     let picture_bytes = size(picture)?;
-                    if codec(picture, "acodec") {
+                    if may_have_sound(picture) {
                         Some(picture_bytes)
                     } else {
                         Some(picture_bytes + audio_bytes.unwrap_or(0))
@@ -690,6 +737,54 @@ impl VideoProbe {
             is_playlist: false,
         }
     }
+}
+
+/// A playlist entry's page. Some sites give only the video's id as `url`;
+/// then the page link, or a YouTube link built from the id, is used.
+fn entry_link(entry: &serde_json::Value) -> Option<String> {
+    let web = |key: &str| {
+        entry
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|url| url.starts_with("http://") || url.starts_with("https://"))
+            .map(str::to_owned)
+    };
+    web("url").or_else(|| web("webpage_url")).or_else(|| {
+        let youtube = entry
+            .get("ie_key")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|key| key == "Youtube");
+        let id = entry.get("id").and_then(serde_json::Value::as_str)?;
+        (youtube
+            && !id.is_empty()
+            && id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+        .then(|| format!("https://www.youtube.com/watch?v={id}"))
+    })
+}
+
+/// For a channel, yt-dlp lists its tabs (videos, shorts, live) rather than
+/// videos. The tab worth opening instead: "videos", or else the first.
+fn channel_tab(info: &serde_json::Value) -> Option<String> {
+    let entries = info.get("entries")?.as_array()?;
+    let is_tab = |entry: &serde_json::Value| {
+        entry
+            .get("ie_key")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|key| key.ends_with("Tab"))
+            || entry.get("_type").and_then(serde_json::Value::as_str) == Some("playlist")
+    };
+    if entries.is_empty() || !entries.iter().all(is_tab) {
+        return None;
+    }
+    let links: Vec<String> = entries.iter().filter_map(entry_link).collect();
+    links
+        .iter()
+        .find(|link| link.trim_end_matches('/').ends_with("/videos"))
+        .or_else(|| links.first())
+        .cloned()
 }
 
 /// A format's bit rate in kbit/s, 0 when not given.
@@ -976,6 +1071,51 @@ mod tests {
         assert!(list.is_playlist);
         assert_eq!(list.entries.len(), 2);
         assert_eq!(list.entries[0].title.as_deref(), Some("One"));
+
+        // Formats whose codecs yt-dlp does not know (HLS) still count.
+        let hls = serde_json::json!({
+            "formats": [
+                {"format_id": "hls-720", "height": 720, "tbr": 2000.0},
+                {"format_id": "hls-360", "height": 360, "tbr": 700.0}
+            ],
+            "duration": 10.0
+        });
+        let found = VideoProbe::from_info(&hls, false);
+        assert_eq!(
+            found.qualities,
+            vec![
+                QualityOption {
+                    height: 720,
+                    bytes: Some(2_500_000)
+                },
+                QualityOption {
+                    height: 360,
+                    bytes: Some(875_000)
+                },
+            ]
+        );
+
+        // Bare ids become links; a channel's tabs lead to its videos tab.
+        let ids = serde_json::json!({
+            "_type": "playlist",
+            "entries": [{"url": "abc_-1", "id": "abc_-1", "ie_key": "Youtube"}]
+        });
+        assert_eq!(
+            VideoProbe::from_info(&ids, true).entries[0].url,
+            "https://www.youtube.com/watch?v=abc_-1"
+        );
+        let channel = serde_json::json!({
+            "_type": "playlist",
+            "entries": [
+                {"_type": "url", "ie_key": "YoutubeTab", "url": "https://www.youtube.com/@a/shorts"},
+                {"_type": "url", "ie_key": "YoutubeTab", "url": "https://www.youtube.com/@a/videos"}
+            ]
+        });
+        assert_eq!(
+            channel_tab(&channel).as_deref(),
+            Some("https://www.youtube.com/@a/videos")
+        );
+        assert_eq!(channel_tab(&playlist), None);
     }
 
     #[test]

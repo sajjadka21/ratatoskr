@@ -30,6 +30,8 @@ export function VideoQualityPicker({
   quality,
   onQualityChange,
   onReplaceLinks,
+  onPlaylist,
+  onBusy,
 }: {
   text: string;
   /** Chosen here; null until the user picks one. */
@@ -37,6 +39,10 @@ export function VideoQualityPicker({
   onQualityChange: (quality: VideoQuality) => void;
   /** Replaces the links, for adding every video of a playlist. */
   onReplaceLinks: (text: string) => void;
+  /** The videos of a playlist link, once known; null otherwise. */
+  onPlaylist?: (links: string[] | null) => void;
+  /** Whether the link is still being looked up. */
+  onBusy?: (busy: boolean) => void;
 }) {
   const { t, fmt } = useI18n();
   const [fallback, setFallback] = useState<VideoQuality>("best");
@@ -83,33 +89,36 @@ export function VideoQualityPicker({
     };
   }, [single]);
 
+  const probe = lookup.state === "done" ? lookup.probe : null;
+  const playlistLinks = probe?.isPlaylist ? probe.entries.map((entry) => entry.url) : null;
+  const playlistKey = playlistLinks?.join("\n") ?? null;
+  useEffect(() => {
+    onPlaylist?.(playlistKey ? playlistKey.split("\n") : null);
+  }, [playlistKey, onPlaylist]);
+  const busy = lookup.state === "loading";
+  useEffect(() => {
+    onBusy?.(busy);
+  }, [busy, onBusy]);
+  // Nothing lingers in the dialog once the picker is gone.
+  useEffect(
+    () => () => {
+      onPlaylist?.(null);
+      onBusy?.(false);
+    },
+    [onPlaylist, onBusy],
+  );
+
   if (videos.length === 0) return null;
 
-  const probe = lookup.state === "done" ? lookup.probe : null;
-
-  if (probe?.isPlaylist) {
+  const isList = Boolean(probe?.isPlaylist);
+  if (isList && probe && probe.entries.length === 0) {
     return (
       <div className="video-picker">
         <div className="video-picker__heading">
           <ListVideo size={15} aria-hidden="true" />
           <strong>{probe.title ?? t("video.playlist")}</strong>
         </div>
-        {probe.entries.length > 0 ? (
-          <>
-            <p className="video-picker__note">
-              {t("video.playlistHint", { count: fmt.number(probe.entries.length) })}
-            </p>
-            <button
-              type="button"
-              className="video-picker__expand"
-              onClick={() => onReplaceLinks(probe.entries.map((entry) => entry.url).join("\n"))}
-            >
-              {t("video.addAll", { count: fmt.number(probe.entries.length) })}
-            </button>
-          </>
-        ) : (
-          <p className="video-picker__note">{t("video.playlistEmpty")}</p>
-        )}
+        <p className="video-picker__note">{t("video.playlistEmpty")}</p>
       </div>
     );
   }
@@ -120,7 +129,7 @@ export function VideoQualityPicker({
     quality ?? (sameInLinks ? (inLinks[0] ?? fallback) : null);
 
   type Choice = { quality: VideoQuality; label: string; bytes?: number | null };
-  const heights = probe
+  const heights = probe && !isList
     ? probe.qualities
     : COMMON_HEIGHTS.map((height) => ({ height, bytes: null as number | null }));
   const choices: Choice[] = [
@@ -155,7 +164,11 @@ export function VideoQualityPicker({
   return (
     <div className="video-picker">
       <div className="video-picker__heading">
-        <Clapperboard size={15} aria-hidden="true" />
+        {isList ? (
+          <ListVideo size={15} aria-hidden="true" />
+        ) : (
+          <Clapperboard size={15} aria-hidden="true" />
+        )}
         {probe?.title ? (
           <strong className="video-picker__title" title={probe.title} dir="auto">
             {probe.title}
@@ -171,6 +184,21 @@ export function VideoQualityPicker({
           <span className="video-picker__meta">{fmt.duration(probe.durationSeconds)}</span>
         ) : null}
       </div>
+
+      {isList && probe ? (
+        <div className="video-picker__list">
+          <p className="video-picker__note">
+            {t("video.playlistHint", { count: fmt.number(probe.entries.length) })}
+          </p>
+          <button
+            type="button"
+            className="video-picker__expand"
+            onClick={() => onReplaceLinks(probe.entries.map((entry) => entry.url).join("\n"))}
+          >
+            {t("video.addAll", { count: fmt.number(probe.entries.length) })}
+          </button>
+        </div>
+      ) : null}
 
       <div className="video-picker__choices" role="radiogroup" aria-label={t("video.quality")}>
         {choices.map((choice) => {

@@ -35,13 +35,15 @@ export function RemoveHistoryDialog({
   const { t, fmt } = useI18n();
   const item = items[0] ?? null;
   const many = items.length > 1;
-  const key = items.map((entry) => entry.id).join(",");
   const [deleteFile, setDeleteFile] =
     useState(false);
 
+  // Reset each time the dialog opens, not when a partial failure leaves
+  // fewer items to retry: the user's choice stands for those.
+  const isOpen = items.length > 0;
   useEffect(() => {
-    setDeleteFile(false);
-  }, [key]);
+    if (isOpen) setDeleteFile(false);
+  }, [isOpen]);
 
   useEffect(() => {
     if (!item) return;

@@ -154,6 +154,11 @@ impl EventPublisher {
             dm_common::DownloadStatus::Completed | dm_common::DownloadStatus::Failed
         );
         if !ended {
+            // Running again (restarted, retried): its next ending is news.
+            if let Ok(mut announced) = ANNOUNCED.lock() {
+                let prefix = format!("{}:", record.id);
+                announced.retain(|key| !key.starts_with(&prefix));
+            }
             return;
         }
         let key = format!("{}:{}", record.id, record.status);
@@ -738,11 +743,16 @@ fn get_clipboard_watch(state: State<'_, AppState>) -> bool {
 }
 
 /// Whether the app starts (in the tray) when the user signs in to Windows.
+/// `None` where the app cannot start itself (outside Windows), so the
+/// setting is not offered.
 #[tauri::command]
-fn get_start_with_windows() -> bool {
+fn get_start_with_windows() -> Option<bool> {
+    if !cfg!(windows) {
+        return None;
+    }
     std::env::current_exe()
+        .ok()
         .map(|application| dm_system::autostart::enabled(&application))
-        .unwrap_or(false)
 }
 
 #[tauri::command]
@@ -782,9 +792,12 @@ fn set_add_download_input_mode(state: State<'_, AppState>, mode: String) -> Resu
 async fn create_download_task(
     state: State<'_, AppState>,
     url: String,
+    directory: Option<String>,
 ) -> Result<DownloadListItemResponse, String> {
-    let created = create_download_record(&state, url)?;
-    if state.downloads.may_adopt(&created.id) {
+    let created = create_download_record(&state, url, directory.as_deref())?;
+    // A folder chosen for this download belongs to a new one, not to a
+    // stopped download the link would otherwise continue.
+    if directory.is_none() && state.downloads.may_adopt(&created.id) {
         if let Ok(Some(adopted)) = state.downloads.adopt_fresh_link(&created.id).await {
             info!(download_id = %adopted.id, "fresh link continues a stopped download");
             return Ok(download_list_item_response(adopted));
@@ -796,11 +809,23 @@ async fn create_download_task(
 fn create_download_record(
     state: &AppState,
     url: String,
+    directory: Option<&str>,
 ) -> Result<DownloadListItemResponse, String> {
     let task = state
         .downloads
         .create_task(&url)
         .map_err(|error| error.to_string())?;
+
+    // Saved before a rule can hand the download to a running queue.
+    if let Some(directory) = directory.map(str::trim).filter(|value| !value.is_empty()) {
+        if let Err(error) = state
+            .downloads
+            .set_download_folder(&task.id, Some(std::path::Path::new(directory)))
+        {
+            let _ = state.storage.remove_download_record(&task.id);
+            return Err(error.to_string());
+        }
+    }
 
     let decision = state
         .downloads
@@ -848,7 +873,7 @@ fn handoff_browser_download(
     .validate()
     .map_err(|error| error.to_string())?;
     let context = handoff.request_context();
-    let record = create_download_record(&state, handoff.url)?;
+    let record = create_download_record(&state, handoff.url, None)?;
     state
         .storage
         .set_request_context(&record.id, &context)

@@ -693,3 +693,14 @@ var(--bg-elevated);
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+.video-picker__list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.video-picker__list .video-picker__note {
+  flex: 1 1 240px;
+}

@@ -107,7 +107,11 @@ export function SettingsPage({
 
   return (
     <section className="settings-page">
-      <AppearanceSection preferences={uiPreferences} onChange={onUiPreferencesChange} />
+      <AppearanceSection
+        preferences={uiPreferences}
+        onChange={onUiPreferencesChange}
+        onError={onError}
+      />
 
       <DownloadsSection
         settings={downloadSettings}
@@ -255,9 +259,11 @@ function InputModeOption({
 function AppearanceSection({
   preferences,
   onChange,
+  onError,
 }: {
   preferences: UiPreferences;
   onChange: (preferences: UiPreferences) => void;
+  onError: (message: string) => void;
 }) {
   const { t } = useI18n();
   const themes: Array<{ value: UiPreferences["theme"]; label: MessageKey }> = [
@@ -348,6 +354,7 @@ function AppearanceSection({
           read="get_start_with_windows"
           write="set_start_with_windows"
           divided={false}
+          onError={onError}
         />
       </div>
     </div>
@@ -1100,7 +1107,7 @@ function BackendSwitchRow({
 
   useEffect(() => {
     let cancelled = false;
-    invoke<boolean>(read)
+    invoke<boolean | null>(read)
       .then((value) => {
         if (!cancelled) setEnabled(value);
       })

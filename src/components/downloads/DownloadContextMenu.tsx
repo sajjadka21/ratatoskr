@@ -223,7 +223,7 @@ export function DownloadContextMenu({
       onClose();
     } catch (reason) {
       onClose();
-      onError?.(`Could not open file: ${String(reason)}`);
+      onError?.(t("context.openFailed", { reason: String(reason) }));
     }
   }
 
@@ -235,7 +235,7 @@ export function DownloadContextMenu({
       onClose();
     } catch (reason) {
       onClose();
-      onError?.(`Could not show file in folder: ${String(reason)}`);
+      onError?.(t("context.revealFailed", { reason: String(reason) }));
     }
   }
 

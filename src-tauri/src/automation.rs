@@ -99,11 +99,20 @@ pub fn queue_finished(app: &AppHandle, queue_id: &str, processed_work: bool) {
 
     match schedule.completion_action {
         CompletionAction::None => {}
-        CompletionAction::Notify => notify(
-            app,
-            "Queue finished",
-            &format!("“{queue_name}” has finished downloading."),
-        ),
+        CompletionAction::Notify => {
+            let (title, body) = if persian(app) {
+                (
+                    "صف تمام شد",
+                    format!("دانلودهای صف «{queue_name}» تمام شد."),
+                )
+            } else {
+                (
+                    "Queue finished",
+                    format!("“{queue_name}” has finished downloading."),
+                )
+            };
+            notify(app, title, &body);
+        }
         action => schedule_action(app, &state, queue_name, action),
     }
 }
@@ -120,16 +129,23 @@ fn schedule_action(
     }
 
     let due_at = unix_now() + CANCEL_WINDOW.as_secs() as i64;
-    let label = action_label(action);
+    let persian_text = persian(app);
     publish(app, id, &queue_name, action, due_at, "pending", None);
-    notify(
-        app,
-        "Queue finished",
-        &format!(
-            "“{queue_name}” is done. The computer will {label} in {} seconds unless you cancel.",
-            CANCEL_WINDOW.as_secs()
-        ),
-    );
+    let (title, body) = if persian_text {
+        (
+            "صف تمام شد",
+            format!(
+                "صف «{queue_name}» تمام شد. {}",
+                action_sentence(action, true)
+            ),
+        )
+    } else {
+        (
+            "Queue finished",
+            format!("“{queue_name}” is done. {}", action_sentence(action, false)),
+        )
+    };
+    notify(app, title, &body);
 
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -158,7 +174,11 @@ fn schedule_action(
         // Other downloads started during the wait: finishing them matters
         // more than the power action, which is skipped rather than delayed.
         if state.downloads.has_running_transfers() {
-            let message = "Skipped because other downloads are still running.";
+            let message = if persian_text {
+                "انجام نشد، چون دانلودهای دیگری هنوز در جریان‌اند."
+            } else {
+                "Skipped because other downloads are still running."
+            };
             publish(
                 &app,
                 id,
@@ -168,7 +188,15 @@ fn schedule_action(
                 "skipped",
                 Some(message),
             );
-            notify(&app, "Power action skipped", message);
+            notify(
+                &app,
+                if persian_text {
+                    "کار پایانی انجام نشد"
+                } else {
+                    "Power action skipped"
+                },
+                message,
+            );
             return;
         }
 
@@ -187,7 +215,11 @@ fn schedule_action(
 
         if let Err(error) = result {
             warn!(error = %error, "completion action failed");
-            let message = format!("Windows refused to {label}: {error}");
+            let message = if persian_text {
+                format!("ویندوز اجازه‌ی این کار را نداد: {error}")
+            } else {
+                format!("Windows refused to {}: {error}", action_label(action))
+            };
             publish(
                 &app,
                 id,
@@ -235,6 +267,73 @@ fn publish(
             message: message.map(str::to_owned),
         },
     );
+}
+
+/// Whether the user reads the app in Persian (the default).
+fn persian(app: &AppHandle) -> bool {
+    app.try_state::<AppState>()
+        .and_then(|state| {
+            state
+                .storage
+                .get_setting(crate::SETTING_UI_LANGUAGE)
+                .ok()
+                .flatten()
+        })
+        .is_none_or(|language| language != "en")
+}
+
+/// What is about to happen, and that it can still be cancelled.
+fn action_sentence(action: CompletionAction, persian: bool) -> String {
+    let seconds = CANCEL_WINDOW.as_secs();
+    if persian {
+        let what = match action {
+            CompletionAction::ExitApp => "راتاتوسک بسته می‌شود",
+            CompletionAction::Sleep => "رایانه به خواب می‌رود",
+            CompletionAction::Hibernate => "رایانه به حالت هایبرنیت می‌رود",
+            CompletionAction::Shutdown => "رایانه خاموش می‌شود",
+            CompletionAction::None | CompletionAction::Notify => "کاری انجام نمی‌شود",
+        };
+        let digits: String = seconds
+            .to_string()
+            .chars()
+            .map(|digit| match digit.to_digit(10) {
+                Some(value) => char::from_u32(0x06F0 + value).unwrap_or(digit),
+                None => digit,
+            })
+            .collect();
+        format!("تا {digits} ثانیه‌ی دیگر {what}، مگر این‌که لغوش کنید.")
+    } else {
+        let what = match action {
+            CompletionAction::ExitApp => "Ratatosk will close",
+            CompletionAction::Sleep => "the computer will sleep",
+            CompletionAction::Hibernate => "the computer will hibernate",
+            CompletionAction::Shutdown => "the computer will shut down",
+            CompletionAction::None | CompletionAction::Notify => "nothing happens",
+        };
+        format!("In {seconds} seconds {what} unless you cancel.")
+    }
+}
+
+/// A system notification that one download finished or failed.
+pub fn download_ended(app: &AppHandle, record: &dm_common::DownloadRecord) {
+    let name = record
+        .filename
+        .clone()
+        .unwrap_or_else(|| record.source_url.clone());
+    let failed = record.status == dm_common::DownloadStatus::Failed;
+    let (title, body) = match (persian(app), failed) {
+        (true, false) => ("دانلود تمام شد", name),
+        (true, true) => (
+            "دانلود ناموفق بود",
+            format!("{name}\nبرای جزئیات، برنامه را باز کنید."),
+        ),
+        (false, false) => ("Download finished", name),
+        (false, true) => (
+            "Download failed",
+            format!("{name}\nOpen Ratatosk for details."),
+        ),
+    };
+    notify(app, title, &body);
 }
 
 fn action_label(action: CompletionAction) -> &'static str {

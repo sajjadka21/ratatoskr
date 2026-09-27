@@ -74,3 +74,25 @@ export function engineReasonText(reason: string | null, t: Translate): string | 
   const key = `engine.reason.${reason}`;
   return key in messages.en ? t(key as MessageKey) : reason;
 }
+
+/** Backend refusals the user can meet, by the start of their English text. */
+const COMMAND_ERRORS: [RegExp, MessageKey][] = [
+  [/cannot be removed while its status is/i, "error.removeRunning"],
+  [/cannot remove download while status is/i, "error.removeRunning"],
+  [/invalid download state transition/i, "error.stateChanged"],
+  [/^download not found/i, "error.downloadGone"],
+  [/^queue not found/i, "error.queueGone"],
+  [/failed to delete downloaded file/i, "error.deleteFailed"],
+  [/database mutex is poisoned|sqlite error/i, "error.database"],
+  [/download engine is (not ready|unavailable)|download execution is unavailable/i, "error.engineBusy"],
+];
+
+/**
+ * A readable message for an error a command returned. Messages that are
+ * already the user's language, or that are not recognized, are kept.
+ */
+export function friendlyError(message: string, t: Translate): string {
+  const text = message.replace(/^Error:\s*/, "");
+  const known = COMMAND_ERRORS.find(([pattern]) => pattern.test(text));
+  return known ? t(known[1]) : message;
+}

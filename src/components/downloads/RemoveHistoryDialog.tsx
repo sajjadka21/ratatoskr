@@ -17,7 +17,8 @@ import { displayName } from "../../utils/fileKind";
 import "./RemoveHistoryDialog.css";
 
 type RemoveHistoryDialogProps = {
-  item: DownloadListItem | null;
+  /** What to remove; the dialog is closed while this is empty. */
+  items: DownloadListItem[];
   removing: boolean;
   error: string | null;
   onCancel: () => void;
@@ -25,19 +26,22 @@ type RemoveHistoryDialogProps = {
 };
 
 export function RemoveHistoryDialog({
-  item,
+  items,
   removing,
   error,
   onCancel,
   onConfirm,
 }: RemoveHistoryDialogProps) {
-  const { t } = useI18n();
+  const { t, fmt } = useI18n();
+  const item = items[0] ?? null;
+  const many = items.length > 1;
+  const key = items.map((entry) => entry.id).join(",");
   const [deleteFile, setDeleteFile] =
     useState(false);
 
   useEffect(() => {
     setDeleteFile(false);
-  }, [item?.id]);
+  }, [key]);
 
   useEffect(() => {
     if (!item) return;
@@ -68,10 +72,11 @@ export function RemoveHistoryDialog({
     return null;
   }
 
-  const name = displayName(item);
+  const name = many
+    ? t("remove.count", { count: fmt.number(items.length) })
+    : displayName(item);
 
-  const canDeleteFile =
-    Boolean(item.destinationPath);
+  const canDeleteFile = items.some((entry) => Boolean(entry.destinationPath));
 
   // A task that never transferred anything has no file to keep or delete, so
   // the dialog says what will actually happen instead of mentioning a file.
@@ -102,7 +107,11 @@ export function RemoveHistoryDialog({
 
           <div className="remove-history-dialog__heading">
             <h2 id="remove-history-title">
-              {hasFile ? t("remove.titleHistory") : t("remove.titleTask")}
+              {many
+                ? t("remove.titleMany", { count: fmt.number(items.length) })
+                : hasFile
+                  ? t("remove.titleHistory")
+                  : t("remove.titleTask")}
             </h2>
 
             <p>
@@ -124,7 +133,7 @@ export function RemoveHistoryDialog({
         <div className="remove-history-dialog__body">
           <div className="remove-history-dialog__file">
             <span>{hasFile ? t("remove.download") : t("remove.task")}</span>
-            <strong title={name} className="ltr">
+            <strong title={name} className={many ? undefined : "ltr"}>
               {name}
             </strong>
           </div>
@@ -145,7 +154,7 @@ export function RemoveHistoryDialog({
               <span className="remove-history-dialog__checkbox" />
 
               <div>
-                <strong>{t("remove.alsoDelete")}</strong>
+                <strong>{many ? t("remove.alsoDeleteMany") : t("remove.alsoDelete")}</strong>
                 <span>{t("remove.alsoDeleteHint")}</span>
               </div>
             </label>

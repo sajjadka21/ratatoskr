@@ -80,6 +80,11 @@ struct EventPublisher {
     last_sent: Arc<Mutex<HashMap<String, Instant>>>,
 }
 
+/// Endings already announced by a system notification, as `id:status`, so a
+/// row published again (a refresh) is not announced twice.
+static ANNOUNCED: std::sync::LazyLock<Mutex<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(|| Mutex::new(std::collections::HashSet::new()));
+
 impl EventPublisher {
     fn new(app: AppHandle) -> Self {
         Self {
@@ -133,10 +138,40 @@ impl EventPublisher {
 
     fn download_updated(&self, record: DownloadRecord) {
         self.forget(&record.id);
+        self.announce(&record);
         self.emit(
             DOWNLOAD_TASK_EVENT,
             DownloadTaskEvent::updated(download_list_item_response(record)),
         );
+    }
+
+    /// A system notification when a download finishes or fails while the
+    /// window is hidden or in the background, where its own message would
+    /// go unseen.
+    fn announce(&self, record: &DownloadRecord) {
+        let ended = matches!(
+            record.status,
+            dm_common::DownloadStatus::Completed | dm_common::DownloadStatus::Failed
+        );
+        if !ended {
+            return;
+        }
+        let key = format!("{}:{}", record.id, record.status);
+        let first = ANNOUNCED
+            .lock()
+            .map(|mut announced| announced.insert(key))
+            .unwrap_or(false);
+        if !first {
+            return;
+        }
+        let in_view = self.app.get_webview_window("main").is_some_and(|window| {
+            window.is_visible().unwrap_or(false)
+                && window.is_focused().unwrap_or(false)
+                && !window.is_minimized().unwrap_or(false)
+        });
+        if !in_view {
+            automation::download_ended(&self.app, record);
+        }
     }
 
     fn download_removed(&self, download_id: &str) {
@@ -164,6 +199,7 @@ impl EventPublisher {
             }
             QueueRunnerEvent::TaskUpdated(download) => {
                 self.forget(&download.id);
+                self.announce(&download);
                 QueueRunnerEventResponse::task_updated(
                     queue_id,
                     download_list_item_response(*download),
@@ -1960,7 +1996,7 @@ fn pause_all_downloads(state: State<'_, AppState>) -> usize {
     state.downloads.pause_all().len()
 }
 
-const SETTING_UI_LANGUAGE: &str = "ui_language";
+pub(crate) const SETTING_UI_LANGUAGE: &str = "ui_language";
 const SETTING_UI_THEME: &str = "ui_theme";
 
 fn ui_preferences(state: &AppState) -> Result<UiPreferencesResponse, String> {

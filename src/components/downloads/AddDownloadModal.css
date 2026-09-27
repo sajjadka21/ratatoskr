@@ -166,7 +166,7 @@ var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   border-radius: 9px;
 
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .add-download-modal__destination strong {
@@ -346,7 +346,7 @@ var(--bg-elevated);
 .add-download-modal__action-menu small {
   color: var(--text-muted);
 
-  font-size: 9px;
+  font-size: 10.5px;
   line-height: 1.4;
 }
 
@@ -375,7 +375,7 @@ var(--bg-elevated);
   border: 1px solid var(--border-strong);
   border-radius: 7px;
   outline: none;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .add-download-modal__create-queue input:focus {
@@ -506,7 +506,7 @@ var(--bg-elevated);
 
   color: var(--success);
 
-  font-size: 9px;
+  font-size: 10.5px;
 }
 
 .add-download-modal__detection--warning {

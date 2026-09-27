@@ -147,7 +147,7 @@ export function BackupSection({ onError, onSaved }: SectionProps) {
             <span className="settings-page__button-row">
               {pending ? (
                 <>
-                  <button type="button" className="settings-page__primary-button" onClick={() => void invoke("restart_app")}>
+                  <button type="button" className="settings-page__primary-button" onClick={() => void invoke("restart_app").catch((reason) => onError(String(reason)))}>
                     <RotateCw size={14} /> {t("backup.restartNow")}
                   </button>
                   <button type="button" className="settings-page__secondary-button" onClick={() => void cancelRestore()}>

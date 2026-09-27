@@ -16,7 +16,7 @@
 
   color: var(--text-muted);
 
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .settings-page__group {
@@ -46,7 +46,7 @@
 
   color: var(--text-muted);
 
-  font-size: 9px;
+  font-size: 10.5px;
 }
 
 .settings-page__options {
@@ -138,7 +138,7 @@
 
   color: var(--text-muted);
 
-  font-size: 9px;
+  font-size: 10.5px;
   line-height: 1.5;
 }
 
@@ -178,7 +178,7 @@
   border: 1px solid color-mix(in srgb, var(--info) 10%, transparent);
   border-radius: 8px;
 
-  font-size: 9px;
+  font-size: 10.5px;
   line-height: 1.5;
 }
 
@@ -187,7 +187,7 @@
 
   color: var(--text-muted);
 
-  font-size: 9px;
+  font-size: 10.5px;
 }
 
 .settings-page__error {
@@ -200,7 +200,7 @@
   border: 1px solid color-mix(in srgb, var(--danger) 18%, transparent);
   border-radius: 8px;
 
-  font-size: 9px;
+  font-size: 10.5px;
 }
 
  .settings-page__section {
@@ -233,7 +233,7 @@
 .settings-page__schedule span {
   margin-top: 4px;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 10.5px;
 }
 
 .settings-page__secondary-button {
@@ -242,7 +242,7 @@
   background: var(--bg-app);
   border: 1px solid var(--border-subtle);
   border-radius: 7px;
-  font-size: 9px;
+  font-size: 10.5px;
   cursor: pointer;
 }
 
@@ -270,7 +270,7 @@
   display: block;
   margin-top: 4px;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 10.5px;
 }
 
 @media (max-width: 760px) {

@@ -39,6 +39,8 @@ type UseQueuesOptions = {
   ) => void;
   clearLiveMetrics: (downloadId: string) => void;
   refreshDownloads: () => Promise<void>;
+  /** A row a queue changed: handled like any other engine update. */
+  onTaskUpdated: (record: DownloadListItem) => void;
 };
 
 export function useQueues({
@@ -46,6 +48,7 @@ export function useQueues({
   updateDownloadProgress,
   clearLiveMetrics,
   refreshDownloads,
+  onTaskUpdated,
 }: UseQueuesOptions) {
   const [queues, setQueues] = useState<DownloadQueue[]>([]);
 
@@ -76,8 +79,7 @@ export function useQueues({
         }
 
         if (payload.kind === "taskUpdated" && payload.download) {
-          clearLiveMetrics(payload.download.id);
-          upsertDownloads([payload.download]);
+          onTaskUpdated(payload.download);
           return;
         }
 
@@ -108,6 +110,7 @@ export function useQueues({
     upsertDownloads,
     updateDownloadProgress,
     clearLiveMetrics,
+    onTaskUpdated,
   ]);
 
   async function createQueue(input: {

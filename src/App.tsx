@@ -25,7 +25,7 @@ import { SettingsPage, type AddDownloadInputMode } from "./components/settings/S
 import { useQueues } from "./hooks/useQueues";
 import { useThroughputHistory } from "./hooks/useThroughputHistory";
 import { useI18n } from "./i18n/I18n";
-import { engineReasonText, noticeText } from "./utils/notices";
+import { engineReasonText, friendlyError, noticeText } from "./utils/notices";
 import { isVideoPage } from "./utils/videoPages";
 import { CommandPalette } from "./components/common/CommandPalette";
 import type { PaletteCommand } from "./utils/commandSearch";
@@ -66,6 +66,7 @@ type DownloadTaskEvent = {
 const DOWNLOAD_TASK_EVENT = "download-task-event";
 const LINK_INTAKE_EVENT = "link-intake";
 const CLIPBOARD_LINKS_EVENT = "clipboard-links";
+const TRAY_ACTION_EVENT = "tray-action";
 const UPDATE_AVAILABLE_EVENT = "update-available";
 const COMPLETION_ACTION_EVENT = "completion-action";
 
@@ -75,6 +76,8 @@ const PROGRESS_ACCEPTING_STATUSES = new Set(["created", "probing", "queued", "re
 const ACTIVE_STATUSES = new Set(["created", "probing", "downloading", "paused", "retrying", "finalizing"]);
 const RESUMABLE_STATUSES = new Set(["paused", "retrying"]);
 const ACTIVITY_LIMIT = 30;
+/// More links than this, started together, run through a queue instead.
+const BATCH_START_LIMIT = 3;
 
 const TOAST_DURATION_MS: Record<ToastKind, number> = { success: 4_000, info: 5_000, error: 9_000 };
 
@@ -159,7 +162,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   const lastEventAt = useRef(new Map<string, number>());
 
   const [contextMenu, setContextMenu] = useState<{ item: DownloadListItem; x: number; y: number } | null>(null);
-  const [removeCandidate, setRemoveCandidate] = useState<DownloadListItem | null>(null);
+  const [removeCandidates, setRemoveCandidates] = useState<DownloadListItem[]>([]);
   const [removingHistory, setRemovingHistory] = useState(false);
   const [removeHistoryError, setRemoveHistoryError] = useState<string | null>(null);
   const [refreshCandidate, setRefreshCandidate] = useState<DownloadListItem | null>(null);
@@ -211,8 +214,11 @@ function App({ preferences, onPreferencesChange }: AppProps) {
 
   /// Feedback that does not belong to an open dialog. Identical messages
   /// collapse so a failing bulk action cannot flood the screen.
+  const translateRef = useRef(t);
+  translateRef.current = t;
   const notify = useCallback(
-    (kind: ToastKind, message: string) => {
+    (kind: ToastKind, raw: string) => {
+      const message = kind === "error" ? friendlyError(raw, translateRef.current) : raw;
       const id = nextToastId.current++;
       setToasts((current) => [...current.filter((toast) => toast.message !== message).slice(-3), { id, kind, message }]);
       window.setTimeout(() => dismissToast(id), TOAST_DURATION_MS[kind]);
@@ -310,6 +316,12 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     });
   }, []);
 
+  // Set further down, once everything it uses exists.
+  const applyUpdatedRecord = useRef<(record: DownloadListItem) => void>(() => undefined);
+  const onQueueTaskUpdated = useCallback(
+    (record: DownloadListItem) => applyUpdatedRecord.current(record),
+    [],
+  );
   const {
     queues,
     refreshQueues,
@@ -321,7 +333,13 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     moveQueuedDownload,
     removeFromQueue,
     changePriority,
-  } = useQueues({ upsertDownloads, updateDownloadProgress, clearLiveMetrics, refreshDownloads });
+  } = useQueues({
+    upsertDownloads,
+    updateDownloadProgress,
+    clearLiveMetrics,
+    refreshDownloads,
+    onTaskUpdated: onQueueTaskUpdated,
+  });
 
   // The usage chip follows traffic without being a live counter: a refresh
   // every 20 seconds, and whenever the downloads page comes back into view.
@@ -361,6 +379,30 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   latestT.current = t;
   const latestLanguage = useRef(language);
   latestLanguage.current = language;
+  // A row the engine changed, from a single download or a queue: announce
+  // how it ended and show it. Kept in a ref so listeners never go stale.
+  applyUpdatedRecord.current = (record) => {
+    const status = record.status.toLowerCase();
+    const name = displayName(record);
+    if (status === "completed") {
+      notify("success", latestT.current("toast.completed", { name }));
+    } else if (status === "failed") {
+      notify(
+        "error",
+        record.errorMessage
+          ? latestT.current("toast.failedWithReason", {
+              name,
+              reason:
+                noticeText(record.errorCode, record.errorMessage, latestT.current, latestLanguage.current) ??
+                record.errorMessage,
+            })
+          : latestT.current("toast.failed", { name }),
+      );
+    }
+    clearLiveMetrics(record.id);
+    lastEventAt.current.set(record.id, performance.now());
+    upsertDownloads([record]);
+  };
   useEffect(() => {
     const subscription = listen<DownloadTaskEvent>(DOWNLOAD_TASK_EVENT, ({ payload }) => {
       if (payload.kind === "removed") {
@@ -369,30 +411,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
         return;
       }
       if (payload.kind === "updated" && payload.download) {
-        const status = payload.download.status.toLowerCase();
-        const name = displayName(payload.download);
-        if (status === "completed") {
-          notify("success", latestT.current("toast.completed", { name }));
-        } else if (status === "failed") {
-          notify(
-            "error",
-            payload.download.errorMessage
-              ? latestT.current("toast.failedWithReason", {
-                  name,
-                  reason:
-                    noticeText(
-                      payload.download.errorCode,
-                      payload.download.errorMessage,
-                      latestT.current,
-                      latestLanguage.current,
-                    ) ?? payload.download.errorMessage,
-                })
-              : latestT.current("toast.failed", { name }),
-          );
-        }
-        clearLiveMetrics(payload.downloadId);
-        lastEventAt.current.set(payload.downloadId, performance.now());
-        upsertDownloads([payload.download]);
+        applyUpdatedRecord.current(payload.download);
         return;
       }
       updateDownloadProgress(
@@ -445,6 +464,17 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     }
     void collectIntake();
     const subscription = listen(LINK_INTAKE_EVENT, () => void collectIntake());
+    return () => void subscription.then((unlisten) => unlisten());
+  }, []);
+
+  // The tray menu's "Add link" and "Resume all".
+  const trayActions = useRef<(action: string) => void>(() => undefined);
+  trayActions.current = (action) => {
+    if (action === "add" && !modalOpen) void openAddDownload();
+    else if (action === "resume-all") void resumeAll();
+  };
+  useEffect(() => {
+    const subscription = listen<string>(TRAY_ACTION_EVENT, ({ payload }) => trayActions.current(payload));
     return () => void subscription.then((unlisten) => unlisten());
   }, []);
 
@@ -585,7 +615,13 @@ function App({ preferences, onPreferencesChange }: AppProps) {
       const labels =
         lastTrayLanguage.current === language
           ? null
-          : { show: t("tray.show"), pauseAll: t("tray.pauseAll"), quit: t("tray.quit") };
+          : {
+              show: t("tray.show"),
+              add: t("tray.add"),
+              resumeAll: t("tray.resumeAll"),
+              pauseAll: t("tray.pauseAll"),
+              quit: t("tray.quit"),
+            };
       lastTrayLanguage.current = language;
       void invoke("set_tray_status", { tooltip: trayTooltip, labels }).catch(() => {});
     }, 1500);
@@ -610,7 +646,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
       await applyCommandResult(id, invoke<DownloadListItem>("start_download", { id }));
     } catch (reason) {
       notify("error", t("toast.startFailed", { reason: String(reason) }));
-      await refreshDownloads();
+      await refreshDownloads().catch(() => undefined);
     } finally {
       startingTaskIds.current.delete(id);
     }
@@ -648,11 +684,16 @@ function App({ preferences, onPreferencesChange }: AppProps) {
           reason: String(reason),
         }),
       );
-      await refreshDownloads();
+      await refreshDownloads().catch(() => undefined);
     }
   }
 
   async function runBulkAction(action: BulkAction) {
+    // Removing asks first, and can delete the files too.
+    if (action === "remove") {
+      setRemoveCandidates(selectedDownloads);
+      return;
+    }
     const failures: string[] = [];
     for (const item of selectedDownloads) {
       try {
@@ -670,16 +711,13 @@ function App({ preferences, onPreferencesChange }: AppProps) {
           case "cancel":
             await invoke("cancel_download", { id: item.id });
             break;
-          case "remove":
-            await invoke("remove_download", { id: item.id, deleteFile: false });
-            break;
         }
       } catch (reason) {
         failures.push(String(reason));
       }
     }
     if (failures.length) notify("error", t("toast.bulkFailed", { reason: failures[0] }));
-    await refreshDownloads();
+    await refreshDownloads().catch(() => undefined);
     clearSelection();
   }
 
@@ -692,7 +730,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
         notify("error", t("toast.queueFailed", { reason: String(reason) }));
       }
     }
-    await refreshDownloads();
+    await refreshDownloads().catch(() => undefined);
     clearSelection();
   }
 
@@ -704,7 +742,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
         notify("error", t("toast.queueFailed", { reason: String(reason) }));
       }
     }
-    await refreshDownloads();
+    await refreshDownloads().catch(() => undefined);
     clearSelection();
   }
 
@@ -741,7 +779,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
       upsertDownloads([await invoke<DownloadListItem>("refresh_download_source", { id: item.id, sourceUrl })]);
       setRefreshCandidate(null);
     } catch (reason) {
-      await refreshDownloads();
+      await refreshDownloads().catch(() => undefined);
       throw t("toast.refreshFailed", { reason: String(reason) });
     }
   }
@@ -751,7 +789,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
       await action();
     } catch (reason) {
       notify("error", t("toast.queueFailed", { reason: String(reason) }));
-      await refreshDownloads();
+      await refreshDownloads().catch(() => undefined);
     }
   }
 
@@ -789,6 +827,23 @@ function App({ preferences, onPreferencesChange }: AppProps) {
           defaultPriority: "normal",
         });
         targetQueueId = queue.id;
+      }
+      // Many links started at once (a whole playlist, say) would all download
+      // side by side; they go through a queue that runs a few at a time.
+      const throughQueue = action.kind === "start-now" && links.length > BATCH_START_LIMIT;
+      if (throughQueue) {
+        const name = t("add.batchQueueName");
+        const existing = queues.find((queue) => queue.name === name);
+        targetQueueId =
+          existing?.id ??
+          (
+            await createQueue({
+              name,
+              maxConcurrent: BATCH_START_LIMIT,
+              maxConcurrentPerHost: 2,
+              defaultPriority: "normal",
+            })
+          ).id;
       }
 
       for (const link of links) {
@@ -829,7 +884,10 @@ function App({ preferences, onPreferencesChange }: AppProps) {
           }),
         );
       }
-      if (action.kind === "start-now") {
+      if (throughQueue && targetQueueId && created.length > 0) {
+        await startQueue(targetQueueId);
+        notify("info", t("toast.batchQueued", { count: fmt.number(created.length) }));
+      } else if (action.kind === "start-now") {
         for (const task of created) void startPersistedTask(task.id);
       }
     } catch (reason) {
@@ -982,28 +1040,31 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   // ---- keyboard -----------------------------------------------------------
 
   const overlayOpen =
-    modalOpen || paletteOpen || Boolean(contextMenu) || Boolean(removeCandidate) || Boolean(refreshCandidate);
+    modalOpen || paletteOpen || Boolean(contextMenu) || removeCandidates.length > 0 || Boolean(refreshCandidate);
   const keyboard = useRef<(event: KeyboardEvent) => void>(() => {});
   keyboard.current = (event: KeyboardEvent) => {
     const control = event.ctrlKey || event.metaKey;
-    const key = event.key.toLowerCase();
 
-    if (control && (key === "k" || (event.shiftKey && key === "p"))) {
+    // Shortcuts go by the key's place, so they work with a Persian layout too.
+    const code = event.code;
+    if (control && (code === "KeyK" || (event.shiftKey && code === "KeyP"))) {
       event.preventDefault();
       setPaletteOpen((open) => !open);
       return;
     }
-    if (control && key === ",") {
+    if (control && code === "KeyN") {
+      event.preventDefault();
+      if (!modalOpen) void openAddDownload();
+      return;
+    }
+    // Leaving the page behind an open dialog would strand the dialog.
+    if (control && (code === "Comma" || code === "KeyF") && overlayOpen) return;
+    if (control && code === "Comma") {
       event.preventDefault();
       goToPage("settings");
       return;
     }
-    if (control && key === "n") {
-      event.preventDefault();
-      void openAddDownload();
-      return;
-    }
-    if (control && key === "f") {
+    if (control && code === "KeyF") {
       event.preventDefault();
       setPage("downloads");
       window.setTimeout(() => document.getElementById("download-search")?.focus(), 0);
@@ -1011,7 +1072,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     }
     if (overlayOpen || isTypingTarget(event.target) || page !== "downloads") return;
 
-    if (control && key === "a") {
+    if (control && code === "KeyA") {
       event.preventDefault();
       setSelectedIds(new Set(visibleDownloads.map((item) => item.id)));
     } else if (event.key === "Escape") {
@@ -1034,8 +1095,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
       }
     } else if (event.key === "Delete" && selectedDownloads.length > 0) {
       event.preventDefault();
-      if (selectedDownloads.length === 1) setRemoveCandidate(selectedDownloads[0]);
-      else void runBulkAction("remove");
+      setRemoveCandidates(selectedDownloads);
     }
   };
   useEffect(() => {
@@ -1061,23 +1121,31 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   }
 
   async function confirmRemove(deleteFile: boolean) {
-    if (!removeCandidate) return;
+    if (removeCandidates.length === 0) return;
     setRemovingHistory(true);
     setRemoveHistoryError(null);
-    try {
-      await invoke<void>("remove_download", { id: removeCandidate.id, deleteFile });
-      if (focusedId === removeCandidate.id) setDetailsOpen(false);
-      setSelectedIds((current) => {
-        const next = new Set(current);
-        next.delete(removeCandidate.id);
-        return next;
-      });
-      await refreshDownloads();
-      setRemoveCandidate(null);
-    } catch (reason) {
-      setRemoveHistoryError(String(reason));
-    } finally {
-      setRemovingHistory(false);
+    const removed = new Set<string>();
+    let failure: string | null = null;
+    for (const item of removeCandidates) {
+      try {
+        await invoke<void>("remove_download", {
+          id: item.id,
+          deleteFile: deleteFile && Boolean(item.destinationPath),
+        });
+        removed.add(item.id);
+      } catch (reason) {
+        failure ??= String(reason);
+      }
+    }
+    if (focusedId && removed.has(focusedId)) setDetailsOpen(false);
+    setSelectedIds((current) => new Set([...current].filter((id) => !removed.has(id))));
+    await refreshDownloads().catch(() => undefined);
+    setRemovingHistory(false);
+    if (failure) {
+      setRemoveCandidates((current) => current.filter((item) => !removed.has(item.id)));
+      setRemoveHistoryError(friendlyError(failure, t));
+    } else {
+      setRemoveCandidates([]);
     }
   }
 
@@ -1281,7 +1349,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
         onRemoveFromHistory={(item) => {
           setContextMenu(null);
           setRemoveHistoryError(null);
-          setRemoveCandidate(item);
+          setRemoveCandidates([item]);
         }}
         onRefreshSource={(item) => {
           setContextMenu(null);
@@ -1291,13 +1359,13 @@ function App({ preferences, onPreferencesChange }: AppProps) {
       />
 
       <RemoveHistoryDialog
-        item={removeCandidate}
+        items={removeCandidates}
         removing={removingHistory}
         error={removeHistoryError}
         onCancel={() => {
           if (removingHistory) return;
           setRemoveHistoryError(null);
-          setRemoveCandidate(null);
+          setRemoveCandidates([]);
         }}
         onConfirm={(deleteFile) => void confirmRemove(deleteFile)}
       />

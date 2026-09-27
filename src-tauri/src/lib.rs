@@ -602,7 +602,7 @@ fn remove_download(
     // A paused or cancelled task can still own a partial file; removing the
     // row must not leave it behind.
     if let Some(temp_path) = record.temp_path.as_deref() {
-        let _ = std::fs::remove_file(temp_path);
+        dm_core::service::discard_partial(temp_path);
     }
 
     state
@@ -1132,6 +1132,30 @@ fn set_download_mirrors(
         .downloads
         .set_mirrors(&id, &urls)
         .map_err(|error| error.to_string())
+}
+
+/// What a video page holds (its qualities and their sizes, or a playlist's
+/// videos), for choosing before downloading. Fails with `needs_ytdlp` when
+/// yt-dlp is not available.
+#[tauri::command]
+async fn probe_video(
+    state: State<'_, AppState>,
+    url: String,
+) -> Result<dm_core::ytdlp::VideoProbe, String> {
+    if !dm_core::ytdlp::handles(dm_core::ytdlp::without_fragment(&url)) {
+        return Err("not_a_video_page".to_owned());
+    }
+    state
+        .downloads
+        .probe_video(&url)
+        .await
+        .map_err(|error| match error {
+            dm_core::service::DownloadServiceError::Download(
+                dm_core::DownloadError::NeedsYtDlp,
+            ) => "needs_ytdlp".to_owned(),
+            dm_core::service::DownloadServiceError::Download(error) => error.redacted_message(),
+            other => other.to_string(),
+        })
 }
 
 /// The qualities an HLS link offers, for choosing before downloading.
@@ -2527,7 +2551,7 @@ fn spawn_transfer(
                 publisher.download_updated(record);
             }
             Err(error) => {
-                warn!(download_id = %download_id, error = %error, "transfer failed");
+                warn!(download_id = %download_id, error = %error.log_message(), "transfer failed");
                 publisher.download_refreshed(&download_id);
             }
         }
@@ -2794,6 +2818,7 @@ pub fn run() {
             list_download_mirrors,
             set_download_mirrors,
             list_stream_variants,
+            probe_video,
             get_engine_settings,
             get_ffmpeg_status,
             set_ffmpeg_path,

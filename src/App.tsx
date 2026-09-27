@@ -26,6 +26,7 @@ import { useQueues } from "./hooks/useQueues";
 import { useThroughputHistory } from "./hooks/useThroughputHistory";
 import { useI18n } from "./i18n/I18n";
 import { engineReasonText, noticeText } from "./utils/notices";
+import { isVideoPage } from "./utils/videoPages";
 import { CommandPalette } from "./components/common/CommandPalette";
 import type { PaletteCommand } from "./utils/commandSearch";
 import type { MessageKey } from "./i18n/messages";
@@ -133,6 +134,12 @@ function App({ preferences, onPreferencesChange }: AppProps) {
 
   const [health, setHealth] = useState<HealthCheckResponse | null>(null);
   const [downloads, setDownloads] = useState<DownloadListItem[]>([]);
+  // Links already in the list, without the quality fragment, to warn about
+  // adding one twice.
+  const knownLinks = useMemo(
+    () => new Set(downloads.map((download) => download.sourceUrl.split("#")[0])),
+    [downloads],
+  );
   const [page, setPage] = useState<WorkspacePage>("downloads");
   const [section, setSection] = useState<DownloadSection>("all");
   const [sort, setSort] = useState<SortState>({ key: "added", descending: true });
@@ -422,6 +429,14 @@ function App({ preferences, onPreferencesChange }: AppProps) {
       try {
         const urls = await invoke<string[]>("take_pending_link_intake");
         if (urls.length === 0) return;
+        // A video page sent from the browser opens the Add dialog, where its
+        // quality can be chosen; other links go to LinkGrabber for review.
+        if (urls.length <= 20 && urls.every((link) => isVideoPage(link))) {
+          setAddError(null);
+          setUrl(urls.join("\n"));
+          setModalOpen(true);
+          return;
+        }
         setLinkIntake((current) => ({ id: (current?.id ?? 0) + 1, urls }));
         setPage("linkgrabber");
       } catch (reason) {
@@ -1314,6 +1329,11 @@ function App({ preferences, onPreferencesChange }: AppProps) {
         engineReady={allReady}
         error={addError}
         linkCount={extractHttpUrls(url).length}
+        duplicateCount={
+          modalOpen
+            ? extractHttpUrls(url).filter((link) => knownLinks.has(link.split("#")[0])).length
+            : 0
+        }
         queues={queues}
         defaultDirectory={downloadSettings?.defaultDirectory ?? null}
         onUrlChange={setUrl}
@@ -1322,7 +1342,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
           setAddError(null);
           setModalOpen(false);
         }}
-        onSubmit={(action) => void createDownloadTasks(action)}
+        onSubmit={(action, links) => void createDownloadTasks(action, links)}
       />
     </>
   );

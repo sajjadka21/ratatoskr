@@ -18,6 +18,8 @@ import { useI18n } from "../../i18n/I18n";
 import type { MessageKey } from "../../i18n/messages";
 
 import { StreamQualityPicker } from "./StreamQualityPicker";
+import { VideoQualityPicker } from "./VideoQualityPicker";
+import { withVideoQualityForAll, type VideoQuality } from "../../utils/videoPages";
 
 import "./AddDownloadModal.css";
 import type { DownloadQueue } from "../../types/download";
@@ -35,13 +37,16 @@ type AddDownloadModalProps = {
   engineReady: boolean;
   error: string | null;
   linkCount: number;
+  /** How many of the links are already in the downloads list. */
+  duplicateCount?: number;
   queues: DownloadQueue[];
   /// Folder used when no category or rule names one; null is the system
   /// Downloads folder.
   defaultDirectory?: string | null;
   onUrlChange: (value: string) => void;
   onClose: () => void;
-  onSubmit: (action: AddDownloadAction) => void;
+  /** `links` is the text to add, with any quality chosen here attached. */
+  onSubmit: (action: AddDownloadAction, links: string) => void;
 };
 
 export function AddDownloadModal({
@@ -51,6 +56,7 @@ export function AddDownloadModal({
   engineReady,
   error,
   linkCount,
+  duplicateCount = 0,
   queues,
   defaultDirectory = null,
   onUrlChange,
@@ -65,6 +71,15 @@ export function AddDownloadModal({
   const [actionMenuOpen, setActionMenuOpen] =
     useState(false);
   const [newQueueName, setNewQueueName] = useState("");
+  const [videoQuality, setVideoQuality] = useState<VideoQuality | null>(null);
+
+  useEffect(() => {
+    if (open) setVideoQuality(null);
+  }, [open]);
+
+  function submit(action: AddDownloadAction) {
+    onSubmit(action, videoQuality === null ? url : withVideoQualityForAll(url, videoQuality));
+  }
 
   const isBatch = linkCount > 1;
   const actionsDisabled =
@@ -221,7 +236,7 @@ export function AddDownloadModal({
                   !actionsDisabled
                 ) {
                   event.preventDefault();
-                  onSubmit({ kind: "start-now" });
+                  submit({ kind: "start-now" });
                 }
               }}
               disabled={submitting}
@@ -251,8 +266,25 @@ export function AddDownloadModal({
             </div>
           ) : null}
 
+          {duplicateCount > 0 ? (
+            <div className="add-download-modal__detection add-download-modal__detection--warning">
+              {linkCount === 1
+                ? t("add.duplicateOne")
+                : t("add.duplicateSome", { count: fmt.number(duplicateCount) })}
+            </div>
+          ) : null}
+
           {linkCount === 1 ? (
             <StreamQualityPicker url={url} onChoose={onUrlChange} />
+          ) : null}
+
+          {linkCount > 0 ? (
+            <VideoQualityPicker
+              text={url}
+              quality={videoQuality}
+              onQualityChange={setVideoQuality}
+              onReplaceLinks={onUrlChange}
+            />
           ) : null}
 
           <div className="add-download-modal__destination">
@@ -287,7 +319,7 @@ export function AddDownloadModal({
             <button
               type="button"
               className="add-download-modal__submit"
-              onClick={() => onSubmit({ kind: "start-now" })}
+              onClick={() => submit({ kind: "start-now" })}
               disabled={actionsDisabled}
             >
               {isBatch ? (
@@ -325,7 +357,7 @@ export function AddDownloadModal({
                   role="menuitem"
                   onClick={() => {
                     setActionMenuOpen(false);
-                    onSubmit({ kind: "start-now" });
+                    submit({ kind: "start-now" });
                   }}
                 >
                   <Download size={15} />
@@ -340,7 +372,7 @@ export function AddDownloadModal({
                   role="menuitem"
                   onClick={() => {
                     setActionMenuOpen(false);
-                    onSubmit({ kind: "download-later" });
+                    submit({ kind: "download-later" });
                   }}
                 >
                   <Clock3 size={15} />
@@ -359,7 +391,7 @@ export function AddDownloadModal({
                     role="menuitem"
                     onClick={() => {
                       setActionMenuOpen(false);
-                      onSubmit({ kind: "queue", queueId: queue.id });
+                      submit({ kind: "queue", queueId: queue.id });
                     }}
                   >
                     <Layers3 size={15} />
@@ -390,7 +422,7 @@ export function AddDownloadModal({
                       if (!queueName) return;
                       setActionMenuOpen(false);
                       setNewQueueName("");
-                      onSubmit({ kind: "create-queue", queueName });
+                      submit({ kind: "create-queue", queueName });
                     }}
                   >
                     <Plus size={14} />

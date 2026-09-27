@@ -19,6 +19,8 @@ import { engineReasonText, noticeDetail, noticeText } from "../../utils/notices"
 import type { MessageKey } from "../../i18n/messages";
 import type { DownloadListItem, TaskAction, TransferMetrics } from "../../types/download";
 import { displayName, fileKind } from "../../utils/fileKind";
+import { heightLabel } from "../../utils/streams";
+import { videoQualityOf, type VideoQuality } from "../../utils/videoPages";
 import { formatHost } from "../../utils/format";
 import { availableActions } from "../../utils/taskActions";
 import { FileBadge } from "../common/FileBadge";
@@ -253,11 +255,16 @@ export function DownloadDetailsPanel({
 
         <dl className="details__properties">
           <Property label={t("details.source")}>
-            <span className="ltr details__value-clip" title={current.sourceUrl}>
-              {current.sourceUrl}
+            <span className="ltr details__value-clip" title={withoutQuality(current.sourceUrl)}>
+              {withoutQuality(current.sourceUrl)}
             </span>
-            <CopyButton done={copied === "url"} label={t("details.copyUrl")} onClick={() => void copy(current.sourceUrl, "url")} />
+            <CopyButton done={copied === "url"} label={t("details.copyUrl")} onClick={() => void copy(withoutQuality(current.sourceUrl), "url")} />
           </Property>
+          {videoQualityOf(current.sourceUrl) !== null ? (
+            <Property label={t("video.quality")}>
+              <span>{qualityLabel(videoQualityOf(current.sourceUrl)!, t, fmt.language)}</span>
+            </Property>
+          ) : null}
           <Property label={t("details.destination")}>
             <span className="ltr details__value-clip" title={current.destinationPath ?? ""}>
               {current.destinationPath ?? "—"}
@@ -348,4 +355,15 @@ function CopyButton({ done, label, onClick }: { done: boolean; label: string; on
 function kindLabel(item: DownloadListItem, t: (key: MessageKey) => string): string {
   const kind = fileKind(item);
   return kind === "other" ? t("details.unknownType") : t(`stats.kind.${kind}`);
+}
+
+/** The link as the user gave it, without the quality chosen for it. */
+function withoutQuality(url: string): string {
+  return url.replace(/#rud-quality=[^&]*$/, "");
+}
+
+function qualityLabel(quality: VideoQuality, t: (key: MessageKey) => string, language: string): string {
+  if (quality === "best") return t("video.best");
+  if (quality === "audio") return t("video.audio");
+  return heightLabel(quality, language);
 }

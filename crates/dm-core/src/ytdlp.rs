@@ -1,15 +1,16 @@
-//! yt-dlp, when the user has it: videos from YouTube and similar sites,
-//! whose pages are not files a plain HTTP download could fetch.
+//! yt-dlp: videos from YouTube and similar sites, whose pages are not files
+//! a plain HTTP download could fetch.
 //!
-//! Like FFmpeg, yt-dlp is never downloaded or bundled. It is found where the
-//! user put it (a path in Settings, next to the application, or on `PATH`)
-//! and run with an argument list, never through a shell. It works in a
-//! private folder next to the destination, so pausing (stopping the program)
-//! leaves its partial files for the next run to continue, and cancelling
-//! removes that folder only.
+//! The application keeps its own copy up to date (see `install_latest` and
+//! `self_update`), and also uses one the user chose in Settings or has on
+//! `PATH`. It is run with an argument list, never through a shell. It works
+//! in a private folder next to the destination, so pausing (stopping the
+//! program) leaves its partial files for the next run to continue, and
+//! cancelling removes that folder only.
 
 use crate::control::TaskControl;
 use reqwest::Url;
+use serde::Serialize;
 use std::{
     env,
     path::{Path, PathBuf},
@@ -30,24 +31,31 @@ pub const WORK_DIR_PREFIX: &str = ".ratatosk-";
 const MAX_ERROR_CHARS: usize = 500;
 
 /// Sites whose pages go to yt-dlp. A direct link to a file on these hosts
-/// (one that ends in a media extension) still downloads normally.
-const SITES: &[&str] = &[
-    "youtube.com",
-    "youtu.be",
-    "youtube-nocookie.com",
-    "vimeo.com",
-    "dailymotion.com",
-    "twitch.tv",
-    "x.com",
-    "twitter.com",
-    "instagram.com",
-    "facebook.com",
-    "fb.watch",
-    "tiktok.com",
-    "reddit.com",
-    "soundcloud.com",
-    "aparat.com",
-    "bilibili.com",
+/// (one that ends in a media extension) still downloads normally. Where a
+/// site also has pages without video (posts, profiles), only the listed kinds
+/// of path are taken.
+const SITES: &[(&str, &[&str])] = &[
+    ("youtube.com", &[]),
+    ("youtu.be", &[]),
+    ("youtube-nocookie.com", &[]),
+    ("vimeo.com", &[]),
+    ("dailymotion.com", &[]),
+    ("twitch.tv", &[]),
+    ("x.com", &["/status/"]),
+    ("twitter.com", &["/status/"]),
+    ("instagram.com", &["/p/", "/reel/", "/reels/", "/tv/"]),
+    (
+        "facebook.com",
+        &["/videos/", "/watch", "/reel/", "/share/v/", "/share/r/"],
+    ),
+    ("fb.watch", &[]),
+    ("tiktok.com", &["/video/", "/t/"]),
+    ("vm.tiktok.com", &[]),
+    ("reddit.com", &["/comments/"]),
+    ("v.redd.it", &[]),
+    ("soundcloud.com", &[]),
+    ("aparat.com", &["/v/"]),
+    ("bilibili.com", &["/video/"]),
 ];
 
 const FILE_EXTENSIONS: &[&str] = &[
@@ -113,6 +121,8 @@ pub struct YtDlpRequest<'a> {
     /// The private working folder; the finished file is left in it.
     pub work_dir: &'a Path,
     pub max_height: Option<u32>,
+    /// Sound only, no picture.
+    pub audio_only: bool,
     pub ffmpeg: Option<&'a Path>,
     pub proxy: ProxyChoice,
     /// Bytes per second.
@@ -152,9 +162,11 @@ pub fn handles(url: &str) -> bool {
     let Some(host) = url.host_str().map(str::to_ascii_lowercase) else {
         return false;
     };
-    let known = SITES
-        .iter()
-        .any(|site| host == *site || host.ends_with(&format!(".{site}")));
+    let path = url.path().to_ascii_lowercase();
+    let known = SITES.iter().any(|(site, paths)| {
+        (host == *site || host.ends_with(&format!(".{site}")))
+            && (paths.is_empty() || paths.iter().any(|part| path.contains(part)))
+    });
     if !known {
         return false;
     }
@@ -166,9 +178,44 @@ pub fn handles(url: &str) -> bool {
     !extension.is_some_and(|extension| FILE_EXTENSIONS.contains(&extension.as_str()))
 }
 
+/// The quality chosen for one download, carried in the link's fragment
+/// (`#rud-quality=720`, `best` or `audio`), which is never sent to a server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QualityChoice {
+    Best,
+    Height(u32),
+    AudioOnly,
+}
+
+impl QualityChoice {
+    pub fn from_link(url: &str) -> Option<Self> {
+        let fragment = url.split_once('#')?.1;
+        let value = fragment
+            .split('&')
+            .find_map(|pair| pair.strip_prefix("rud-quality="))?;
+        match value {
+            "best" => Some(Self::Best),
+            "audio" => Some(Self::AudioOnly),
+            height => height
+                .parse()
+                .ok()
+                .filter(|height| *height > 0)
+                .map(Self::Height),
+        }
+    }
+}
+
+/// The link without its fragment, which only this application reads.
+pub fn without_fragment(url: &str) -> &str {
+    url.split_once('#').map_or(url, |(base, _)| base)
+}
+
 /// The format yt-dlp is asked for. Without FFmpeg only formats that already
 /// hold picture and sound together can be used.
-pub fn format_selector(max_height: Option<u32>, has_ffmpeg: bool) -> String {
+pub fn format_selector(max_height: Option<u32>, has_ffmpeg: bool, audio_only: bool) -> String {
+    if audio_only {
+        return "ba[ext=m4a]/ba/b".to_owned();
+    }
     let cap = max_height
         .map(|height| format!("[height<={height}]"))
         .unwrap_or_default();
@@ -184,12 +231,14 @@ impl YtDlp {
         Self { path: path.into() }
     }
 
-    /// yt-dlp as configured, or else the first found in `tool_dirs` (the
-    /// app's own kept-up-to-date copy, then the one shipped with it), next to
-    /// the application, or on `PATH`.
+    /// yt-dlp as configured (while that file exists), or else the first
+    /// found in `tool_dirs` (the app's own kept-up-to-date copy, then the one
+    /// shipped with it), next to the application, or on `PATH`.
     pub fn locate(configured: Option<&Path>, tool_dirs: &[PathBuf]) -> Option<Self> {
-        if let Some(path) = configured {
-            return path.is_file().then(|| Self::new(path));
+        // A chosen copy that has since been moved or deleted falls back to
+        // the others rather than turning every video download into an error.
+        if let Some(path) = configured.filter(|path| path.is_file()) {
+            return Some(Self::new(path));
         }
         let beside_app = env::current_exe()
             .ok()
@@ -212,15 +261,7 @@ impl YtDlp {
     pub async fn self_update(&self, proxy: &ProxyChoice) -> Result<Option<String>, YtDlpError> {
         let mut command = self.command();
         command.arg("-U");
-        match proxy {
-            ProxyChoice::System => {}
-            ProxyChoice::Direct => {
-                command.args(["--proxy", ""]);
-            }
-            ProxyChoice::Url(url) => {
-                command.args(["--proxy", url]);
-            }
-        }
+        push_proxy(&mut command, proxy);
         let output = command
             .stdin(Stdio::null())
             .output()
@@ -277,13 +318,23 @@ impl YtDlp {
             "--output".into(),
             "%(title).150B [%(id)s].%(ext)s".into(),
             "--format".into(),
-            format_selector(request.max_height, request.ffmpeg.is_some()).into(),
+            format_selector(
+                request.max_height,
+                request.ffmpeg.is_some(),
+                request.audio_only,
+            )
+            .into(),
+            // A playlist link must never download a whole list into one task.
+            "--playlist-items".into(),
+            "1".into(),
         ];
         if let Some(ffmpeg) = request.ffmpeg {
             arguments.push("--ffmpeg-location".into());
             arguments.push(ffmpeg.as_os_str().to_owned());
-            arguments.push("--merge-output-format".into());
-            arguments.push("mp4/mkv".into());
+            if !request.audio_only {
+                arguments.push("--merge-output-format".into());
+                arguments.push("mp4/mkv".into());
+            }
         }
         match &request.proxy {
             ProxyChoice::System => {}
@@ -302,7 +353,7 @@ impl YtDlp {
         }
         // Everything after `--` is a link, never an option.
         arguments.push("--".into());
-        arguments.push(request.url.into());
+        arguments.push(without_fragment(request.url).into());
         arguments
     }
 
@@ -359,7 +410,7 @@ impl YtDlp {
         let status = tokio::select! {
             biased;
             _ = control.stopped() => {
-                let _ = child.kill().await;
+                kill_tree(&mut child).await;
                 return Err(YtDlpError::Stopped);
             }
             status = async {
@@ -385,6 +436,46 @@ impl YtDlp {
         Ok(file)
     }
 
+    /// What a link holds, without downloading it: a video's title and the
+    /// qualities it comes in, or the videos of a playlist.
+    pub async fn probe(
+        &self,
+        url: &str,
+        proxy: &ProxyChoice,
+        has_ffmpeg: bool,
+    ) -> Result<VideoProbe, YtDlpError> {
+        let mut command = self.command();
+        command.args([
+            "--dump-single-json",
+            "--flat-playlist",
+            "--no-playlist",
+            "--no-warnings",
+            "--no-color",
+            "--encoding",
+            "utf-8",
+        ]);
+        push_proxy(&mut command, proxy);
+        command
+            .arg("--")
+            .arg(without_fragment(url))
+            .stdin(Stdio::null())
+            .kill_on_drop(true);
+        let output = tokio::time::timeout(PROBE_TIMEOUT, command.output())
+            .await
+            .map_err(|_| YtDlpError::Failed("the site did not answer in time".to_owned()))?
+            .map_err(|error| YtDlpError::Start(error.to_string()))?;
+        if !output.status.success() {
+            return Err(YtDlpError::Failed(error_summary(
+                &String::from_utf8_lossy(&output.stderr),
+                output.status,
+            )));
+        }
+        let info: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|_| {
+            YtDlpError::Failed("yt-dlp gave an answer that could not be read".to_owned())
+        })?;
+        Ok(VideoProbe::from_info(&info, has_ffmpeg))
+    }
+
     fn command(&self) -> Command {
         let mut command = Command::new(&self.path);
         command
@@ -398,6 +489,222 @@ impl YtDlp {
         }
         command
     }
+}
+
+/// How long looking a link up may take before giving up.
+const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+/// At most this many videos of a playlist are listed.
+const MAX_PLAYLIST_ENTRIES: usize = 500;
+
+fn push_proxy(command: &mut Command, proxy: &ProxyChoice) {
+    match proxy {
+        ProxyChoice::System => {}
+        ProxyChoice::Direct => {
+            command.args(["--proxy", ""]);
+        }
+        ProxyChoice::Url(url) => {
+            command.args(["--proxy", url]);
+        }
+    }
+}
+
+/// Stops yt-dlp together with anything it started (FFmpeg joining picture and
+/// sound), so no helper keeps running and holding the files open.
+async fn kill_tree(child: &mut tokio::process::Child) {
+    #[cfg(windows)]
+    if let Some(id) = child.id() {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let _ = Command::new("taskkill")
+            .args(["/T", "/F", "/PID", &id.to_string()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW)
+            .status()
+            .await;
+    }
+    let _ = child.kill().await;
+}
+
+/// One quality a video comes in, with roughly how large it is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QualityOption {
+    pub height: u32,
+    pub bytes: Option<u64>,
+}
+
+/// One video of a playlist.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistEntry {
+    pub url: String,
+    pub title: Option<String>,
+}
+
+/// What a video link holds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoProbe {
+    pub title: Option<String>,
+    pub duration_seconds: Option<u64>,
+    /// Highest first. Empty for a playlist.
+    pub qualities: Vec<QualityOption>,
+    /// The size of the sound alone, when it can be downloaded separately.
+    pub audio_bytes: Option<u64>,
+    /// The videos, when the link is a playlist or channel.
+    pub entries: Vec<PlaylistEntry>,
+    pub is_playlist: bool,
+}
+
+impl VideoProbe {
+    fn from_info(info: &serde_json::Value, has_ffmpeg: bool) -> Self {
+        let text = |value: &serde_json::Value, key: &str| {
+            value
+                .get(key)
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+                .map(str::to_owned)
+        };
+        let title = text(info, "title");
+        let is_playlist = info
+            .get("_type")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|kind| kind == "playlist");
+        if is_playlist {
+            let entries = info
+                .get("entries")
+                .and_then(serde_json::Value::as_array)
+                .map(|entries| {
+                    entries
+                        .iter()
+                        .filter_map(|entry| {
+                            let url = text(entry, "url")
+                                .or_else(|| text(entry, "webpage_url"))
+                                .filter(|url| {
+                                    url.starts_with("http://") || url.starts_with("https://")
+                                })?;
+                            Some(PlaylistEntry {
+                                url,
+                                title: text(entry, "title"),
+                            })
+                        })
+                        .take(MAX_PLAYLIST_ENTRIES)
+                        .collect()
+                })
+                .unwrap_or_default();
+            return Self {
+                title,
+                duration_seconds: None,
+                qualities: Vec::new(),
+                audio_bytes: None,
+                entries,
+                is_playlist: true,
+            };
+        }
+
+        let duration = info
+            .get("duration")
+            .and_then(serde_json::Value::as_f64)
+            .filter(|seconds| seconds.is_finite() && *seconds > 0.0);
+        let formats: Vec<&serde_json::Value> = info
+            .get("formats")
+            .and_then(serde_json::Value::as_array)
+            .map(|formats| formats.iter().collect())
+            .unwrap_or_default();
+        let codec = |format: &serde_json::Value, key: &str| {
+            format
+                .get(key)
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|codec| codec != "none")
+        };
+        let size = |format: &serde_json::Value| {
+            format
+                .get("filesize")
+                .and_then(serde_json::Value::as_f64)
+                .or_else(|| {
+                    format
+                        .get("filesize_approx")
+                        .and_then(serde_json::Value::as_f64)
+                })
+                .or_else(|| {
+                    let rate = rate(format);
+                    (rate > 0.0).then(|| duration.map(|seconds| rate * 1000.0 / 8.0 * seconds))?
+                })
+                .filter(|bytes| bytes.is_finite() && *bytes > 0.0)
+                .map(|bytes| bytes as u64)
+        };
+
+        let audio = best(
+            formats
+                .iter()
+                .copied()
+                .filter(|format| codec(format, "acodec") && !codec(format, "vcodec")),
+        );
+        let audio_bytes = audio.and_then(size);
+
+        let mut heights: Vec<u32> = formats
+            .iter()
+            .filter(|format| codec(format, "vcodec"))
+            .filter(|format| has_ffmpeg || codec(format, "acodec"))
+            .filter_map(|format| format.get("height").and_then(serde_json::Value::as_u64))
+            .filter(|height| *height >= 144)
+            .map(|height| height as u32)
+            .collect();
+        heights.sort_unstable_by(|left, right| right.cmp(left));
+        heights.dedup();
+
+        let qualities = heights
+            .into_iter()
+            .map(|height| {
+                let picture = best(
+                    formats
+                        .iter()
+                        .copied()
+                        .filter(|format| codec(format, "vcodec"))
+                        .filter(|format| has_ffmpeg || codec(format, "acodec"))
+                        .filter(|format| {
+                            format.get("height").and_then(serde_json::Value::as_u64)
+                                == Some(u64::from(height))
+                        }),
+                );
+                let bytes = picture.and_then(|picture| {
+                    let picture_bytes = size(picture)?;
+                    if codec(picture, "acodec") {
+                        Some(picture_bytes)
+                    } else {
+                        Some(picture_bytes + audio_bytes.unwrap_or(0))
+                    }
+                });
+                QualityOption { height, bytes }
+            })
+            .collect();
+
+        Self {
+            title,
+            duration_seconds: duration.map(|seconds| seconds.round() as u64),
+            qualities,
+            audio_bytes,
+            entries: Vec::new(),
+            is_playlist: false,
+        }
+    }
+}
+
+/// A format's bit rate in kbit/s, 0 when not given.
+fn rate(format: &serde_json::Value) -> f64 {
+    format
+        .get("tbr")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(0.0)
+}
+
+/// The format with the highest bit rate: the one yt-dlp would pick.
+fn best<'a>(
+    candidates: impl Iterator<Item = &'a serde_json::Value>,
+) -> Option<&'a serde_json::Value> {
+    candidates.max_by(|left, right| rate(left).total_cmp(&rate(right)))
 }
 
 /// The program's file name on this system.
@@ -569,12 +876,106 @@ mod tests {
 
     #[test]
     fn the_format_follows_quality_and_ffmpeg() {
-        assert_eq!(format_selector(None, true), "bv*+ba/b/bv*+ba/b");
+        assert_eq!(format_selector(None, true, false), "bv*+ba/b/bv*+ba/b");
         assert_eq!(
-            format_selector(Some(720), true),
+            format_selector(Some(720), true, false),
             "bv*[height<=720]+ba/b[height<=720]/bv*+ba/b"
         );
-        assert_eq!(format_selector(Some(480), false), "b[height<=480]/b");
+        assert_eq!(format_selector(Some(480), false, false), "b[height<=480]/b");
+        assert_eq!(format_selector(Some(480), true, true), "ba[ext=m4a]/ba/b");
+    }
+
+    #[test]
+    fn the_quality_is_read_from_the_fragment() {
+        let choice = QualityChoice::from_link;
+        assert_eq!(
+            choice("https://youtu.be/x#rud-quality=720"),
+            Some(QualityChoice::Height(720))
+        );
+        assert_eq!(
+            choice("https://youtu.be/x#rud-quality=best"),
+            Some(QualityChoice::Best)
+        );
+        assert_eq!(
+            choice("https://youtu.be/x#rud-quality=audio"),
+            Some(QualityChoice::AudioOnly)
+        );
+        assert_eq!(choice("https://youtu.be/x#rud-quality=0"), None);
+        assert_eq!(choice("https://youtu.be/x"), None);
+        assert_eq!(
+            without_fragment("https://youtu.be/x#rud-quality=720"),
+            "https://youtu.be/x"
+        );
+    }
+
+    #[test]
+    fn only_video_pages_of_social_sites_are_taken() {
+        assert!(handles("https://x.com/someone/status/123"));
+        assert!(!handles("https://x.com/someone"));
+        assert!(handles(
+            "https://www.reddit.com/r/videos/comments/abc/title/"
+        ));
+        assert!(!handles("https://www.reddit.com/r/videos/"));
+        assert!(handles("https://www.instagram.com/reel/abc/"));
+        assert!(!handles("https://www.instagram.com/someone/"));
+        assert!(handles("https://www.bilibili.com/video/BV1xx"));
+        assert!(handles("https://youtube.com/playlist?list=PL1"));
+    }
+
+    #[test]
+    fn a_probe_lists_qualities_with_sizes_and_playlists_with_videos() {
+        let video = serde_json::json!({
+            "title": "A talk",
+            "duration": 100.0,
+            "formats": [
+                {"format_id": "140", "vcodec": "none", "acodec": "mp4a", "tbr": 128.0, "filesize": 1_600_000},
+                {"format_id": "18", "vcodec": "avc1", "acodec": "mp4a", "height": 360, "tbr": 500.0, "filesize": 6_000_000},
+                {"format_id": "136", "vcodec": "avc1", "acodec": "none", "height": 720, "tbr": 1500.0, "filesize_approx": 18_000_000},
+                {"format_id": "247", "vcodec": "vp9", "acodec": "none", "height": 720, "tbr": 1200.0},
+                {"format_id": "sb0", "vcodec": "none", "acodec": "none", "height": 90}
+            ]
+        });
+        let probe = VideoProbe::from_info(&video, true);
+        assert_eq!(probe.title.as_deref(), Some("A talk"));
+        assert_eq!(probe.duration_seconds, Some(100));
+        assert_eq!(probe.audio_bytes, Some(1_600_000));
+        assert_eq!(
+            probe.qualities,
+            vec![
+                QualityOption {
+                    height: 720,
+                    bytes: Some(19_600_000)
+                },
+                QualityOption {
+                    height: 360,
+                    bytes: Some(6_000_000)
+                },
+            ]
+        );
+        // Without FFmpeg only formats with sound built in can be used.
+        let alone = VideoProbe::from_info(&video, false);
+        assert_eq!(
+            alone
+                .qualities
+                .iter()
+                .map(|option| option.height)
+                .collect::<Vec<_>>(),
+            vec![360]
+        );
+
+        let playlist = serde_json::json!({
+            "_type": "playlist",
+            "title": "Talks",
+            "entries": [
+                {"url": "https://www.youtube.com/watch?v=a", "title": "One"},
+                {"url": "not-a-link"},
+                {"url": "https://www.youtube.com/watch?v=b"}
+            ]
+        });
+        let list = VideoProbe::from_info(&playlist, true);
+        assert!(list.is_playlist);
+        assert_eq!(list.entries.len(), 2);
+        assert_eq!(list.entries[0].title.as_deref(), Some("One"));
     }
 
     #[test]
@@ -584,6 +985,7 @@ mod tests {
             url: "https://youtu.be/-x",
             work_dir: work,
             max_height: Some(1080),
+            audio_only: false,
             ffmpeg: Some(Path::new("/bin/ffmpeg")),
             proxy: ProxyChoice::Url("socks5://127.0.0.1:10808".into()),
             rate_limit: Some(500_000),
@@ -595,6 +997,14 @@ mod tests {
         let end = arguments.len();
         assert_eq!(arguments[end - 2], "--");
         assert_eq!(arguments[end - 1], "https://youtu.be/-x");
+        assert_eq!(
+            arguments[arguments
+                .iter()
+                .position(|value| value == "--playlist-items")
+                .unwrap()
+                + 1],
+            "1"
+        );
         let at = |flag: &str| arguments.iter().position(|value| value == flag).unwrap();
         assert_eq!(arguments[at("--proxy") + 1], "socks5://127.0.0.1:10808");
         assert_eq!(arguments[at("--limit-rate") + 1], "500000");
@@ -692,12 +1102,13 @@ mod tests {
             YtDlp::locate(None, &[directory.path().to_path_buf()]),
             Some(YtDlp::new(directory.path().join(program_name())))
         );
+        // A chosen copy that is gone falls back to the others.
         assert_eq!(
             YtDlp::locate(
                 Some(&directory.path().join("nope")),
                 &[directory.path().to_path_buf()]
             ),
-            None
+            Some(YtDlp::new(directory.path().join(program_name())))
         );
     }
 
@@ -745,6 +1156,7 @@ mod tests {
             url: "https://youtu.be/x",
             work_dir: &work,
             max_height: None,
+            audio_only: false,
             ffmpeg: None,
             proxy: ProxyChoice::System,
             rate_limit: None,
@@ -777,6 +1189,7 @@ mod tests {
             url: "https://youtu.be/x",
             work_dir: &work,
             max_height: None,
+            audio_only: false,
             ffmpeg: None,
             proxy: ProxyChoice::System,
             rate_limit: None,
@@ -799,6 +1212,7 @@ mod tests {
             url: "https://youtu.be/x",
             work_dir: &work,
             max_height: None,
+            audio_only: false,
             ffmpeg: None,
             proxy: ProxyChoice::System,
             rate_limit: None,

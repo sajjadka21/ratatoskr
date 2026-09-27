@@ -39,9 +39,15 @@ function hostExcluded(url, value) {
   } catch { return true; }
 }
 
-function extensionExcluded(filename, value) {
-  const extension = filename?.split(".").pop()?.toLowerCase();
-  return extension && value.split(/[\n,]/).map((entry) => entry.trim().toLowerCase().replace(/^\./, ""))
+// The browser often has no file name yet when a download starts, so the
+// name is also taken from the link.
+function extensionExcluded(filename, url, value) {
+  let name = (filename || "").split(/[\\/]/).pop();
+  if (!name || !name.includes(".")) {
+    try { name = decodeURIComponent(new URL(url).pathname.split("/").pop() || ""); } catch { name = ""; }
+  }
+  const extension = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
+  return Boolean(extension) && value.split(/[\n,]/).map((entry) => entry.trim().toLowerCase().replace(/^\./, ""))
     .filter(Boolean).includes(extension);
 }
 
@@ -81,8 +87,25 @@ const VIDEO_PAGES = [
   "*://*.twitch.tv/*",
   "*://*.facebook.com/*",
   "*://*.reddit.com/*",
-  "*://*.soundcloud.com/*"
+  "*://*.soundcloud.com/*",
+  "*://*.bilibili.com/*",
+  "*://fb.watch/*",
+  "*://*.youtube-nocookie.com/*",
+  "*://v.redd.it/*"
 ];
+
+const VIDEO_HOSTS = ["youtube.com", "youtu.be", "youtube-nocookie.com", "aparat.com", "vimeo.com",
+  "dailymotion.com", "twitch.tv", "soundcloud.com", "bilibili.com", "fb.watch", "v.redd.it"];
+
+// A link to a video page (not a file) on a site Ratatosk downloads with yt-dlp.
+function isVideoPage(url) {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    if (/\.(mp4|mkv|webm|mp3|m4a|zip|exe)$/i.test(parsed.pathname)) return false;
+    return VIDEO_HOSTS.some((site) => host === site || host.endsWith(`.${site}`));
+  } catch { return false; }
+}
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
@@ -98,10 +121,14 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.contextMenus.onClicked.addListener(async (info) => {
-  if (info.menuItemId === "download-manager-link" && info.linkUrl) {
+  if (info.menuItemId === "download-manager-link" && info.linkUrl && isVideoPage(info.linkUrl)) {
+    await handoff({ type: "inspect", text: info.linkUrl });
+  } else if (info.menuItemId === "download-manager-link" && info.linkUrl) {
     await sendLink(info.linkUrl, info.pageUrl);
   } else if (info.menuItemId === "download-manager-page" && info.pageUrl) {
-    await sendLink(info.pageUrl, null);
+    // The app opens its Add dialog for a video page, so the quality can be
+    // chosen before it downloads.
+    await handoff({ type: "inspect", text: info.pageUrl });
   } else if (info.selectionText) {
     await handoff({ type: "inspect", text: info.selectionText });
   }
@@ -111,8 +138,9 @@ chrome.downloads.onCreated.addListener(async (download) => {
   const options = await settings();
   const url = download.finalUrl || download.url || "";
   if (!options.takeoverEnabled || !/^https?:\/\//i.test(url)) return;
-  if (download.fileSize > 0 && download.fileSize < Number(options.minimumBytes)) return;
-  if (hostExcluded(url, options.excludedHosts) || extensionExcluded(download.filename, options.excludedExtensions)) return;
+  const size = download.totalBytes > 0 ? download.totalBytes : download.fileSize;
+  if (size > 0 && size < Number(options.minimumBytes)) return;
+  if (hostExcluded(url, options.excludedHosts) || extensionExcluded(download.filename, url, options.excludedExtensions)) return;
 
   // Hold the browser's transfer while the application saves the task, and
   // let it continue untouched if anything goes wrong.

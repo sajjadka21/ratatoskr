@@ -131,6 +131,17 @@ pub enum DownloadServiceError {
     QuotaReached { used: u64, quota: u64 },
 }
 
+impl DownloadServiceError {
+    /// The error for the log: engine errors without links, which can carry
+    /// signed tokens in their query strings.
+    pub fn log_message(&self) -> String {
+        match self {
+            Self::Download(error) => format!("download engine error: {}", error.redacted_message()),
+            other => other.to_string(),
+        }
+    }
+}
+
 pub type Result<T> = std::result::Result<T, DownloadServiceError>;
 
 /// Setting keys owned by the engine.
@@ -1382,7 +1393,7 @@ impl DownloadService {
     {
         let downloader = self.downloader_for(&task.id)?;
         let ffmpeg = self.ffmpeg();
-        let max_height = quality_from_link(&task.source_url).or_else(|| self.stream_max_height());
+        let (max_height, _) = self.quality_for(&task.source_url);
         let plan = resolve_stream_plan(
             &downloader,
             &probe.final_url,
@@ -1853,21 +1864,24 @@ impl DownloadService {
         .filter(|limit| *limit > 0)
         .min();
         let ffmpeg = self.ffmpeg();
-        let max_height = quality_from_link(&task.source_url).or_else(|| self.stream_max_height());
+        let (max_height, audio_only) = self.quality_for(&task.source_url);
         let request = YtDlpRequest {
             url: &task.source_url,
             work_dir: &work_dir,
             max_height,
+            audio_only,
             ffmpeg: ffmpeg.as_ref().map(|ffmpeg| ffmpeg.path()),
             proxy,
             rate_limit,
         };
 
         // Picture and sound arrive one after the other, each counting from
-        // zero; earlier parts are carried in `finished_parts`.
+        // zero; earlier parts are carried in `finished_parts`. A resumed part
+        // starts from what is already on disk, which is not new traffic, so
+        // only growth after a part's first report is counted.
         let mut finished_parts = 0_u64;
         let mut last = 0_u64;
-        let mut counted = 0_u64;
+        let mut part_started = false;
         let mut last_saved = Instant::now();
         // The name taken from the link ("watch") is replaced by the title.
         let mut named = false;
@@ -1877,14 +1891,15 @@ impl DownloadService {
             .download(&request, control.as_ref(), |progress| {
                 if progress.downloaded < last {
                     finished_parts += last;
+                    part_started = false;
                 }
+                if part_started && progress.downloaded > last {
+                    self.count_traffic(scope, progress.downloaded - last);
+                }
+                part_started = true;
                 last = progress.downloaded;
                 let downloaded = finished_parts + progress.downloaded;
                 let total = progress.total.map(|total| finished_parts + total);
-                if downloaded > counted {
-                    self.count_traffic(scope, downloaded - counted);
-                    counted = downloaded;
-                }
                 if !named && let Some(title) = &progress.title {
                     named = true;
                     filename = crate::sanitize_filename(title);
@@ -2454,6 +2469,34 @@ impl DownloadService {
     }
 
     /// Highest stream quality picked automatically; `None` for the best.
+    /// The height cap and the sound-only choice for one download: what was
+    /// chosen for it when it was added, otherwise the setting.
+    pub fn quality_for(&self, url: &str) -> (Option<u32>, bool) {
+        use crate::ytdlp::QualityChoice;
+        match QualityChoice::from_link(url) {
+            Some(QualityChoice::Best) => (None, false),
+            Some(QualityChoice::Height(height)) => (Some(height), false),
+            Some(QualityChoice::AudioOnly) => (None, true),
+            None => (self.stream_max_height(), false),
+        }
+    }
+
+    /// What a video link holds (qualities and sizes, or a playlist's videos),
+    /// looked up with yt-dlp through the route downloads would use.
+    pub async fn probe_video(&self, url: &str) -> Result<crate::ytdlp::VideoProbe> {
+        let ytdlp = self.ytdlp().ok_or(DownloadError::NeedsYtDlp)?;
+        let proxy = self.tool_proxy_for(url);
+        let has_ffmpeg = self.ffmpeg().is_some();
+        ytdlp.probe(url, &proxy, has_ffmpeg).await.map_err(|error| {
+            let temporary = error.is_temporary();
+            DownloadError::YtDlp {
+                message: error.to_string(),
+                temporary,
+            }
+            .into()
+        })
+    }
+
     pub fn stream_max_height(&self) -> Option<u32> {
         self.storage
             .get_setting(SETTING_STREAM_MAX_HEIGHT)
@@ -3091,17 +3134,6 @@ impl StreamProgress {
     }
 }
 
-/// A quality named in the link itself: `...#rud-quality=720`. The fragment
-/// never reaches the server.
-fn quality_from_link(url: &str) -> Option<u32> {
-    let fragment = url.split_once('#')?.1;
-    fragment
-        .split('&')
-        .find_map(|pair| pair.strip_prefix("rud-quality="))
-        .and_then(|value| value.parse().ok())
-        .filter(|height| *height > 0)
-}
-
 async fn resolve_stream_plan(
     downloader: &Downloader,
     url: &str,
@@ -3499,6 +3531,19 @@ enum SegmentedTransferResult {
 }
 
 /// Removes a yt-dlp working folder, and nothing that is not one.
+/// Removes what an unfinished download left on disk: yt-dlp's private
+/// folder, or a partial file and its stream record. For callers outside the
+/// engine, such as removing a download from the list.
+pub fn discard_partial(temp_path: &str) {
+    let path = Path::new(temp_path);
+    if crate::ytdlp::is_work_dir(path) {
+        let _ = std::fs::remove_dir_all(path);
+        return;
+    }
+    let _ = std::fs::remove_file(stream_record_path(path));
+    let _ = std::fs::remove_file(path);
+}
+
 async fn remove_work_dir(path: &Path) {
     if crate::ytdlp::is_work_dir(path) {
         let _ = tokio::fs::remove_dir_all(path).await;
@@ -6127,14 +6172,25 @@ mkdir -p \"$w\"
 
     #[test]
     fn a_quality_can_be_named_in_the_link() {
+        let harness = harness();
+        harness.service.set_stream_max_height(Some(480)).unwrap();
+        let quality = |url: &str| harness.service.quality_for(url);
         assert_eq!(
-            quality_from_link("https://x.test/master.m3u8#rud-quality=720"),
-            Some(720)
+            quality("https://x.test/master.m3u8#rud-quality=720"),
+            (Some(720), false)
         );
-        assert_eq!(quality_from_link("https://x.test/master.m3u8"), None);
+        assert_eq!(quality("https://x.test/master.m3u8"), (Some(480), false));
         assert_eq!(
-            quality_from_link("https://x.test/a.mpd#other&rud-quality=0"),
-            None
+            quality("https://youtu.be/x#rud-quality=best"),
+            (None, false)
+        );
+        assert_eq!(
+            quality("https://youtu.be/x#rud-quality=audio"),
+            (None, true)
+        );
+        assert_eq!(
+            quality("https://x.test/a.mpd#other&rud-quality=0"),
+            (Some(480), false)
         );
     }
 

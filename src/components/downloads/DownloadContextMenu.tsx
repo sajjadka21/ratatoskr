@@ -333,7 +333,7 @@ export function DownloadContextMenu({
         type="button"
         role="menuitem"
         onClick={() =>
-          void copyText(item.sourceUrl, "url")
+          void copyText(item.sourceUrl.replace(/#rud-quality=[^&]*$/, ""), "url")
         }
       >
         <Link2 size={15} />

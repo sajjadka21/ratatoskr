@@ -183,6 +183,17 @@ export type StreamVariant = {
   needsMuxing: boolean;
 };
 
+/// What a video page holds, looked up with yt-dlp before adding it.
+export type VideoProbe = {
+  title: string | null;
+  durationSeconds: number | null;
+  /// Highest first; empty for a playlist.
+  qualities: { height: number; bytes: number | null }[];
+  audioBytes: number | null;
+  entries: { url: string; title: string | null }[];
+  isPlaylist: boolean;
+};
+
 /// Engine behaviour: fresh links continue stopped downloads, gentle hosts,
 /// automatic stream quality.
 export type EngineSettings = {

@@ -558,3 +558,108 @@ var(--bg-elevated);
 .add-download-modal__stream-note {
   color: var(--text-muted);
 }
+
+.video-picker {
+  margin-top: 10px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.video-picker__heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.video-picker__heading strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.video-picker__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.video-picker__meta {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.video-picker__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.video-picker__choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 10px;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.video-picker__choice small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.video-picker__choice:hover {
+  border-color: var(--accent);
+}
+
+.video-picker__choice--selected {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.video-picker__choice--selected small {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.video-picker__choice:focus-visible,
+.video-picker__expand:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.video-picker__note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.video-picker__expand {
+  justify-self: start;
+  min-height: 30px;
+  padding: 0 12px;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: 0;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}

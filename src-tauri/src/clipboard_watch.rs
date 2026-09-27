@@ -37,14 +37,15 @@ fn fingerprint(text: &str) -> u64 {
 }
 
 /// Links that are not in the download list yet: copying the link of a
-/// download already there (with "Copy link", say) offers nothing.
+/// download already there (with "Copy link", say) offers nothing. A quality
+/// chosen for a video is kept in the link's fragment, so that is ignored.
 fn new_links(storage: &Storage, links: Vec<String>) -> Vec<String> {
     let known: std::collections::HashSet<String> = storage
         .list_downloads()
         .map(|downloads| {
             downloads
                 .into_iter()
-                .map(|download| download.source_url)
+                .map(|download| dm_core::ytdlp::without_fragment(&download.source_url).to_owned())
                 .collect()
         })
         .unwrap_or_default();

@@ -156,9 +156,10 @@ var(--bg-elevated);
   padding: 11px 12px;
 
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  gap: 8px 14px;
 
   color: var(--text-muted);
   background: color-mix(in srgb, var(--text-primary) 1.8%, transparent);
@@ -170,6 +171,8 @@ var(--bg-elevated);
 }
 
 .add-download-modal__destination strong {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
 
   color: var(--text-secondary);
@@ -662,4 +665,31 @@ var(--bg-elevated);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.add-download-modal__folder-actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.add-download-modal__folder-actions button {
+  min-height: 26px;
+  padding: 0 10px;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.add-download-modal__folder-actions button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.add-download-modal__folder-actions button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

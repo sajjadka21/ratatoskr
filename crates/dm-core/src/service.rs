@@ -446,6 +446,36 @@ impl DownloadService {
     /// Picks the folder for a task: a matching rule's folder, then its
     /// category's folder, then the configured default, then `fallback`
     /// (the system Downloads folder). Relative paths are never used.
+    /// Where one download is saved: the folder chosen for it when it was
+    /// added, otherwise what its rule, its category or the settings say.
+    fn destination_for(
+        &self,
+        download_id: &str,
+        decision: Option<&RuleDecision>,
+        fallback: &Path,
+    ) -> PathBuf {
+        self.storage
+            .get_download_folder(download_id)
+            .ok()
+            .flatten()
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .unwrap_or_else(|| self.resolve_destination(decision, fallback))
+    }
+
+    /// Saves `directory` as the folder for this download. Only an absolute
+    /// path is taken; `None` goes back to the usual folder.
+    pub fn set_download_folder(&self, download_id: &str, directory: Option<&Path>) -> Result<()> {
+        if directory.is_some_and(|path| !path.is_absolute()) {
+            return Err(DownloadServiceError::RelativeDirectory);
+        }
+        self.storage.set_download_folder(
+            download_id,
+            directory.map(|path| path.to_string_lossy()).as_deref(),
+        )?;
+        Ok(())
+    }
+
     fn resolve_destination(&self, decision: Option<&RuleDecision>, fallback: &Path) -> PathBuf {
         let absolute = |value: &str| {
             let path = PathBuf::from(value.trim());
@@ -1169,7 +1199,8 @@ impl DownloadService {
         let (destination_path, temp_path) = match (&task.destination_path, &task.temp_path) {
             (Some(destination), Some(temp)) => (PathBuf::from(destination), PathBuf::from(temp)),
             _ => {
-                let directory = self.resolve_destination(decision.as_ref(), destination_directory);
+                let directory =
+                    self.destination_for(&task.id, decision.as_ref(), destination_directory);
                 self.base_downloader()
                     .plan_paths(&directory, &probe.filename)
                     .await?
@@ -1416,7 +1447,7 @@ impl DownloadService {
         let (destination_path, temp_path) = match (&task.destination_path, &task.temp_path) {
             (Some(destination), Some(temp)) => (PathBuf::from(destination), PathBuf::from(temp)),
             _ => {
-                let directory = self.resolve_destination(decision, destination_directory);
+                let directory = self.destination_for(&task.id, decision, destination_directory);
                 let filename = crate::hls::stream_filename(&probe.final_url, extension);
                 self.base_downloader()
                     .plan_paths(&directory, &filename)
@@ -1825,7 +1856,7 @@ impl DownloadService {
         let work_dir = match task.temp_path.as_deref().map(PathBuf::from) {
             Some(path) if crate::ytdlp::is_work_dir(&path) => path,
             _ => self
-                .resolve_destination(decision.as_ref(), destination_directory)
+                .destination_for(&task.id, decision.as_ref(), destination_directory)
                 .join(format!("{}{}", crate::ytdlp::WORK_DIR_PREFIX, task.id)),
         };
         let directory = work_dir

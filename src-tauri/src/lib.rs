@@ -1170,6 +1170,20 @@ fn set_download_mirrors(
         .map_err(|error| error.to_string())
 }
 
+/// Saves a download in `directory` instead of the usual folder; `None` goes
+/// back to the usual one. Only before the download has reserved its file.
+#[tauri::command]
+fn set_download_folder(
+    state: State<'_, AppState>,
+    id: String,
+    directory: Option<String>,
+) -> Result<(), String> {
+    state
+        .downloads
+        .set_download_folder(&id, directory.as_deref().map(std::path::Path::new))
+        .map_err(|error| error.to_string())
+}
+
 /// What a video page holds (its qualities and their sizes, or a playlist's
 /// videos), for choosing before downloading. Fails with `needs_ytdlp` when
 /// yt-dlp is not available.
@@ -2855,6 +2869,7 @@ pub fn run() {
             set_download_mirrors,
             list_stream_variants,
             probe_video,
+            set_download_folder,
             get_engine_settings,
             get_ffmpeg_status,
             set_ffmpeg_path,

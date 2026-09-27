@@ -14,6 +14,8 @@ import {
   useState,
 } from "react";
 
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+
 import { useI18n } from "../../i18n/I18n";
 import type { MessageKey } from "../../i18n/messages";
 
@@ -45,8 +47,11 @@ type AddDownloadModalProps = {
   defaultDirectory?: string | null;
   onUrlChange: (value: string) => void;
   onClose: () => void;
-  /** `links` is the text to add, with any quality chosen here attached. */
-  onSubmit: (action: AddDownloadAction, links: string) => void;
+  /**
+   * `links` is the text to add, with any quality chosen here attached;
+   * `folder` is a folder chosen here, or null for the usual one.
+   */
+  onSubmit: (action: AddDownloadAction, links: string, folder: string | null) => void;
 };
 
 export function AddDownloadModal({
@@ -72,13 +77,34 @@ export function AddDownloadModal({
     useState(false);
   const [newQueueName, setNewQueueName] = useState("");
   const [videoQuality, setVideoQuality] = useState<VideoQuality | null>(null);
+  const [folder, setFolder] = useState<string | null>(null);
 
   useEffect(() => {
-    if (open) setVideoQuality(null);
+    if (!open) return;
+    setVideoQuality(null);
+    setFolder(null);
   }, [open]);
 
   function submit(action: AddDownloadAction) {
-    onSubmit(action, videoQuality === null ? url : withVideoQualityForAll(url, videoQuality));
+    onSubmit(
+      action,
+      videoQuality === null ? url : withVideoQualityForAll(url, videoQuality),
+      folder,
+    );
+  }
+
+  async function chooseFolder() {
+    try {
+      const chosen = await openDialog({
+        directory: true,
+        multiple: false,
+        title: t("add.chooseFolderTitle"),
+        defaultPath: folder ?? defaultDirectory ?? undefined,
+      });
+      if (typeof chosen === "string" && chosen) setFolder(chosen);
+    } catch {
+      // The picker closing without a choice is not an error worth showing.
+    }
   }
 
   const isBatch = linkCount > 1;
@@ -289,10 +315,23 @@ export function AddDownloadModal({
 
           <div className="add-download-modal__destination">
             <span>{t("add.destination")}</span>
-            <strong title={defaultDirectory ?? undefined} className={defaultDirectory ? "ltr" : undefined}>
-              {defaultDirectory ?? t("add.systemDownloads")}
+            <strong
+              title={folder ?? defaultDirectory ?? undefined}
+              className={folder || defaultDirectory ? "ltr" : undefined}
+            >
+              {folder ?? defaultDirectory ?? t("add.systemDownloads")}
             </strong>
-            <small>{t("add.destinationHint")}</small>
+            <small>{folder ? t("add.chosenFolderHint") : t("add.destinationHint")}</small>
+            <span className="add-download-modal__folder-actions">
+              {folder ? (
+                <button type="button" onClick={() => setFolder(null)} disabled={submitting}>
+                  {t("add.resetFolder")}
+                </button>
+              ) : null}
+              <button type="button" onClick={() => void chooseFolder()} disabled={submitting}>
+                {t("add.changeFolder")}
+              </button>
+            </span>
           </div>
 
           {error ? (

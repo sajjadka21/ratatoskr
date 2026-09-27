@@ -805,7 +805,11 @@ function App({ preferences, onPreferencesChange }: AppProps) {
 
   // ---- add download -------------------------------------------------------
 
-  async function createDownloadTasks(action: AddDownloadAction, inputValue = url) {
+  async function createDownloadTasks(
+    action: AddDownloadAction,
+    inputValue = url,
+    folder: string | null = null,
+  ) {
     // LinkGrabber submits without the dialog, so its errors need a toast.
     const report = modalOpen ? setAddError : (message: string) => notify("error", message);
     const links = extractHttpUrls(inputValue);
@@ -854,6 +858,13 @@ function App({ preferences, onPreferencesChange }: AppProps) {
           console.error("Task creation failed:", reason);
           failedLinks.push(link);
           continue;
+        }
+        if (folder) {
+          try {
+            await invoke("set_download_folder", { id: task.id, directory: folder });
+          } catch (reason) {
+            report(String(reason));
+          }
         }
         if (targetQueueId) {
           try {
@@ -1410,7 +1421,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
           setAddError(null);
           setModalOpen(false);
         }}
-        onSubmit={(action, links) => void createDownloadTasks(action, links)}
+        onSubmit={(action, links, folder) => void createDownloadTasks(action, links, folder)}
       />
     </>
   );

@@ -737,6 +737,21 @@ fn get_clipboard_watch(state: State<'_, AppState>) -> bool {
     clipboard_watch::enabled(&state.storage)
 }
 
+/// Whether the app starts (in the tray) when the user signs in to Windows.
+#[tauri::command]
+fn get_start_with_windows() -> bool {
+    std::env::current_exe()
+        .map(|application| dm_system::autostart::enabled(&application))
+        .unwrap_or(false)
+}
+
+#[tauri::command]
+fn set_start_with_windows(enabled: bool) -> Result<bool, String> {
+    let application = std::env::current_exe().map_err(|error| error.to_string())?;
+    dm_system::autostart::set(&application, enabled).map_err(|error| error.to_string())?;
+    Ok(dm_system::autostart::enabled(&application))
+}
+
 #[tauri::command]
 fn set_clipboard_watch(state: State<'_, AppState>, enabled: bool) -> Result<bool, String> {
     state
@@ -2711,13 +2726,27 @@ pub fn run() {
 
             // A missing notification area (some Linux desktops) must not stop
             // the application from starting.
-            match tray::create(app.handle()) {
+            let tray_ready = match tray::create(app.handle()) {
                 Ok(menu) => {
                     if let Ok(mut slot) = app.state::<AppState>().tray_menu.lock() {
                         *slot = Some(menu);
                     }
+                    true
                 }
-                Err(error) => warn!(error = %error, "tray icon unavailable"),
+                Err(error) => {
+                    warn!(error = %error, "tray icon unavailable");
+                    false
+                }
+            };
+
+            // Started by Windows at sign-in: stay in the tray. Without a tray
+            // the window is the only way back, so it stays visible.
+            let started_hidden =
+                std::env::args().any(|argument| argument == dm_system::autostart::HIDDEN_ARGUMENT);
+            if started_hidden && tray_ready {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
             }
 
             tauri::async_runtime::spawn(automation::run_keep_awake(app.handle().clone()));
@@ -2814,6 +2843,8 @@ pub fn run() {
             get_app_info,
             get_download_speed_limit,
             get_clipboard_watch,
+            get_start_with_windows,
+            set_start_with_windows,
             get_browser_connection,
             connect_browsers,
             reveal_extension_folder,

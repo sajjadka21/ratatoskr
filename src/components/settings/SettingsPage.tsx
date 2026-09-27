@@ -340,6 +340,15 @@ function AppearanceSection({
             />
           </div>
         </div>
+
+        <BackendSwitchRow
+          id="start-with-windows"
+          label={t("settings.startWithWindows")}
+          hint={t("settings.startWithWindowsHint")}
+          read="get_start_with_windows"
+          write="set_start_with_windows"
+          divided={false}
+        />
       </div>
     </div>
   );
@@ -1057,11 +1066,41 @@ function RulesSection({
 /** Whether a download link copied anywhere opens the Add download dialog. */
 function ClipboardWatchRow({ onError }: { onError: (message: string) => void }) {
   const { t } = useI18n();
+  return (
+    <BackendSwitchRow
+      id="clipboard-watch"
+      label={t("settings.clipboardWatch")}
+      hint={t("settings.clipboardWatchHint")}
+      read="get_clipboard_watch"
+      write="set_clipboard_watch"
+      onError={onError}
+    />
+  );
+}
+
+/** An on/off setting kept by the application, not in the preferences. */
+function BackendSwitchRow({
+  id,
+  label,
+  hint,
+  read,
+  write,
+  divided = true,
+  onError,
+}: {
+  id: string;
+  label: string;
+  hint: string;
+  read: string;
+  write: string;
+  divided?: boolean;
+  onError?: (message: string) => void;
+}) {
   const [enabled, setEnabled] = useState<boolean | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    invoke<boolean>("get_clipboard_watch")
+    invoke<boolean>(read)
       .then((value) => {
         if (!cancelled) setEnabled(value);
       })
@@ -1069,28 +1108,28 @@ function ClipboardWatchRow({ onError }: { onError: (message: string) => void }) 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [read]);
 
   if (enabled === null) return null;
 
   return (
-    <div className="settings-page__row settings-page__row--divided">
+    <div className={`settings-page__row ${divided ? "settings-page__row--divided" : ""}`}>
       <div className="settings-page__row-label">
-        <strong>{t("settings.clipboardWatch")}</strong>
-        <span>{t("settings.clipboardWatchHint")}</span>
+        <strong>{label}</strong>
+        <span>{hint}</span>
       </div>
       <div className="settings-page__row-control">
         <Switch
-          id="clipboard-watch"
+          id={id}
           checked={enabled}
-          label={t("settings.clipboardWatch")}
+          label={label}
           onChange={(next) => {
             setEnabled(next);
-            invoke<boolean>("set_clipboard_watch", { enabled: next })
+            invoke<boolean>(write, { enabled: next })
               .then(setEnabled)
               .catch((reason) => {
                 setEnabled(!next);
-                onError(String(reason));
+                onError?.(String(reason));
               });
           }}
         />

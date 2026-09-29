@@ -2557,10 +2557,16 @@ async fn open_download_window(app: AppHandle, id: String) {
     mini::open_task(&app, &id, false);
 }
 
+/// Brings the main window forward; with `focus`, on that download.
 #[tauri::command]
-fn show_main_window(app: AppHandle) {
+fn show_main_window(app: AppHandle, focus: Option<String>) {
     tray::show_main_window(&app);
+    if let Some(id) = focus {
+        let _ = app.emit_to("main", FOCUS_DOWNLOAD_EVENT, id);
+    }
 }
+
+const FOCUS_DOWNLOAD_EVENT: &str = "focus-download";
 
 const SETTING_ONBOARDING_DONE: &str = "onboarding_done";
 

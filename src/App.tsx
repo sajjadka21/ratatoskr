@@ -69,6 +69,7 @@ const DOWNLOAD_TASK_EVENT = "download-task-event";
 const LINK_INTAKE_EVENT = "link-intake";
 const CLIPBOARD_LINKS_EVENT = "clipboard-links";
 const TRAY_ACTION_EVENT = "tray-action";
+const FOCUS_DOWNLOAD_EVENT = "focus-download";
 const UPDATE_AVAILABLE_EVENT = "update-available";
 const COMPLETION_ACTION_EVENT = "completion-action";
 
@@ -482,6 +483,18 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     }
     void collectIntake();
     const subscription = listen(LINK_INTAKE_EVENT, () => void collectIntake());
+    return () => void subscription.then((unlisten) => unlisten());
+  }, []);
+
+  // "Show in Ratatosk" in a small download window: open that download.
+  useEffect(() => {
+    const subscription = listen<string>(FOCUS_DOWNLOAD_EVENT, ({ payload }) => {
+      setPage("downloads");
+      setSection("all");
+      setFocusedId(payload);
+      setSelectedIds(new Set([payload]));
+      setDetailsOpen(true);
+    });
     return () => void subscription.then((unlisten) => unlisten());
   }, []);
 

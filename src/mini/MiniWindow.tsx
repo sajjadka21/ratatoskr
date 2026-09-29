@@ -73,11 +73,13 @@ export function MiniWindow() {
   const follow = useCallback((id: string) => {
     setTaskId(id);
     setConfirming(false);
-    void getCurrentWindow().setSize(new LogicalSize(460, 250)).catch(() => {});
   }, []);
 
+  const root = useRef<HTMLDivElement>(null);
+  useFitWindow(root);
+
   return (
-    <div className="mini">
+    <div className="mini" ref={root}>
       {taskId ? (
         <TaskView id={taskId} confirming={confirming} onStarted={follow} />
       ) : (
@@ -89,6 +91,64 @@ export function MiniWindow() {
 
 function close() {
   void getCurrentWindow().close();
+}
+
+/** Heights the window may take, in logical pixels. */
+const MIN_HEIGHT = 180;
+const MAX_HEIGHT = 640;
+
+/**
+ * Keeps the window as tall as what it shows, so there is neither empty space
+ * under a short form nor a scroll bar in a long one: the body's content plus
+ * the footer, measured whenever anything inside changes.
+ */
+function useFitWindow(root: React.RefObject<HTMLDivElement | null>) {
+  useEffect(() => {
+    const element = root.current;
+    if (!element) return;
+    let frame = 0;
+    let lastHeight = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const body = element.querySelector<HTMLElement>(".mini__body");
+        const footer = element.querySelector<HTMLElement>(".mini__footer");
+        if (!body) return;
+        const style = getComputedStyle(body);
+        const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+        const gap = parseFloat(style.rowGap) || 0;
+        const children = Array.from(body.children) as HTMLElement[];
+        const content =
+          children.reduce((sum, child) => sum + child.getBoundingClientRect().height, 0) +
+          gap * Math.max(0, children.length - 1);
+        const wanted = Math.round(
+          Math.min(
+            MAX_HEIGHT,
+            Math.max(MIN_HEIGHT, content + padding + (footer?.getBoundingClientRect().height ?? 0)),
+          ),
+        );
+        if (Math.abs(wanted - lastHeight) < 2) return;
+        lastHeight = wanted;
+        void getCurrentWindow()
+          .setSize(new LogicalSize(window.innerWidth, wanted))
+          .catch(() => {});
+      });
+    };
+    const resize = new ResizeObserver(measure);
+    const watchChildren = () => {
+      resize.disconnect();
+      element.querySelectorAll(".mini__body > *, .mini__footer").forEach((child) => resize.observe(child));
+      measure();
+    };
+    const mutations = new MutationObserver(watchChildren);
+    mutations.observe(element, { childList: true, subtree: true });
+    watchChildren();
+    return () => {
+      cancelAnimationFrame(frame);
+      resize.disconnect();
+      mutations.disconnect();
+    };
+  }, [root]);
 }
 
 // ---------------------------------------------------------------------------
@@ -677,7 +737,7 @@ function TaskView({
         <button
           type="button"
           className="mini__ghost"
-          onClick={() => void invoke("show_main_window").catch(() => {})}
+          onClick={() => void invoke("show_main_window", { focus: id }).catch(() => {})}
         >
           {t("mini.showInApp")}
         </button>

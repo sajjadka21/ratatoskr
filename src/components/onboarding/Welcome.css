@@ -265,3 +265,11 @@
   gap: 14px;
   padding-bottom: 20px;
 }
+
+.welcome__test-detail {
+  flex-basis: 100%;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: start;
+  overflow-wrap: anywhere;
+}

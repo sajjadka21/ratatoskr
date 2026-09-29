@@ -393,6 +393,11 @@ function NetworkStep({ onError }: { onError: (message: string) => void }) {
               : t("welcome.testFailed")}
           </span>
         ) : null}
+        {test && test !== "testing" && !test.reachable && test.error ? (
+          <small className="welcome__test-detail" dir="ltr">
+            {test.error}
+          </small>
+        ) : null}
       </div>
     </>
   );

@@ -20,9 +20,11 @@ jobs:
         with: { node-version: 22 }
       - run: npm ci
       - run: npm audit --omit=dev --audit-level=high
-      - uses: rustsec/audit-check@v2
+      - uses: taiki-e/install-action@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          tool: cargo-audit
+      # Fails on known vulnerabilities; unmaintained-crate notices are only warnings.
+      - run: cargo audit
 
   codeql:
     name: CodeQL

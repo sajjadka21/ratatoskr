@@ -1,5 +1,7 @@
 # Ratatoskr Landing Page
 
+بازطراحی ۳۰ سپتامبر ۲۰۲۶: زمینهٔ روشن، چیدمان متمرکز بر محصول، فونت‌های محلی Manrope / Vazirmatn و آیکون‌های SVG از Ant Design. متن مجوز فونت و آیکون‌ها در پوشهٔ assets همراه خروجی نگهداری می‌شود. React و کتابخانهٔ کامل Ant Design به سایت اضافه نشده‌اند؛ فقط آیکون‌های مورد استفاده به‌صورت SVG محلی هستند.
+
 سایت معرفی دو زبانهٔ Ratatoskr، آمادهٔ انتشار با Cloudflare Workers Static Assets.
 
 - فارسی: https://ratatoskr.hivenest.ir/fa/

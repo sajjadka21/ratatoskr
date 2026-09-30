@@ -28,4 +28,14 @@ Alignment: left-aligned copy on desktop, compact left-aligned mobile layout. Orn
 Review against brief: the ornate squirrel and four approved theme palettes drive the visual, rather than generic SaaS gradients, statistics or repeated feature cards. Never claim speed, privacy, license, browser integration or resumability until confirmed. App previews are labeled design previews. The app is under development and no release version or download URL is invented.
 
 Interaction: theme tabs switch preview/pattern/name/description, with keyboard navigation and state persistence; FAQ uses native details; release actions appear only when real links are configured. No ornamental perpetual animation.
+# Redesign direction — 2026-09-30
+
+The original dark editorial direction was rejected by the owner. The active design is a light product landing page. Product artwork carries the Norse identity; the surrounding interface stays quiet and clear.
+
+- Base #F9FAFB; cards #FFFFFF; text #202532; muted #616775; border #E4E6ED; antique gold #9B6924.
+- Manrope for English; Vazirmatn for Persian. Sans-serif headings with restrained sizing and balanced line lengths.
+- Centered introduction and straight, contained product preview; three concise design principles; segmented four-theme selector; platform availability; FAQ.
+- One source stylesheet, consistent 8px spacing rhythm, 44px minimum primary touch controls, visible focus, reduced motion and RTL layout.
+- Ant Design SVG icons, bundled locally with MIT license. UI/UX Pro Max guidance favors a product demo with a feature breakdown; its generic teal/orange palette was adapted to the approved Ratatoskr brand.
+- References: https://ant.design/docs/spec/icon/ and https://ant.design/docs/spec/font/ .
 

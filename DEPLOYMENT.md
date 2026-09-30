@@ -5,12 +5,16 @@ Published: 2026-09-30
 - Production: https://ratatoskr.hivenest.ir/
 - Persian: https://ratatoskr.hivenest.ir/fa/
 - Cloudflare Worker: `ratatoskr-site`
-- Deployment ID: `31a7d40dc6214619a8e8047edb3485cc`
+- Latest deployment ID: `58aaa61f97e14f98a945bbdf65577262`
 - Delivery mode: static assets only, no user Worker module.
 - Custom domain and managed TLS configured through the authorized Cloudflare plugin.
 - Existing DNS and unrelated Workers were preserved.
 
 Validation:
+
+- Redesigned light landing verified at 375px, 390px, 768px, 1280px and 1440px widths with no horizontal overflow.
+- Manrope and Vazirmatn served locally; Ant Design icons embedded as decorative SVGs with license included.
+- New theme keyboard selection, FAQ and language switching verified. Live Persian page shows the redesign without console warnings or errors.
 
 - English and Persian pages verified in a real browser.
 - Desktop 1280px and mobile 390px layouts checked for horizontal overflow.

@@ -131,12 +131,16 @@ jobs:
       - name: Remove the signing key from the runner
         if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
+      - name: Package Android source for this release
+        run: python3 scripts/package-android-source.py Ratatoskr-android-source.zip
       - run: mv android/app/build/outputs/apk/release/*.apk Ratatoskr-android.apk
       - uses: actions/upload-artifact@v4
         with:
           name: android
           if-no-files-found: error
-          path: Ratatoskr-android.apk
+          path: |
+            Ratatoskr-android.apk
+            Ratatoskr-android-source.zip
 
   publish:
     name: Publish the release

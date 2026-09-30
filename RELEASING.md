@@ -72,13 +72,17 @@ Authenticode. The current Windows binaries do not have an Authenticode
 publisher certificate. Physical device installation/download tests remain
 separate from automated build checks.
 
+## Android licence and native sources
+
+Android is GPL-3.0-only; desktop keeps PolyForm Noncommercial. Keep android/LICENSE and NOTICE inside the APK, and publish Ratatoskr-android-source.zip containing the same-version application/build sources and the SHA-256-pinned WebP source rebuilt for 16 KB compatibility. The release job recursively verifies final APK native payloads before upload. See LICENSES.md and android/NATIVE_COMPATIBILITY.md.
+
 ## Withdrawing a faulty release
 
 Pause promotion by marking the release as a prerelease and removing the
 landing download links if a serious fault is found. Do not replace binaries
 behind an existing version: publish a higher patch version with corrected
 notes and artifacts. Preserve user databases and portable `data` folders.
-For 1.0.1, no earlier public stable release exists to promote instead.
+For 1.0.2, no earlier public stable release exists to promote instead. Version 1.0.1 was cancelled before publication.
 
 ## Releasing by hand (Windows)
 

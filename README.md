@@ -172,6 +172,8 @@ Source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE):
 free for personal use, study, hobby projects, charities, schools and
 government; **commercial use needs a separate licence from the author**. (This
 is not an OSI "open source" licence, because it restricts commercial use.)
+Android is separately licensed under [GPL-3.0-only](android/LICENSE), including commercial use under its terms. See [licensing scope](LICENSES.md) and [Android notices](android/NOTICE).
+
 yt-dlp is bundled under its own (Unlicense) terms. Please download only content
 you have the right to save.
 

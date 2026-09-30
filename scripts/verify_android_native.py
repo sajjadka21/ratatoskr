@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-only
 """Check every ELF, including executables hidden in nested .zip.so payloads."""
 import argparse
 import io

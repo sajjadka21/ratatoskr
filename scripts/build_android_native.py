@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-only
 """Rebuild the five WebP libraries in the official FFmpeg AAR for 16 KB Android.
 
 Inputs are pinned by SHA-256. No third-party binary fork or ELF header patching.

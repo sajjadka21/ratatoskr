@@ -33,3 +33,7 @@
 ## Native dependencies
 
 Install the pinned NDK/CMake packages and Python 3.12+ before building. Gradle rebuilds WebP automatically; see [NATIVE_COMPATIBILITY.md](NATIVE_COMPATIBILITY.md). Both CI and release builds recursively validate final APK native payloads.
+
+## Licence and source
+
+Ratatoskr Android is GPL-3.0-only. The desktop retains PolyForm Noncommercial. See LICENSE, NOTICE and ../LICENSES.md. Android sources and the WebP sources used by the build are attached as Ratatoskr-android-source.zip to every public release.

@@ -22,12 +22,14 @@ import { useI18n } from "../i18n/I18n";
 import { messages } from "../i18n/messages";
 import type {
   ConnectionCheck,
+  DownloadCategory,
   DownloadListItem,
   DownloadQueue,
   DownloadSettings,
 } from "../types/download";
 import { extractHttpUrls } from "../utils/downloadLinks";
 import { displayName } from "../utils/fileKind";
+import { categoryName } from "../utils/categories";
 import { formatHost } from "../utils/format";
 import { friendlyError, noticeText } from "../utils/notices";
 import {
@@ -91,6 +93,40 @@ export function MiniWindow() {
 
 function close() {
   void getCurrentWindow().close();
+}
+
+const AFTER_ONE = ["none", "open", "sleep", "hibernate", "shutdown", "exit_app"] as const;
+
+/** What happens when this download finishes, like other managers offer. */
+function AfterThis({ id }: { id: string }) {
+  const { t } = useI18n();
+  const [value, setValue] = useState("none");
+
+  useEffect(() => {
+    invoke<string>("get_download_after", { id })
+      .then(setValue)
+      .catch(() => {});
+  }, [id]);
+
+  return (
+    <label className="mini__field mini__field--wide">
+      <span>{t("afterOne.label")}</span>
+      <select
+        value={value}
+        onChange={(event) =>
+          void invoke<string>("set_download_after", { id, action: event.target.value })
+            .then(setValue)
+            .catch(() => {})
+        }
+      >
+        {AFTER_ONE.map((action) => (
+          <option key={action} value={action}>
+            {t(`afterOne.${action}`)}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }
 
 /** Heights the window may take, in logical pixels. */
@@ -189,7 +225,7 @@ function AddView({ onStarted }: { onStarted: (id: string) => void }) {
     const withQuality =
       quality === null ? chosen : withVideoQualityForAll(chosen.join("\n"), quality).split("\n");
     try {
-      const folder = await currentFolder.current();
+      const { folder, name } = currentChoice.current();
       const created: DownloadListItem[] = [];
       let failed: string | null = null;
       for (const link of withQuality) {
@@ -198,6 +234,7 @@ function AddView({ onStarted }: { onStarted: (id: string) => void }) {
             await invoke<DownloadListItem>("create_download_task", {
               url: link,
               directory: folder,
+              filename: withQuality.length === 1 ? name : null,
             }),
           );
         } catch (reason) {
@@ -235,7 +272,8 @@ function AddView({ onStarted }: { onStarted: (id: string) => void }) {
     }
   }
 
-  const currentFolder = useRef<() => Promise<string | null>>(async () => null);
+  const currentChoice = useRef<() => SaveChoice>(() => ({ folder: null, name: null }));
+  const [serverName, setServerName] = useState<string | null>(null);
 
   if (links.length === 0) {
     return (
@@ -264,7 +302,7 @@ function AddView({ onStarted }: { onStarted: (id: string) => void }) {
           </div>
         </header>
 
-        {single && !video ? <FileFacts url={single} /> : null}
+        {single && !video ? <FileFacts url={single} onName={setServerName} /> : null}
         {links.length > 1 ? (
           <ul className="mini__links" dir="ltr">
             {links.slice(0, 50).map((link) => (
@@ -284,7 +322,11 @@ function AddView({ onStarted }: { onStarted: (id: string) => void }) {
           onBusy={setLookingUp}
         />
 
-        <FolderRow register={(read) => (currentFolder.current = read)} disabled={busy} />
+        <SaveAs
+          suggestedName={single && !video ? serverName : null}
+          register={(read) => (currentChoice.current = read)}
+          disabled={busy}
+        />
 
         {error ? <div className="mini__error">{error}</div> : null}
       </div>
@@ -331,7 +373,7 @@ async function startThroughQueue(created: DownloadListItem[], t: (key: "add.batc
 }
 
 /** Name and size of a file link, asked from the server like a download would. */
-function FileFacts({ url }: { url: string }) {
+function FileFacts({ url, onName }: { url: string; onName?: (name: string) => void }) {
   const { t, fmt } = useI18n();
   const [check, setCheck] = useState<ConnectionCheck | null>(null);
   const [checking, setChecking] = useState(true);
@@ -353,6 +395,9 @@ function FileFacts({ url }: { url: string }) {
   }, [url]);
 
   const name = check?.filename ?? fallbackName(url);
+  useEffect(() => {
+    onName?.(name);
+  }, [name, onName]);
   return (
     <div className="mini__file">
       <FileBadge name={name} />
@@ -384,27 +429,60 @@ function fallbackName(url: string): string {
   }
 }
 
-/** The folder to save in: the usual one, or one chosen here. */
-function FolderRow({
+/** Where and under what name to save: `null` keeps what the app would choose. */
+type SaveChoice = { folder: string | null; name: string | null };
+
+/**
+ * The name to save under (for one file), the category and the folder, like
+ * the "Save as" part of other download managers' start dialog. Picking a
+ * category uses its folder; "Change…" picks any folder.
+ */
+function SaveAs({
+  suggestedName,
   register,
   disabled,
 }: {
-  register: (read: () => Promise<string | null>) => void;
+  /** The server's name for one file; without it no name field is shown. */
+  suggestedName: string | null;
+  register: (read: () => SaveChoice) => void;
   disabled: boolean;
 }) {
   const { t } = useI18n();
   const [usual, setUsual] = useState<string | null>(null);
+  const [categories, setCategories] = useState<DownloadCategory[]>([]);
+  const [categoryId, setCategoryId] = useState<string>("");
   const [chosen, setChosen] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [nameEdited, setNameEdited] = useState(false);
 
   useEffect(() => {
     invoke<DownloadSettings>("get_download_settings")
       .then((settings) => setUsual(settings.defaultDirectory ?? settings.systemDirectory))
       .catch(() => {});
+    invoke<DownloadCategory[]>("list_categories")
+      .then(setCategories)
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
-    register(async () => chosen);
-  }, [chosen, register]);
+    if (!nameEdited) setName(suggestedName ?? "");
+  }, [suggestedName, nameEdited]);
+
+  // The category its extension belongs to, as the rules would file it.
+  const extension = /\.([a-z0-9]{1,8})$/i.exec(name || suggestedName || "")?.[1]?.toLowerCase();
+  const matched = extension
+    ? categories.find((category) => category.extensions.includes(extension))
+    : undefined;
+  const category = categories.find((candidate) => candidate.id === categoryId);
+  const categoryFolder = category?.defaultDirectory ?? null;
+  const folder = chosen ?? categoryFolder;
+  const shown = folder ?? matched?.defaultDirectory ?? usual;
+  const trimmed = name.trim();
+  const renamed = nameEdited && trimmed && trimmed !== suggestedName ? trimmed : null;
+
+  useEffect(() => {
+    register(() => ({ folder, name: renamed }));
+  }, [folder, renamed, register]);
 
   async function choose() {
     try {
@@ -412,7 +490,7 @@ function FolderRow({
         directory: true,
         multiple: false,
         title: t("add.chooseFolderTitle"),
-        defaultPath: chosen ?? usual ?? undefined,
+        defaultPath: shown ?? undefined,
       });
       if (typeof picked === "string" && picked) setChosen(picked);
     } catch {
@@ -420,21 +498,61 @@ function FolderRow({
     }
   }
 
-  const shown = chosen ?? usual;
   return (
-    <div className="mini__folder">
-      <FolderOpen size={14} aria-hidden="true" />
-      <span className="mini__folder-path" title={shown ?? undefined} dir={shown ? "ltr" : undefined}>
-        {shown ?? t("add.systemDownloads")}
-      </span>
-      {chosen ? (
-        <button type="button" disabled={disabled} onClick={() => setChosen(null)}>
-          {t("add.resetFolder")}
-        </button>
+    <div className="mini__save">
+      {suggestedName !== null ? (
+        <label className="mini__field">
+          <span>{t("mini.saveAs")}</span>
+          <input
+            dir="ltr"
+            value={name}
+            disabled={disabled}
+            spellCheck={false}
+            onChange={(event) => {
+              setName(event.target.value);
+              setNameEdited(true);
+            }}
+          />
+        </label>
       ) : null}
-      <button type="button" disabled={disabled} onClick={() => void choose()}>
-        {t("add.changeFolder")}
-      </button>
+      {categories.length > 0 ? (
+        <label className="mini__field">
+          <span>{t("mini.category")}</span>
+          <select
+            value={categoryId}
+            disabled={disabled}
+            onChange={(event) => {
+              setCategoryId(event.target.value);
+              setChosen(null);
+            }}
+          >
+            <option value="">
+              {matched
+                ? t("mini.categoryAuto", { name: categoryName(matched.id, matched.name, t) })
+                : t("mini.categoryNone")}
+            </option>
+            {categories.map((candidate) => (
+              <option key={candidate.id} value={candidate.id}>
+                {categoryName(candidate.id, candidate.name, t)}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      <div className="mini__folder">
+        <FolderOpen size={14} aria-hidden="true" />
+        <span className="mini__folder-path" title={shown ?? undefined} dir={shown ? "ltr" : undefined}>
+          {shown ?? t("add.systemDownloads")}
+        </span>
+        {chosen ? (
+          <button type="button" disabled={disabled} onClick={() => setChosen(null)}>
+            {t("add.resetFolder")}
+          </button>
+        ) : null}
+        <button type="button" disabled={disabled} onClick={() => void choose()}>
+          {t("add.changeFolder")}
+        </button>
+      </div>
     </div>
   );
 }
@@ -458,7 +576,8 @@ function TaskView({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [gone, setGone] = useState(false);
-  const currentFolder = useRef<() => Promise<string | null>>(async () => null);
+  const currentChoice = useRef<() => SaveChoice>(() => ({ folder: null, name: null }));
+  const [serverName, setServerName] = useState<string | null>(null);
 
   const load = useCallback(() => {
     invoke<DownloadListItem | null>("get_download", { id })
@@ -531,8 +650,9 @@ function TaskView({
     setBusy(true);
     setError(null);
     try {
-      const folder = await currentFolder.current();
+      const { folder, name } = currentChoice.current();
       if (folder) await invoke("set_download_folder", { id, directory: folder });
+      if (name) await invoke("set_download_name", { id, filename: name });
       const target = await invoke<string>("start_handoff", { id });
       onStarted(target);
     } catch (reason) {
@@ -588,8 +708,12 @@ function TaskView({
               <span className="ltr">{formatHost(item.sourceUrl)}</span>
             </div>
           </header>
-          <FileFacts url={item.sourceUrl} />
-          <FolderRow register={(read) => (currentFolder.current = read)} disabled={busy} />
+          <FileFacts url={item.sourceUrl} onName={setServerName} />
+          <SaveAs
+            suggestedName={serverName}
+            register={(read) => (currentChoice.current = read)}
+            disabled={busy}
+          />
           {error ? <div className="mini__error">{error}</div> : null}
         </div>
         <footer className="mini__footer">
@@ -705,6 +829,7 @@ function TaskView({
             </div>
           </dl>
         )}
+        {!failed ? <AfterThis id={id} /> : null}
         {error ? <div className="mini__error">{error}</div> : null}
       </div>
 

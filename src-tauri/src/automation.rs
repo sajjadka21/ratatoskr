@@ -29,6 +29,14 @@ pub const SETTING_PREVENT_SLEEP: &str = "prevent_sleep_while_downloading";
 
 pub struct Automation {
     keep_awake: KeepAwake,
+    /// What to do once every download has finished; for this session only,
+    /// and cleared once it has run.
+    after_all: Mutex<Option<CompletionAction>>,
+    /// Whether anything ran since `after_all` was chosen, so choosing it
+    /// while nothing is downloading does not act at once.
+    after_all_armed: std::sync::atomic::AtomicBool,
+    /// What to do when one download finishes, by its id.
+    after_one: Mutex<std::collections::HashMap<String, AfterDownload>>,
     /// Id of the action waiting out its cancel window, if any.
     pending: Mutex<Option<u64>>,
     next_id: AtomicU64,
@@ -38,8 +46,42 @@ impl Automation {
     pub fn new() -> Self {
         Self {
             keep_awake: KeepAwake::new(),
+            after_all: Mutex::new(None),
+            after_all_armed: std::sync::atomic::AtomicBool::new(false),
+            after_one: Mutex::new(std::collections::HashMap::new()),
             pending: Mutex::new(None),
             next_id: AtomicU64::new(1),
+        }
+    }
+
+    pub fn after_all(&self) -> Option<CompletionAction> {
+        self.after_all.lock().ok().and_then(|value| *value)
+    }
+
+    pub fn set_after_all(&self, action: Option<CompletionAction>) {
+        if let Ok(mut value) = self.after_all.lock() {
+            *value = action.filter(|action| *action != CompletionAction::None);
+        }
+        self.after_all_armed.store(false, Ordering::Relaxed);
+    }
+
+    pub fn after_download(&self, id: &str) -> Option<AfterDownload> {
+        self.after_one
+            .lock()
+            .ok()
+            .and_then(|map| map.get(id).copied())
+    }
+
+    pub fn set_after_download(&self, id: &str, action: Option<AfterDownload>) {
+        if let Ok(mut map) = self.after_one.lock() {
+            match action {
+                Some(action) => {
+                    map.insert(id.to_owned(), action);
+                }
+                None => {
+                    map.remove(id);
+                }
+            }
         }
     }
 
@@ -50,6 +92,115 @@ impl Automation {
             .ok()
             .and_then(|mut pending| pending.take())
     }
+}
+
+/// What happens when one particular download finishes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AfterDownload {
+    Open,
+    Power(CompletionAction),
+}
+
+impl AfterDownload {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "open" => Some(Self::Open),
+            other => other
+                .parse::<CompletionAction>()
+                .ok()
+                .filter(|action| {
+                    !matches!(action, CompletionAction::None | CompletionAction::Notify)
+                })
+                .map(Self::Power),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Power(action) => action.as_str(),
+        }
+    }
+}
+
+/// Runs what was chosen for this download, if anything, now that it has
+/// finished (or failed: then only a power action still makes sense, so the
+/// computer does not stay on all night for nothing).
+pub fn download_finished(app: &AppHandle, record: &dm_common::DownloadRecord) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let Some(action) = state.automation.after_download(&record.id) else {
+        return;
+    };
+    state.automation.set_after_download(&record.id, None);
+    let completed = record.status == dm_common::DownloadStatus::Completed;
+    match action {
+        AfterDownload::Open if completed => {
+            if let Some(path) = record.destination_path.as_deref() {
+                use tauri_plugin_opener::OpenerExt;
+                if let Err(error) = app.opener().open_path(path, None::<&str>) {
+                    warn!(error = %error, "could not open the finished download");
+                }
+            }
+        }
+        AfterDownload::Open => {}
+        AfterDownload::Power(action) => {
+            let name = record
+                .filename
+                .clone()
+                .unwrap_or_else(|| record.source_url.clone());
+            schedule_action(app, &state, name, action);
+        }
+    }
+}
+
+/// Runs the "when everything has finished" action once nothing is left:
+/// no transfer running, none waiting to retry, no running queue with work.
+fn check_after_all(app: &AppHandle, state: &AppState) {
+    let Some(action) = state.automation.after_all() else {
+        return;
+    };
+    if work_pending(state) {
+        state
+            .automation
+            .after_all_armed
+            .store(true, Ordering::Relaxed);
+        return;
+    }
+    if !state.automation.after_all_armed.load(Ordering::Relaxed) {
+        return;
+    }
+    state.automation.set_after_all(None);
+    let label = if persian(app) {
+        "همه‌ی دانلودها"
+    } else {
+        "All downloads"
+    };
+    schedule_action(app, state, label.to_owned(), action);
+}
+
+fn work_pending(state: &AppState) -> bool {
+    if state.downloads.has_running_transfers() {
+        return true;
+    }
+    let retrying = state.storage.list_downloads().is_ok_and(|downloads| {
+        downloads
+            .iter()
+            .any(|download| download.status == dm_common::DownloadStatus::Retrying)
+    });
+    if retrying {
+        return true;
+    }
+    state.queues.list_queues().is_ok_and(|queues| {
+        queues.iter().any(|queue| {
+            queue.state == QueueState::Running
+                && state
+                    .storage
+                    .list_queued_downloads(&queue.id)
+                    .is_ok_and(|queued| !queued.is_empty())
+        })
+    })
 }
 
 pub fn prevent_sleep_enabled(state: &AppState) -> bool {
@@ -134,10 +285,7 @@ fn schedule_action(
     let (title, body) = if persian_text {
         (
             "صف تمام شد",
-            format!(
-                "صف «{queue_name}» تمام شد. {}",
-                action_sentence(action, true)
-            ),
+            format!("«{queue_name}» تمام شد. {}", action_sentence(action, true)),
         )
     } else {
         (
@@ -360,6 +508,8 @@ pub async fn run_keep_awake(app: AppHandle) {
         let Some(state) = app.try_state::<AppState>() else {
             return;
         };
+
+        check_after_all(&app, &state);
 
         let running = state.downloads.has_running_transfers();
         let wanted =

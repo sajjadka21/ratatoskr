@@ -18,6 +18,32 @@
   margin: 0 24px;
 }
 
+.downloads-workspace__tools {
+  margin: 0 24px 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.downloads-workspace__tools button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 12px;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.downloads-workspace__tools button:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
 .downloads-workspace__table {
   min-height: 0;
   flex: 1;

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
+  AppWindow,
   ChevronRight,
   Copy,
   ExternalLink,
@@ -302,6 +303,23 @@ export function DownloadContextMenu({
       >
         <ExternalLink size={15} />
         <span>{t("action.open")}</span>
+      </button>
+
+      <button
+        type="button"
+        role="menuitem"
+        disabled={!hasFile}
+        onClick={() => {
+          void invoke("open_download_with", { id: item.id })
+            .then(onClose)
+            .catch((reason) => {
+              onClose();
+              onError?.(t("context.openFailed", { reason: String(reason) }));
+            });
+        }}
+      >
+        <AppWindow size={15} />
+        <span>{t("action.openWith")}</span>
       </button>
 
       <button

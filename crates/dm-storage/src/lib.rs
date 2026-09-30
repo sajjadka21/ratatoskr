@@ -28,7 +28,7 @@ pub use backup::{
 pub use checks::DownloadChecks;
 pub use traffic::{TrafficScope, TrafficTotals};
 
-const LATEST_SCHEMA_VERSION: i32 = 14;
+const LATEST_SCHEMA_VERSION: i32 = 15;
 
 const MIGRATION_V1: &str = r#"
 BEGIN IMMEDIATE;
@@ -402,6 +402,20 @@ COMMIT;
 /// What was checked or done after a download finished: its checksum, a
 /// virus scan, archive extraction and the user's command.
 /// A speed limit chosen for one download, apart from the global one.
+const MIGRATION_V15: &str = r#"
+BEGIN IMMEDIATE;
+
+CREATE TABLE download_names (
+    download_id TEXT PRIMARY KEY NOT NULL
+        REFERENCES downloads(id) ON DELETE CASCADE,
+    filename TEXT NOT NULL CHECK (length(filename) > 0)
+);
+
+PRAGMA user_version = 15;
+
+COMMIT;
+"#;
+
 const MIGRATION_V14: &str = r#"
 BEGIN IMMEDIATE;
 
@@ -725,6 +739,12 @@ fn run_migrations(connection: &Connection) -> Result<()> {
 
     if version == 13 {
         connection.execute_batch(MIGRATION_V14)?;
+    }
+
+    let version: i32 = connection.query_row("PRAGMA user_version;", [], |row| row.get(0))?;
+
+    if version == 14 {
+        connection.execute_batch(MIGRATION_V15)?;
     }
 
     Ok(())

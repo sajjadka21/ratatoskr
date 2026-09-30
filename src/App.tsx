@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Trash2 } from "lucide-react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, SyntheticEvent } from "react";
 
 import { invoke } from "@tauri-apps/api/core";
@@ -140,6 +141,16 @@ function App({ preferences, onPreferencesChange }: AppProps) {
 
   const [health, setHealth] = useState<HealthCheckResponse | null>(null);
   const [downloads, setDownloads] = useState<DownloadListItem[]>([]);
+  // What happens once everything has finished; the engine clears it after
+  // it has run, so it is read again whenever a completion action is heard.
+  const [afterAll, setAfterAll] = useState("none");
+  const refreshAfterAll = useCallback(() => {
+    invoke<string>("get_after_all")
+      .then(setAfterAll)
+      .catch(() => {});
+  }, []);
+  useEffect(refreshAfterAll, [refreshAfterAll]);
+
   // The first-run guide; also opened again from Settings.
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   useEffect(() => {
@@ -154,6 +165,10 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   }, []);
   // Links already in the list, without the quality fragment, to warn about
   // adding one twice.
+  const finishedDownloads = useMemo(
+    () => downloads.filter((download) => download.status.toLowerCase() === "completed"),
+    [downloads],
+  );
   const knownLinks = useMemo(
     () => new Set(downloads.map((download) => download.sourceUrl.split("#")[0])),
     [downloads],
@@ -446,6 +461,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   // A finished queue can schedule sleep, shutdown or closing the app.
   useEffect(() => {
     const subscription = listen<CompletionActionEvent>(COMPLETION_ACTION_EVENT, ({ payload }) => {
+      refreshAfterAll();
       if (payload.state === "pending") {
         setCompletionAction(payload);
         return;
@@ -1324,6 +1340,12 @@ function App({ preferences, onPreferencesChange }: AppProps) {
                 onResumeAll={() => void resumeAll()}
                 traffic={traffic}
                 onOpenTraffic={() => setPage("settings")}
+                afterAll={afterAll}
+                onSetAfterAll={(action) =>
+                  void invoke<string>("set_after_all", { action })
+                    .then(setAfterAll)
+                    .catch((reason) => notify("error", String(reason)))
+                }
               />
 
               {selectedIds.size > 1 ? (
@@ -1336,6 +1358,13 @@ function App({ preferences, onPreferencesChange }: AppProps) {
                     onPriority={(priority) => void runBulkPriority(priority)}
                     onClear={clearSelection}
                   />
+                </div>
+              ) : section === "completed" && selectedIds.size <= 1 && finishedDownloads.length > 0 ? (
+                <div className="downloads-workspace__tools">
+                  <button type="button" onClick={() => setRemoveCandidates(finishedDownloads)}>
+                    <Trash2 size={14} aria-hidden="true" />
+                    {t("downloads.clearCompleted", { count: fmt.number(finishedDownloads.length) })}
+                  </button>
                 </div>
               ) : null}
 

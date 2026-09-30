@@ -1,4 +1,4 @@
-import { Gauge, Globe2, Pause, Play } from "lucide-react";
+import { Gauge, Globe2, Pause, Play, Power } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useI18n } from "../../i18n/I18n";
@@ -24,7 +24,12 @@ type ThroughputBandProps = {
   onResumeAll: () => void;
   traffic?: TrafficSummary | null;
   onOpenTraffic?: () => void;
+  /** What happens once everything has finished (this session only). */
+  afterAll?: string;
+  onSetAfterAll?: (action: string) => void;
 };
+
+const AFTER_ALL = ["none", "sleep", "hibernate", "shutdown", "exit_app"] as const;
 
 /**
  * The top band of the download list: total speed as a big number, the last
@@ -43,6 +48,8 @@ export function ThroughputBand({
   onResumeAll,
   traffic = null,
   onOpenTraffic,
+  afterAll = "none",
+  onSetAfterAll,
 }: ThroughputBandProps) {
   const { t, fmt } = useI18n();
   const chartRef = useRef<HTMLDivElement>(null);
@@ -129,6 +136,24 @@ export function ThroughputBand({
             ))}
           </select>
         </label>
+        {onSetAfterAll ? (
+          <label className={`throughput-band__limit ${afterAll !== "none" ? "throughput-band__limit--armed" : ""}`}>
+            <Power size={15} aria-hidden="true" />
+            <span className="visually-hidden">{t("after.label")}</span>
+            <select
+              id="after-all"
+              value={afterAll}
+              title={t("after.label")}
+              onChange={(event) => onSetAfterAll(event.target.value)}
+            >
+              {AFTER_ALL.map((action) => (
+                <option key={action} value={action}>
+                  {t(`after.${action}`)}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <div className="throughput-band__buttons">
           <button type="button" onClick={onPauseAll} disabled={activeCount === 0}>
             <Pause size={14} aria-hidden="true" />

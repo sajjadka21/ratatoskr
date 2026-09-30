@@ -164,6 +164,7 @@ impl EventPublisher {
             }
             return;
         }
+        automation::download_finished(&self.app, record);
         let key = format!("{}:{}", record.id, record.status);
         let first = ANNOUNCED
             .lock()
@@ -796,11 +797,25 @@ async fn create_download_task(
     state: State<'_, AppState>,
     url: String,
     directory: Option<String>,
+    filename: Option<String>,
 ) -> Result<DownloadListItemResponse, String> {
     let created = create_download_record(&state, url, directory.as_deref())?;
-    // A folder chosen for this download belongs to a new one, not to a
-    // stopped download the link would otherwise continue.
-    if directory.is_none() && state.downloads.may_adopt(&created.id) {
+    if let Some(filename) = filename.as_deref().filter(|name| !name.trim().is_empty()) {
+        if let Err(error) = state
+            .downloads
+            .set_download_name(&created.id, Some(filename))
+        {
+            let _ = state.storage.remove_download_record(&created.id);
+            return Err(error.to_string());
+        }
+    }
+    let created = match state.storage.get_download(&created.id) {
+        Ok(Some(record)) => download_list_item_response(record),
+        _ => created,
+    };
+    // A folder or name chosen for this download belongs to a new one, not
+    // to a stopped download the link would otherwise continue.
+    if directory.is_none() && filename.is_none() && state.downloads.may_adopt(&created.id) {
         if let Ok(Some(adopted)) = state.downloads.adopt_fresh_link(&created.id).await {
             info!(download_id = %adopted.id, "fresh link continues a stopped download");
             return Ok(download_list_item_response(adopted));
@@ -1224,6 +1239,20 @@ fn set_download_folder(
     state
         .downloads
         .set_download_folder(&id, directory.as_deref().map(std::path::Path::new))
+        .map_err(|error| error.to_string())
+}
+
+/// Saves a download under `filename` instead of the name the server gives;
+/// `None` goes back to that name. Only before the download reserved its file.
+#[tauri::command]
+fn set_download_name(
+    state: State<'_, AppState>,
+    id: String,
+    filename: Option<String>,
+) -> Result<(), String> {
+    state
+        .downloads
+        .set_download_name(&id, filename.as_deref())
         .map_err(|error| error.to_string())
 }
 
@@ -2014,6 +2043,30 @@ fn open_download_file(
         .map_err(|error| error.to_string())
 }
 
+/// Windows' "Open with" dialog for a finished download, to pick the program.
+#[tauri::command]
+fn open_download_with(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let path = completed_file(&state, &id)?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        // The path is one argument; rundll32 hands it to the shell as is.
+        std::process::Command::new("rundll32.exe")
+            .arg("shell32.dll,OpenAs_RunDLL")
+            .arg(&path)
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        Err("\"Open with\" is only available on Windows".to_owned())
+    }
+}
+
 #[tauri::command]
 fn reveal_download_file(
     app: AppHandle,
@@ -2557,6 +2610,55 @@ async fn open_download_window(app: AppHandle, id: String) {
     mini::open_task(&app, &id, false);
 }
 
+/// What happens once every download has finished: `none`, `sleep`,
+/// `hibernate`, `shutdown` or `exit_app`. For this session only.
+#[tauri::command]
+fn get_after_all(state: State<'_, AppState>) -> String {
+    state
+        .automation
+        .after_all()
+        .unwrap_or(CompletionAction::None)
+        .as_str()
+        .to_owned()
+}
+
+#[tauri::command]
+fn set_after_all(state: State<'_, AppState>, action: String) -> Result<String, String> {
+    let parsed = action
+        .parse::<CompletionAction>()
+        .map_err(|_| "unknown action".to_owned())?;
+    if parsed == CompletionAction::Notify {
+        return Err("unknown action".to_owned());
+    }
+    state.automation.set_after_all(Some(parsed));
+    Ok(get_after_all(state))
+}
+
+/// What happens when one download finishes: `none`, `open`, or a power
+/// action.
+#[tauri::command]
+fn get_download_after(state: State<'_, AppState>, id: String) -> String {
+    state
+        .automation
+        .after_download(&id)
+        .map_or("none", automation::AfterDownload::as_str)
+        .to_owned()
+}
+
+#[tauri::command]
+fn set_download_after(
+    state: State<'_, AppState>,
+    id: String,
+    action: String,
+) -> Result<String, String> {
+    let parsed = automation::AfterDownload::parse(&action);
+    if parsed.is_none() && action != "none" {
+        return Err("unknown action".to_owned());
+    }
+    state.automation.set_after_download(&id, parsed);
+    Ok(get_download_after(state, id))
+}
+
 /// Brings the main window forward; with `focus`, on that download.
 #[tauri::command]
 fn show_main_window(app: AppHandle, focus: Option<String>) {
@@ -3079,11 +3181,16 @@ pub fn run() {
             list_stream_variants,
             probe_video,
             set_download_folder,
+            set_download_name,
             start_handoff,
             get_download,
             take_mini_links,
             open_download_window,
             show_main_window,
+            get_after_all,
+            set_after_all,
+            get_download_after,
+            set_download_after,
             get_intake_window,
             set_intake_window,
             get_onboarding_done,
@@ -3119,6 +3226,7 @@ pub fn run() {
             delete_download_rule,
             cancel_completion_action,
             open_download_file,
+            open_download_with,
             open_extracted_folder,
             reveal_download_file,
             pause_all_downloads,

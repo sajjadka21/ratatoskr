@@ -513,6 +513,30 @@ impl DownloadService {
         Ok(())
     }
 
+    /// Saves `name` as the file name for this download (made safe for the
+    /// file system); `None` goes back to the name the server gives.
+    pub fn set_download_name(&self, download_id: &str, name: Option<&str>) -> Result<()> {
+        let name = name
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(crate::sanitize_filename);
+        self.storage
+            .set_download_name(download_id, name.as_deref())?;
+        Ok(())
+    }
+
+    /// The file name chosen for this download, keeping the extension the
+    /// server's name has when the chosen one has none.
+    fn chosen_name(&self, download_id: &str, server_name: &str) -> Option<String> {
+        let chosen = self
+            .storage
+            .get_download_name(download_id)
+            .ok()
+            .flatten()
+            .map(|name| crate::sanitize_filename(&name))?;
+        Some(with_extension_of(&chosen, server_name))
+    }
+
     fn resolve_destination(&self, decision: Option<&RuleDecision>, fallback: &Path) -> PathBuf {
         let absolute = |value: &str| {
             let path = PathBuf::from(value.trim());
@@ -1239,10 +1263,19 @@ impl DownloadService {
             _ => {
                 let directory =
                     self.destination_for(&task.id, decision.as_ref(), destination_directory);
-                self.base_downloader()
-                    .plan_paths(&directory, &probe.filename)
-                    .await?
+                let name = self
+                    .chosen_name(&task.id, &probe.filename)
+                    .unwrap_or_else(|| probe.filename.clone());
+                self.base_downloader().plan_paths(&directory, &name).await?
             }
+        };
+        // A name chosen by the user is listed as the file actually got it.
+        let listed_name = match self.storage.get_download_name(&task.id).ok().flatten() {
+            Some(_) => destination_path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| probe.filename.clone()),
+            None => probe.filename.clone(),
         };
 
         let scope = self.traffic_scope_of(&probe.final_url);
@@ -1260,7 +1293,7 @@ impl DownloadService {
             &task.id,
             &TransferPlan {
                 resolved_url: probe.final_url.clone(),
-                filename: probe.filename.clone(),
+                filename: listed_name,
                 destination_path: destination_path.to_string_lossy().into_owned(),
                 temp_path: temp_path.to_string_lossy().into_owned(),
                 mime_type: probe.content_type.clone(),
@@ -1486,7 +1519,10 @@ impl DownloadService {
             (Some(destination), Some(temp)) => (PathBuf::from(destination), PathBuf::from(temp)),
             _ => {
                 let directory = self.destination_for(&task.id, decision, destination_directory);
-                let filename = crate::hls::stream_filename(&probe.final_url, extension);
+                let stream_name = crate::hls::stream_filename(&probe.final_url, extension);
+                let filename = self
+                    .chosen_name(&task.id, &stream_name)
+                    .unwrap_or(stream_name);
                 self.base_downloader()
                     .plan_paths(&directory, &filename)
                     .await?
@@ -2044,10 +2080,12 @@ impl DownloadService {
             .await
             .map_err(DownloadError::Io)?
             .len();
-        let final_name = file
+        let produced = file
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or(filename);
+        // A name chosen when adding it replaces the video's title.
+        let final_name = self.chosen_name(&task.id, &produced).unwrap_or(produced);
         self.storage
             .set_transfer_plan(&task.id, &plan(&final_name, Some(size)))?;
         self.storage.update_progress(&task.id, size, Some(size))?;
@@ -3662,6 +3700,20 @@ async fn remove_partial_file(temp_path: Option<&str>) {
     if let Some(path) = temp_path {
         let _ = tokio::fs::remove_file(stream_record_path(Path::new(path))).await;
         let _ = tokio::fs::remove_file(path).await;
+    }
+}
+
+/// `name`, with the extension of `model` added when `name` has none (a user
+/// renaming "movie.mkv" to "My film" still gets "My film.mkv").
+fn with_extension_of(name: &str, model: &str) -> String {
+    let has_extension = Path::new(name)
+        .extension()
+        .is_some_and(|extension| !extension.is_empty() && extension.len() <= 8);
+    match Path::new(model).extension() {
+        Some(extension) if !has_extension => {
+            format!("{name}.{}", extension.to_string_lossy())
+        }
+        _ => name.to_owned(),
     }
 }
 
@@ -6292,6 +6344,36 @@ mkdir -p \"$w\"
             .await;
         let row = harness.storage.get_download(&task.id).unwrap().unwrap();
         assert_eq!(row.error_code.as_deref(), Some("needs_muxing"));
+    }
+
+    #[test]
+    fn a_chosen_name_keeps_the_file_type() {
+        assert_eq!(with_extension_of("My film", "movie.mkv"), "My film.mkv");
+        assert_eq!(with_extension_of("My film.mp4", "movie.mkv"), "My film.mp4");
+        assert_eq!(with_extension_of("notes", "README"), "notes");
+    }
+
+    #[tokio::test]
+    async fn a_download_is_saved_under_the_name_chosen_for_it() {
+        let server = TestServer::start(ServerBehaviour::default()).await;
+        let harness = harness();
+        let task = harness
+            .service
+            .create_task(&server.url("download.bin"))
+            .unwrap();
+        harness
+            .service
+            .set_download_name(&task.id, Some("Annual: report"))
+            .unwrap();
+        let record = harness
+            .service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+        assert_eq!(record.status, DownloadStatus::Completed);
+        let destination = record.destination_path.unwrap();
+        assert!(destination.ends_with("Annual_ report.bin"), "{destination}");
+        assert_eq!(record.filename.as_deref(), Some("Annual_ report.bin"));
     }
 
     #[test]

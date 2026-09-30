@@ -3107,7 +3107,11 @@ pub fn run() {
         .on_window_event(|window, event| {
             // Closing hides to the tray so downloads keep running; Quit in
             // the tray menu really exits.
+            // Only the main window: a small download window really closes.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() != "main" {
+                    return;
+                }
                 let app = window.app_handle();
                 let hide = app.try_state::<AppState>().is_some_and(|state| {
                     tray::close_to_tray_enabled(&state)

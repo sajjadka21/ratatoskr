@@ -68,9 +68,7 @@ pub fn open_add(app: &AppHandle, links: Vec<String>) {
     }
     if let Some(window) = app.get_webview_window(ADD_LABEL) {
         let _ = window.emit(MINI_LINKS_EVENT, ());
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
+        bring_forward(&window);
         return;
     }
     build(app, ADD_LABEL, "view=mini&mode=add", 480.0, 360.0);
@@ -88,9 +86,7 @@ pub fn open_task(app: &AppHandle, download_id: &str, confirm: bool) {
             .collect::<String>()
     );
     if let Some(window) = app.get_webview_window(&label) {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
+        bring_forward(&window);
         return;
     }
     let query = format!(
@@ -107,6 +103,18 @@ pub fn open_task(app: &AppHandle, download_id: &str, confirm: bool) {
     );
 }
 
+fn bring_forward(window: &tauri::WebviewWindow) {
+    let _ = window.unminimize();
+    let _ = window.show();
+    let _ = window.set_always_on_top(true);
+    let _ = window.set_focus();
+    let window = window.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+        let _ = window.set_always_on_top(false);
+    });
+}
+
 fn build(app: &AppHandle, label: &str, query: &str, width: f64, height: f64) {
     let url = WebviewUrl::App(format!("index.html?{query}").into());
     let built = WebviewWindowBuilder::new(app, label, url)
@@ -117,8 +125,19 @@ fn build(app: &AppHandle, label: &str, query: &str, width: f64, height: f64) {
         .maximizable(false)
         .center()
         .focused(true)
+        // Windows keeps a background program's new window behind the one in
+        // front; on top for a moment, it comes forward like a dialog should.
+        .always_on_top(true)
         .disable_drag_drop_handler()
         .build();
+    if let Ok(window) = &built {
+        let _ = window.set_focus();
+        let window = window.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+            let _ = window.set_always_on_top(false);
+        });
+    }
     if let Err(error) = built {
         warn!(error = %error, "could not open the download window");
         // Without it, the main window's Add dialog still works.

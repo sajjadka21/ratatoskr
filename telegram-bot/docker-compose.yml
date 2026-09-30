@@ -1,0 +1,12 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    # yt-dlp is updated often because sites change; rebuild now and then:
+    #   docker compose build --pull --no-cache && docker compose up -d
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true

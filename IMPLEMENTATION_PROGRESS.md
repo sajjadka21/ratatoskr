@@ -1662,3 +1662,24 @@ Compared menu by menu with IDM 6.42 on the user's machine.
 - **Portable version**: `portable.txt` beside the exe keeps database, tools, browser setup and WebView2 data in `data\`; `scripts\make-portable.cmd` builds the zip. The installer path (`scripts\release.cmd`) already existed.
 - **Telegram bot** (`telegram-bot/`): yt-dlp, quality buttons, Spotify tracks by name via YouTube, private-address refusal, per-user limit, Docker deploy. Logic tested (pytest); not run against Telegram from here.
 - **Android app** (`android/`): share target, Quick Settings tile, foreground download service, yt-dlp inside. Not compiled from here (no SDK access); build guide in its README.
+
+## Step 18: brand, fonts, GitHub and release automation
+
+- Brand kit applied: four themes (ember-forge, midnight-arcane, forest-rune,
+  frost-byte) through `data-theme`, the RATATOSKR wordmark, the theme-matched
+  squirrel icon in the sidebar and the empty list, and the kit's patterns
+  (`pattern-*` behind the sidebar brand, `pattern-subtle-*` faded in behind
+  the top bar and the empty list, never behind text).
+- Fonts (bundled, no network): Inter Variable for Latin, Vazirmatn Variable
+  for Persian, Cinzel for page titles (matches the wordmark's serif).
+- Android launcher icon is the kit's app icon (mipmap PNGs); the release
+  build signs with a keystore from the environment, else the debug key.
+- `.github/workflows/ci.yml` (frontend, Rust on Windows, Android, bot tests)
+  and `release.yml` (tag `v*` builds the signed installer, `latest.json`,
+  portable zip and APK and publishes the release).
+- Updater endpoint now points at the GitHub releases of `sajjadka21/ratatoskr`.
+- README (English and Persian), LICENSE (MIT), `docs/INSTAGRAM.md`.
+- Test `a_video_page_without_ytdlp_fails_with_a_reason` skips itself when a
+  yt-dlp is on PATH (it cannot stage the "missing" case there).
+- Not yet verified on Windows or a phone: the whole batch since step 17, the
+  release workflow (first run will show any problems) and the Android build.

@@ -17,9 +17,24 @@ android {
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
 
+    // A release keystore comes from the environment (CI secrets); without one,
+    // the release build is signed with the debug key so the APK still installs.
+    val releaseKeystore = System.getenv("ANDROID_KEYSTORE_PATH")
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = if (releaseKeystore != null) signingConfigs.getByName("release")
+            else signingConfigs.getByName("debug")
         }
     }
     packaging {

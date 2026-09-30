@@ -452,7 +452,7 @@ fn action_sentence(action: CompletionAction, persian: bool) -> String {
         format!("تا {digits} ثانیه‌ی دیگر {what}، مگر این‌که لغوش کنید.")
     } else {
         let what = match action {
-            CompletionAction::ExitApp => "Ratatosk will close",
+            CompletionAction::ExitApp => "Ratatoskr will close",
             CompletionAction::Sleep => "the computer will sleep",
             CompletionAction::Hibernate => "the computer will hibernate",
             CompletionAction::Shutdown => "the computer will shut down",
@@ -478,7 +478,7 @@ pub fn download_ended(app: &AppHandle, record: &dm_common::DownloadRecord) {
         (false, false) => ("Download finished", name),
         (false, true) => (
             "Download failed",
-            format!("{name}\nOpen Ratatosk for details."),
+            format!("{name}\nOpen Ratatoskr for details."),
         ),
     };
     notify(app, title, &body);
@@ -486,7 +486,7 @@ pub fn download_ended(app: &AppHandle, record: &dm_common::DownloadRecord) {
 
 fn action_label(action: CompletionAction) -> &'static str {
     match action {
-        CompletionAction::ExitApp => "close Ratatosk",
+        CompletionAction::ExitApp => "close Ratatoskr",
         CompletionAction::Sleep => "sleep",
         CompletionAction::Hibernate => "hibernate",
         CompletionAction::Shutdown => "shut down",

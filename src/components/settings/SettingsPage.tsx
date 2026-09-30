@@ -31,6 +31,7 @@ import {
 } from "../../utils/settingsFormat";
 
 import { Switch } from "./Switch";
+import { BRAND_THEMES, BRAND_THEME_SWATCHES } from "../../types/download";
 import { SHOW_WELCOME_EVENT } from "../../utils/appEvents";
 import { UpdateSection } from "./UpdateSection";
 import { BrowserSection } from "./BrowserSection";
@@ -328,6 +329,41 @@ function AppearanceSection({
                   onClick={() => onChange({ ...preferences, theme: theme.value })}
                 >
                   {t(theme.label)}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-page__row">
+          <div className="settings-page__row-label">
+            <strong>{t("settings.brandTheme")}</strong>
+            <span>{t("settings.brandThemeHint")}</span>
+          </div>
+          <div className="settings-page__row-control">
+            <div className="settings-page__themes" role="group" aria-label={t("settings.brandTheme")}>
+              {BRAND_THEMES.map((theme) => (
+                <button
+                  key={theme}
+                  type="button"
+                  aria-pressed={preferences.theme === theme}
+                  className={
+                    preferences.theme === theme
+                      ? "settings-page__theme settings-page__theme--active"
+                      : "settings-page__theme"
+                  }
+                  onClick={() => onChange({ ...preferences, theme })}
+                >
+                  <span
+                    className="settings-page__theme-swatch"
+                    style={{
+                      background: BRAND_THEME_SWATCHES[theme][0],
+                      borderColor: BRAND_THEME_SWATCHES[theme][1],
+                    }}
+                  >
+                    <i style={{ background: BRAND_THEME_SWATCHES[theme][1] }} />
+                  </span>
+                  {t(`settings.theme.${theme}` as MessageKey)}
                 </button>
               ))}
             </div>

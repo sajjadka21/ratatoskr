@@ -349,3 +349,11 @@
     display: none;
   }
 }
+
+/* The runic tree from the brand kit above the empty-list message. */
+.download-table__empty-mark {
+  display: block;
+  margin: 0 auto 14px;
+  color: var(--accent);
+  opacity: 0.85;
+}

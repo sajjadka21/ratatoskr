@@ -1,0 +1,208 @@
+/*
+ * The four Ratatoskr brand themes (from the brand kit's ratatoskr-themes.css),
+ * mapped onto the app's own tokens so every component follows them. All four
+ * are dark; the brand gold/ember/leaf/ice colour becomes the accent. Text
+ * colours come from the kit's contrast-checked pairs (4.5:1 or better).
+ */
+
+:root[data-theme="midnight-arcane"] {
+  color-scheme: dark;
+
+  --brand-background: #090B14;
+  --brand-primary: #CAA0FD;
+  --brand-progress: #9F63FF;
+  --brand-pattern: url("/brand/pattern-midnight-arcane.webp");
+
+  --bg-app: #090B14;
+  --bg-sidebar: color-mix(in srgb, #090B14 82%, black);
+  --bg-surface: #141225;
+  --bg-surface-hover: color-mix(in srgb, #141225 86%, #CAA0FD);
+  --bg-elevated: color-mix(in srgb, #141225 90%, #CAA0FD);
+  --bg-sunken: color-mix(in srgb, #090B14 70%, black);
+
+  --border-subtle: color-mix(in srgb, #35264D 70%, #090B14);
+  --border-strong: #35264D;
+
+  --text-primary: #F2EBFE;
+  --text-secondary: #BBAFD0;
+  --text-muted: color-mix(in srgb, #BBAFD0 78%, #090B14);
+
+  --accent: #CAA0FD;
+  --accent-hover: #DDBFFF;
+  --accent-ink: #090B14;
+  --accent-text: #CAA0FD;
+  --accent-soft: color-mix(in srgb, #CAA0FD 14%, transparent);
+
+  --info: #8fbcff;
+  --info-text: #a9ccff;
+  --success: #8ed8a2;
+  --success-text: #8ed8a2;
+  --warning: #ffd17c;
+  --warning-text: #ffd17c;
+  --danger: #ff9a9a;
+  --danger-text: #ff9a9a;
+  --paused: #bcaaff;
+  --paused-text: #cbbcff;
+
+  --chart-domestic: #9F63FF;
+  --chart-international: #CAA0FD;
+
+  --backdrop: rgba(3, 4, 8, 0.7);
+  --shadow-modal: 0 24px 80px rgba(0, 0, 0, 0.55);
+  --shadow-popover: 0 14px 40px rgba(0, 0, 0, 0.5);
+}
+
+:root[data-theme="ember-forge"] {
+  color-scheme: dark;
+
+  --brand-background: #110C0A;
+  --brand-primary: #FBA73D;
+  --brand-progress: #F46803;
+  --brand-pattern: url("/brand/pattern-ember-forge.webp");
+
+  --bg-app: #110C0A;
+  --bg-sidebar: color-mix(in srgb, #110C0A 82%, black);
+  --bg-surface: #211610;
+  --bg-surface-hover: color-mix(in srgb, #211610 86%, #FBA73D);
+  --bg-elevated: color-mix(in srgb, #211610 90%, #FBA73D);
+  --bg-sunken: color-mix(in srgb, #110C0A 70%, black);
+
+  --border-subtle: color-mix(in srgb, #4E3423 70%, #110C0A);
+  --border-strong: #4E3423;
+
+  --text-primary: #FFF1DB;
+  --text-secondary: #C6B29D;
+  --text-muted: color-mix(in srgb, #C6B29D 78%, #110C0A);
+
+  --accent: #FBA73D;
+  --accent-hover: #FFD18C;
+  --accent-ink: #110C0A;
+  --accent-text: #FBA73D;
+  --accent-soft: color-mix(in srgb, #FBA73D 14%, transparent);
+
+  --info: #8fbcff;
+  --info-text: #a9ccff;
+  --success: #8ed8a2;
+  --success-text: #8ed8a2;
+  --warning: #ffd17c;
+  --warning-text: #ffd17c;
+  --danger: #ff9a9a;
+  --danger-text: #ff9a9a;
+  --paused: #bcaaff;
+  --paused-text: #cbbcff;
+
+  --chart-domestic: #F46803;
+  --chart-international: #FBA73D;
+
+  --backdrop: rgba(3, 4, 8, 0.7);
+  --shadow-modal: 0 24px 80px rgba(0, 0, 0, 0.55);
+  --shadow-popover: 0 14px 40px rgba(0, 0, 0, 0.5);
+}
+
+:root[data-theme="forest-rune"] {
+  color-scheme: dark;
+
+  --brand-background: #0A100B;
+  --brand-primary: #BFCE8B;
+  --brand-progress: #8CB34B;
+  --brand-pattern: url("/brand/pattern-forest-rune.webp");
+
+  --bg-app: #0A100B;
+  --bg-sidebar: color-mix(in srgb, #0A100B 82%, black);
+  --bg-surface: #152016;
+  --bg-surface-hover: color-mix(in srgb, #152016 86%, #BFCE8B);
+  --bg-elevated: color-mix(in srgb, #152016 90%, #BFCE8B);
+  --bg-sunken: color-mix(in srgb, #0A100B 70%, black);
+
+  --border-subtle: color-mix(in srgb, #354831 70%, #0A100B);
+  --border-strong: #354831;
+
+  --text-primary: #F0F3E5;
+  --text-secondary: #AFBEA5;
+  --text-muted: color-mix(in srgb, #AFBEA5 78%, #0A100B);
+
+  --accent: #BFCE8B;
+  --accent-hover: #DCE8AF;
+  --accent-ink: #0A100B;
+  --accent-text: #BFCE8B;
+  --accent-soft: color-mix(in srgb, #BFCE8B 14%, transparent);
+
+  --info: #8fbcff;
+  --info-text: #a9ccff;
+  --success: #8ed8a2;
+  --success-text: #8ed8a2;
+  --warning: #ffd17c;
+  --warning-text: #ffd17c;
+  --danger: #ff9a9a;
+  --danger-text: #ff9a9a;
+  --paused: #bcaaff;
+  --paused-text: #cbbcff;
+
+  --chart-domestic: #8CB34B;
+  --chart-international: #BFCE8B;
+
+  --backdrop: rgba(3, 4, 8, 0.7);
+  --shadow-modal: 0 24px 80px rgba(0, 0, 0, 0.55);
+  --shadow-popover: 0 14px 40px rgba(0, 0, 0, 0.5);
+}
+
+:root[data-theme="frost-byte"] {
+  color-scheme: dark;
+
+  --brand-background: #071019;
+  --brand-primary: #98D9FB;
+  --brand-progress: #53B4F4;
+  --brand-pattern: url("/brand/pattern-frost-byte.webp");
+
+  --bg-app: #071019;
+  --bg-sidebar: color-mix(in srgb, #071019 82%, black);
+  --bg-surface: #0E1D2B;
+  --bg-surface-hover: color-mix(in srgb, #0E1D2B 86%, #98D9FB);
+  --bg-elevated: color-mix(in srgb, #0E1D2B 90%, #98D9FB);
+  --bg-sunken: color-mix(in srgb, #071019 70%, black);
+
+  --border-subtle: color-mix(in srgb, #23485F 70%, #071019);
+  --border-strong: #23485F;
+
+  --text-primary: #DEF4FD;
+  --text-secondary: #A1BBCB;
+  --text-muted: color-mix(in srgb, #A1BBCB 78%, #071019);
+
+  --accent: #98D9FB;
+  --accent-hover: #C9EFFF;
+  --accent-ink: #071019;
+  --accent-text: #98D9FB;
+  --accent-soft: color-mix(in srgb, #98D9FB 14%, transparent);
+
+  --info: #8fbcff;
+  --info-text: #a9ccff;
+  --success: #8ed8a2;
+  --success-text: #8ed8a2;
+  --warning: #ffd17c;
+  --warning-text: #ffd17c;
+  --danger: #ff9a9a;
+  --danger-text: #ff9a9a;
+  --paused: #bcaaff;
+  --paused-text: #cbbcff;
+
+  --chart-domestic: #53B4F4;
+  --chart-international: #98D9FB;
+
+  --backdrop: rgba(3, 4, 8, 0.7);
+  --shadow-modal: 0 24px 80px rgba(0, 0, 0, 0.55);
+  --shadow-popover: 0 14px 40px rgba(0, 0, 0, 0.5);
+}
+
+/* A quiet pattern behind the top of the sidebar: decoration only, never
+ * behind text that has to be read, so it is faded out towards the bottom. */
+:root[data-theme="midnight-arcane"] .sidebar__brand,
+:root[data-theme="ember-forge"] .sidebar__brand,
+:root[data-theme="forest-rune"] .sidebar__brand,
+:root[data-theme="frost-byte"] .sidebar__brand {
+  background-image:
+    linear-gradient(to bottom, transparent 40%, var(--bg-sidebar) 100%),
+    linear-gradient(color-mix(in srgb, var(--bg-sidebar) 78%, transparent), color-mix(in srgb, var(--bg-sidebar) 78%, transparent)),
+    var(--brand-pattern);
+  background-size: auto, auto, 256px 256px;
+  background-repeat: no-repeat, no-repeat, repeat;
+}

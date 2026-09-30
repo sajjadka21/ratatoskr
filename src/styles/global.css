@@ -1,5 +1,6 @@
 @import "@fontsource-variable/vazirmatn/wght.css";
 @import "./tokens.css";
+@import "./brand-themes.css";
 
 * {
   box-sizing: border-box;

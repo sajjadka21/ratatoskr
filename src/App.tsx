@@ -1,3 +1,19 @@
+import { TreeMark } from "./brand/Wordmark";
+
+const THEME_CYCLE: UiPreferences["theme"][] = [
+  "ember-forge",
+  "midnight-arcane",
+  "forest-rune",
+  "frost-byte",
+  "dark",
+  "light",
+  "system",
+];
+
+/** The theme after this one, for the command palette's "change theme". */
+function nextTheme(current: UiPreferences["theme"]): UiPreferences["theme"] {
+  return THEME_CYCLE[(THEME_CYCLE.indexOf(current) + 1) % THEME_CYCLE.length];
+}
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, SyntheticEvent } from "react";
@@ -1068,7 +1084,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
         run: () =>
           onPreferencesChange({
             ...preferences,
-            theme: preferences.theme === "dark" ? "light" : preferences.theme === "light" ? "system" : "dark",
+            theme: nextTheme(preferences.theme),
           }),
       },
       { id: "go-downloads", group: "go", label: t("nav.all"), keywords: "downloads list دانلودها", run: () => goToSection("all") },
@@ -1249,6 +1265,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   const emptyState = (
     <div className="download-table__empty">
       <div>
+        <TreeMark size={84} className="download-table__empty-mark" />
         <strong>
           {query ? t("table.empty.search") : downloads.length === 0 ? t("table.empty.none") : t("table.empty.section")}
         </strong>

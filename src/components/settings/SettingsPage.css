@@ -1101,3 +1101,17 @@
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
+
+/* The brand theme picker: a swatch and a name for each theme. */
+.settings-page__themes { display: flex; flex-wrap: wrap; gap: 8px; }
+.settings-page__theme {
+  display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 8px;
+  color: var(--text-secondary); background: var(--bg-surface); border: 1px solid var(--border-strong);
+  border-radius: 999px; font: inherit; font-size: 12px; cursor: pointer;
+}
+.settings-page__theme:hover { background: var(--bg-surface-hover); }
+.settings-page__theme--active { color: var(--text-primary); border-color: var(--accent); background: var(--accent-soft); }
+.settings-page__theme-swatch {
+  display: grid; place-items: center; width: 22px; height: 22px; border: 2px solid; border-radius: 50%;
+}
+.settings-page__theme-swatch i { width: 9px; height: 9px; border-radius: 50%; }

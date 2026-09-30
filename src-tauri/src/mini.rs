@@ -50,7 +50,7 @@ fn title(app: &AppHandle) -> &'static str {
     if persian(app) {
         "دانلود با راتاتوسک"
     } else {
-        "Download with Ratatosk"
+        "Download with Ratatoskr"
     }
 }
 

@@ -1,3 +1,4 @@
+import { TreeMark, Wordmark } from "../../brand/Wordmark";
 import {
   BarChart3,
   CheckCircle2,
@@ -58,30 +59,11 @@ const PAGES: Array<{
 ];
 
 /**
- * The brand mark: Ratatosk, the squirrel of Norse myth who runs up and
- * down the world tree carrying messages, bringing a file down.
+ * The brand mark: the runic tree from the Ratatoskr wordmark, the world tree
+ * the squirrel runs up and down carrying messages.
  */
 export function RatatoskMark({ size = 34 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 34 34" aria-hidden="true" className="brand-mark">
-      <rect width="34" height="34" rx="10" fill="var(--accent)" />
-      <g fill="var(--accent-ink)">
-        <path d="M19.5 27.5c6.5-.2 9.6-5.4 8.6-11.2-.8-4.6-4.9-7.6-8.6-6.3-2.7.9-3.4 4.1-1.5 5.8 1.4 1.3 3.6.9 4.2-.8.3 2.5-.6 5.4-2.7 7.4z" />
-        <path d="M9.4 27.5c-.6-3.6.4-7.4 3.3-9.3 2.4-1.6 5.6-1 6.9 1.4 1.3 2.4.8 5.6-.6 7.9z" />
-        <ellipse cx="12" cy="14.8" rx="4.3" ry="3.8" />
-        <path d="M12.2 11.8c.1-1.6.8-3.1 1.9-3.9.5 1.4.5 3-.1 4.4z" />
-      </g>
-      <circle cx="10.4" cy="14.2" r=".95" fill="var(--accent)" />
-      <path
-        d="M7.6 20.2v5.6m-2-2 2 2 2-2"
-        stroke="var(--accent-ink)"
-        strokeWidth="1.9"
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+  return <TreeMark size={size} className="brand-mark" />;
 }
 
 export function Sidebar({
@@ -103,7 +85,7 @@ export function Sidebar({
       <div className="sidebar__brand">
         <RatatoskMark />
         <div className="sidebar__brand-copy">
-          <strong>{t("app.name")}</strong>
+          <Wordmark height={19} className="brand-wordmark" />
           <span>{t("app.fullName")}</span>
         </div>
       </div>

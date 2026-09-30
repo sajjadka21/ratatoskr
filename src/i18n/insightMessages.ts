@@ -51,7 +51,7 @@ export const insightEn = {
   "backup.cancelled": "The restore was cancelled.",
   "backup.restored": "Restored from the backup. The previous data was kept as a copy.",
   "backup.refused": "The waiting backup could not be used, so nothing was changed: {reason}",
-  "backup.fileKind": "Ratatosk backup",
+  "backup.fileKind": "Ratatoskr backup",
   "export.title": "Export the list",
   "export.hint": "A spreadsheet (opens in Excel) or a plain list of links for another program.",
   "export.csv": "Spreadsheet (CSV)",

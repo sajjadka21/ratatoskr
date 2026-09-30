@@ -1,30 +1,30 @@
 {
   "name": {
-    "message": "Ratatosk"
+    "message": "Ratatoskr"
   },
   "description": {
-    "message": "Send downloads from your browser to Ratatosk on this computer. Nothing leaves your computer."
+    "message": "Send downloads from your browser to Ratatoskr on this computer. Nothing leaves your computer."
   },
   "menuLink": {
-    "message": "Download with Ratatosk"
+    "message": "Download with Ratatoskr"
   },
   "menuSelection": {
-    "message": "Send selected links to Ratatosk"
+    "message": "Send selected links to Ratatoskr"
   },
   "menuPage": {
-    "message": "Download this video with Ratatosk"
+    "message": "Download this video with Ratatoskr"
   },
   "statusConnected": {
-    "message": "Connected to Ratatosk"
+    "message": "Connected to Ratatoskr"
   },
   "statusNoApp": {
-    "message": "Ratatosk is not installed on this computer, or it was moved."
+    "message": "Ratatoskr is not installed on this computer, or it was moved."
   },
   "statusNoHost": {
-    "message": "Not connected yet. Open Ratatosk once: it connects the browser by itself."
+    "message": "Not connected yet. Open Ratatoskr once: it connects the browser by itself."
   },
   "takeoverOn": {
-    "message": "Browser downloads go to Ratatosk"
+    "message": "Browser downloads go to Ratatoskr"
   },
   "takeoverOff": {
     "message": "Browser downloads stay in the browser"
@@ -33,19 +33,19 @@
     "message": "Settings"
   },
   "optionsTitle": {
-    "message": "Ratatosk for your browser"
+    "message": "Ratatoskr for your browser"
   },
   "takeover": {
-    "message": "Send downloads from this browser to Ratatosk"
+    "message": "Send downloads from this browser to Ratatoskr"
   },
   "takeoverHint": {
-    "message": "When a download starts in the browser, Ratatosk takes it over. If Ratatosk cannot, the browser keeps it."
+    "message": "When a download starts in the browser, Ratatoskr takes it over. If Ratatoskr cannot, the browser keeps it."
   },
   "session": {
     "message": "Hand over my browser login for downloads that need it"
   },
   "sessionHint": {
-    "message": "For that one download, the site's cookies go to Ratatosk on this computer. They are kept in memory only, sent only to the same site, and forgotten when the download ends or the app closes. Turning this on asks the browser for permission to read cookies; turning it off gives it back."
+    "message": "For that one download, the site's cookies go to Ratatoskr on this computer. They are kept in memory only, sent only to the same site, and forgotten when the download ends or the app closes. Turning this on asks the browser for permission to read cookies; turning it off gives it back."
   },
   "minimumSize": {
     "message": "Leave smaller files to the browser (MB)"
@@ -60,10 +60,10 @@
     "message": "Saved."
   },
   "overlayButton": {
-    "message": "Download with Ratatosk"
+    "message": "Download with Ratatoskr"
   },
   "overlaySent": {
-    "message": "Sent to Ratatosk"
+    "message": "Sent to Ratatoskr"
   },
   "altSkip": {
     "message": "Alt+click leaves a download to the browser"

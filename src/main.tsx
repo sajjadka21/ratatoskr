@@ -13,7 +13,7 @@ import "./styles/global.css";
 /** The small download windows load the same page with `?view=mini`. */
 const IS_MINI = new URLSearchParams(window.location.search).get("view") === "mini";
 
-const DEFAULT_PREFERENCES: UiPreferences = { language: "fa", theme: "system", closeToTray: true };
+const DEFAULT_PREFERENCES: UiPreferences = { language: "fa", theme: "ember-forge", closeToTray: true };
 
 /** Applies language, direction and theme to the whole document. */
 function applyToDocument(preferences: UiPreferences) {
@@ -21,11 +21,13 @@ function applyToDocument(preferences: UiPreferences) {
   root.lang = preferences.language;
   root.dir = preferences.language === "fa" ? "rtl" : "ltr";
   root.dataset.theme = preferences.theme;
-  if (!IS_MINI) document.title = preferences.language === "fa" ? "راتاتوسک" : "Ratatosk";
+  if (!IS_MINI) document.title = preferences.language === "fa" ? "راتاتوسک" : "Ratatoskr";
   // The Windows title bar follows the chosen theme too.
   try {
     void getCurrentWindow()
-      .setTheme(preferences.theme === "system" ? null : preferences.theme)
+      .setTheme(
+        preferences.theme === "system" ? null : preferences.theme === "light" ? "light" : "dark",
+      )
       .catch(() => {});
   } catch {
     // Outside Tauri (tests, a plain browser) there is no window to theme.

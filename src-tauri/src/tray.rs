@@ -66,7 +66,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<TrayMenu> {
         ]
     } else {
         [
-            "Show Ratatosk",
+            "Show Ratatoskr",
             "Add link…",
             "Resume all",
             "Pause all",
@@ -94,7 +94,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<TrayMenu> {
     )?;
 
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
-        .tooltip("Ratatosk")
+        .tooltip("Ratatoskr")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {

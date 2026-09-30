@@ -169,7 +169,7 @@ export type DownloadRule = {
 /// Appearance and window behaviour, stored by the backend.
 export type UiPreferences = {
   language: "fa" | "en";
-  theme: "dark" | "light" | "system";
+  theme: "dark" | "light" | "system" | BrandTheme;
   closeToTray: boolean;
 };
 
@@ -271,4 +271,17 @@ export type ConnectionCheck = {
   totalBytes: number | null;
   rangeSupported: boolean;
   error: string | null;
+};
+
+/** The four brand themes from the Ratatoskr identity kit. */
+export type BrandTheme = "ember-forge" | "midnight-arcane" | "forest-rune" | "frost-byte";
+
+export const BRAND_THEMES: BrandTheme[] = ["ember-forge", "midnight-arcane", "forest-rune", "frost-byte"];
+
+/** Swatches (background, accent) for the theme picker. */
+export const BRAND_THEME_SWATCHES: Record<BrandTheme, [string, string]> = {
+  "ember-forge": ["#110C0A", "#FBA73D"],
+  "midnight-arcane": ["#090B14", "#CAA0FD"],
+  "forest-rune": ["#0A100B", "#BFCE8B"],
+  "frost-byte": ["#071019", "#98D9FB"],
 };

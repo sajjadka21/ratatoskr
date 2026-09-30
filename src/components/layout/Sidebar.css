@@ -13,10 +13,23 @@
 }
 
 .sidebar__brand {
-  padding: 0 6px;
+  padding: 10px 8px;
+  margin: -4px 0;
   display: flex;
   align-items: center;
   gap: 10px;
+  border-radius: var(--radius-md);
+}
+
+.brand-mark {
+  flex: none;
+  color: var(--accent);
+}
+
+.brand-wordmark {
+  display: block;
+  max-width: 100%;
+  color: var(--text-primary);
 }
 
 .sidebar__brand-copy {

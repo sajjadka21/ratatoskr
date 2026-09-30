@@ -363,7 +363,7 @@ fn init_logging() {
 #[tauri::command]
 fn get_app_info() -> AppInfoResponse {
     AppInfoResponse {
-        name: "Ratatosk".to_owned(),
+        name: "Ratatoskr".to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
     }
 }
@@ -2174,6 +2174,20 @@ fn pause_all_downloads(state: State<'_, AppState>) -> usize {
 pub(crate) const SETTING_UI_LANGUAGE: &str = "ui_language";
 const SETTING_UI_THEME: &str = "ui_theme";
 
+/// The plain themes and the four brand themes.
+fn is_known_theme(value: &str) -> bool {
+    matches!(
+        value,
+        "dark"
+            | "light"
+            | "system"
+            | "ember-forge"
+            | "midnight-arcane"
+            | "forest-rune"
+            | "frost-byte"
+    )
+}
+
 fn ui_preferences(state: &AppState) -> Result<UiPreferencesResponse, String> {
     let setting = |key: &str| {
         state
@@ -2185,8 +2199,8 @@ fn ui_preferences(state: &AppState) -> Result<UiPreferencesResponse, String> {
         .filter(|value| matches!(value.as_str(), "fa" | "en"))
         .unwrap_or_else(|| "fa".to_owned());
     let theme = setting(SETTING_UI_THEME)?
-        .filter(|value| matches!(value.as_str(), "dark" | "light" | "system"))
-        .unwrap_or_else(|| "system".to_owned());
+        .filter(|value| is_known_theme(value))
+        .unwrap_or_else(|| "ember-forge".to_owned());
     Ok(UiPreferencesResponse {
         language,
         theme,
@@ -2207,7 +2221,7 @@ fn set_ui_preferences(
     if !matches!(preferences.language.as_str(), "fa" | "en") {
         return Err("unsupported language".to_owned());
     }
-    if !matches!(preferences.theme.as_str(), "dark" | "light" | "system") {
+    if !is_known_theme(&preferences.theme) {
         return Err("unsupported theme".to_owned());
     }
     let save = |key: &str, value: &str| {
@@ -3401,6 +3415,23 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn plain_and_brand_themes_are_known_and_others_are_not() {
+        for theme in [
+            "dark",
+            "light",
+            "system",
+            "ember-forge",
+            "midnight-arcane",
+            "forest-rune",
+            "frost-byte",
+        ] {
+            assert!(super::is_known_theme(theme), "{theme}");
+        }
+        assert!(!super::is_known_theme("neon"));
+        assert!(!super::is_known_theme(""));
+    }
+
     use super::{parse_launch_args, LaunchRequest};
 
     fn args(values: &[&str]) -> Vec<String> {

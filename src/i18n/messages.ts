@@ -10,7 +10,7 @@ import { pageEn, pageFa } from "./pageMessages";
  * locale's digits (use `fmt.number`).
  */
 const en = {
-  "app.name": "Ratatosk",
+  "app.name": "Ratatoskr",
   "app.fullName": "Download manager",
 
   "nav.all": "All downloads",
@@ -236,7 +236,7 @@ const en = {
   "toast.openFailed": "Could not open the file: {reason}",
   "toast.revealFailed": "Could not show the file: {reason}",
 
-  "completion.exit_app": "Ratatosk will close",
+  "completion.exit_app": "Ratatoskr will close",
   "completion.sleep": "The computer will sleep",
   "completion.hibernate": "The computer will hibernate",
   "completion.shutdown": "The computer will shut down",
@@ -244,26 +244,26 @@ const en = {
   "completion.finished": "“{queue}” has finished.",
   "completion.cancel": "Cancel",
 
-  "tray.show": "Show Ratatosk",
+  "tray.show": "Show Ratatoskr",
   "tray.add": "Add link…",
   "after.label": "When everything has finished",
   "after.none": "When done: nothing",
   "after.sleep": "When done: sleep",
   "after.hibernate": "When done: hibernate",
   "after.shutdown": "When done: shut down",
-  "after.exit_app": "When done: close Ratatosk",
+  "after.exit_app": "When done: close Ratatoskr",
   "afterOne.label": "When this download finishes",
   "afterOne.none": "Nothing",
   "afterOne.open": "Open the file",
   "afterOne.sleep": "Put the computer to sleep",
   "afterOne.hibernate": "Hibernate the computer",
   "afterOne.shutdown": "Shut down the computer",
-  "afterOne.exit_app": "Close Ratatosk",
+  "afterOne.exit_app": "Close Ratatoskr",
   "tray.resumeAll": "Resume all",
   "tray.pauseAll": "Pause all",
   "tray.quit": "Quit",
-  "tray.idle": "Ratatosk — no active downloads",
-  "tray.active": "Ratatosk — {speed} · {count} downloading",
+  "tray.idle": "Ratatoskr — no active downloads",
+  "tray.active": "Ratatoskr — {speed} · {count} downloading",
 
   "shortcuts.hint": "Ctrl+K commands · Ctrl+N add · Ctrl+F search · Space pause/resume · Del remove",
 } as const;

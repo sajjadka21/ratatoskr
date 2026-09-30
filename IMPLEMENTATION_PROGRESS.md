@@ -1619,6 +1619,18 @@ Tested the running app by hand (real downloads from proof.ovh.net through the sy
   user's language; the browser extension's size and type filters work when
   the browser does not know the file name yet; small text sizes raised.
 
+## Step 15: Small download window, first-run guide, shared speed limit
+
+- A small window (`mini-*` windows, `src/mini/`) takes downloads from the
+  browser and the clipboard like other managers' "download file info"
+  dialog, then follows the download's progress; it sizes itself to its
+  content and "Show in Ratatosk" opens that download in the main window.
+  Settings can send them to the main window's Add dialog instead.
+- A first-run guide (language and look, folder, browser, internet) that can
+  be opened again from Settings.
+- yt-dlp runs share the global speed limit with the other transfers and are
+  restarted (continuing their files) when their share changes a lot.
+
 ## Step 16: What IDM has that we lacked
 
 Compared menu by menu with IDM 6.42 on the user's machine.

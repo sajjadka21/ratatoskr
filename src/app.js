@@ -1,4 +1,23 @@
 const isFa = document.documentElement.lang === 'fa';
+const appearanceToggle = document.querySelector('.appearance-toggle');
+const appearanceQuery = matchMedia('(prefers-color-scheme: dark)');
+let appearanceChosen = false;
+try { appearanceChosen = ['dark','light'].includes(localStorage.getItem('ratatoskr-appearance')); } catch {}
+function setAppearance(mode) {
+  document.documentElement.dataset.appearance = mode;
+  const label = mode === 'dark' ? (isFa ? 'تغییر به حالت روشن' : 'Switch to light mode') : (isFa ? 'تغییر به حالت تاریک' : 'Switch to dark mode');
+  appearanceToggle.setAttribute('aria-label',label);
+  appearanceToggle.title = label;
+  document.querySelector('meta[name="theme-color"]').content = mode === 'dark' ? '#10131c' : '#f9fafb';
+}
+setAppearance(document.documentElement.dataset.appearance || 'light');
+appearanceToggle.addEventListener('click', () => {
+  const mode = document.documentElement.dataset.appearance === 'dark' ? 'light' : 'dark';
+  appearanceChosen = true;
+  setAppearance(mode);
+  try { localStorage.setItem('ratatoskr-appearance',mode); } catch {}
+});
+appearanceQuery.addEventListener('change',event => { if (!appearanceChosen) setAppearance(event.matches ? 'dark' : 'light'); });
 const themes = {
   'midnight-arcane': {name:'Midnight Arcane',description:isFa?'نور آمتیست، شاخه‌های درهم‌تنیده و آرامش نیمه‌شب.':'Amethyst light, intricate branches, and the stillness of midnight.',palette:['#1A1047','#461BA3','#7F34FC','#CAA0FD','#F2EBFE']},
   'ember-forge': {name:'Ember Forge',description:isFa?'گرمای کهربا و نقش‌هایی که در روشنای اخگر می‌درخشند.':'Warm amber, copper branches, and the quiet glow of embers.',palette:['#43170D','#922117','#F46803','#FBA73D','#FEDD9E']},

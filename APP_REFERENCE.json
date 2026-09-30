@@ -1,0 +1,30 @@
+{
+  "source": "D:/project/download-manager",
+  "capture": "Actual local React UI rendered in browser without native Tauri backend; empty workspace, no synthetic downloads",
+  "viewport": {
+    "width": 1280,
+    "height": 820
+  },
+  "files": {
+    "screen-ember-forge.jpg": {
+      "sha256": "a5487b51e47e18403fd45fc200ba2ac1333f1285734f5f4680812504af202717",
+      "bytes": 55630
+    },
+    "screen-forest-rune.jpg": {
+      "sha256": "8148459e5c1b6498894f12d2d091b1e495fd95f9ebce8abd54da54a71b7c92d1",
+      "bytes": 53923
+    },
+    "screen-frost-byte.jpg": {
+      "sha256": "039cd7ece4b19e3aa3ba48318adc0e2c4af410178b9b7685ce8b969adecee235",
+      "bytes": 60929
+    },
+    "screen-midnight-arcane.jpg": {
+      "sha256": "1010a950b21e0b091b5fdad0d5104115f669f2f497aa7ecb6aab0195db05b3f4",
+      "bytes": 57393
+    },
+    "screen-settings.jpg": {
+      "sha256": "86e57447333b7dd54811eaf99a78a470ce0d020daa48acfee7472bae0c3199be",
+      "bytes": 64479
+    }
+  }
+}

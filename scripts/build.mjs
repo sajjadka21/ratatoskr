@@ -9,14 +9,14 @@ const httpsUrl=value=>{const url=new URL(value);if(url.protocol!=='https:')throw
 if(config.siteUrl)config.siteUrl=httpsUrl(config.siteUrl).replace(/\/$/,'');
 if(config.repository&&!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(config.repository))throw new Error('Repository must be owner/repository');
 if(config.release.notesUrl)httpsUrl(config.release.notesUrl);
-for(const item of config.release.downloads){if(!['windows','macos','linux'].includes(item.platform))throw new Error('Unknown platform');httpsUrl(item.url);}
+for(const item of config.release.downloads){if(!['windows','android'].includes(item.platform))throw new Error('Unknown platform');httpsUrl(item.url);}
 await fs.mkdir(dist,{recursive:true});await fs.cp(src,dist,{recursive:true});
 let en=await fs.readFile(path.join(src,'index.html'),'utf8');
 const escape=s=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function metadata(lang){
  if(!config.siteUrl)return '';
  const origin=escape(config.siteUrl),url=origin+(lang==='fa'?'/fa/':'/');
- return `<link rel="canonical" href="${url}"><link rel="alternate" hreflang="en" href="${origin}/"><link rel="alternate" hreflang="fa" href="${origin}/fa/"><link rel="alternate" hreflang="x-default" href="${origin}/"><meta property="og:url" content="${url}"><meta property="og:image" content="${origin}/assets/social-preview.png"><meta property="og:locale" content="${lang==='fa'?'fa_IR':'en_US'}">`;
+ return `<link rel="canonical" href="${url}"><link rel="alternate" hreflang="en" href="${origin}/"><link rel="alternate" hreflang="fa" href="${origin}/fa/"><link rel="alternate" hreflang="x-default" href="${origin}/"><meta property="og:url" content="${url}"><meta property="og:image" content="${origin}/assets/social-preview.jpg"><meta property="og:locale" content="${lang==='fa'?'fa_IR':'en_US'}">`;
 }
 let persian=en.replace('<html lang="en">','<html lang="fa" dir="rtl">').replace('<a class="language-switch" href="/fa/" lang="fa" hreflang="fa">فارسی</a>','<a class="language-switch" href="/" lang="en" hreflang="en">English</a>');
 for(const [original,translation] of Object.entries(fa).sort((a,b)=>b[0].length-a[0].length))persian=persian.replaceAll(original,translation);

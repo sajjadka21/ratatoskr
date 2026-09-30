@@ -41,7 +41,7 @@ function setAppearance(mode) {
   const label = mode === 'dark' ? (isFa ? 'تغییر به حالت روشن' : 'Switch to light mode') : (isFa ? 'تغییر به حالت تاریک' : 'Switch to dark mode');
   appearanceToggle.setAttribute('aria-label',label);
   appearanceToggle.title = label;
-  document.querySelector('meta[name="theme-color"]').content = mode === 'dark' ? '#10131c' : '#f9fafb';
+  document.querySelector('meta[name="theme-color"]').content = mode === 'dark' ? '#10131c' : '#e7e1d5';
 }
 setAppearance(document.documentElement.dataset.appearance || 'light');
 appearanceToggle.addEventListener('click', () => {
@@ -52,10 +52,10 @@ appearanceToggle.addEventListener('click', () => {
 });
 appearanceQuery.addEventListener('change',event => { if (!appearanceChosen) setAppearance(event.matches ? 'dark' : 'light'); });
 const themes = {
-  'midnight-arcane': {name:'Midnight Arcane',description:isFa?'نور آمتیست، شاخه‌های درهم‌تنیده و آرامش نیمه‌شب.':'Amethyst light, intricate branches, and the stillness of midnight.',palette:['#1A1047','#461BA3','#7F34FC','#CAA0FD','#F2EBFE']},
-  'ember-forge': {name:'Ember Forge',description:isFa?'گرمای کهربا و نقش‌هایی که در روشنای اخگر می‌درخشند.':'Warm amber, copper branches, and the quiet glow of embers.',palette:['#43170D','#922117','#F46803','#FBA73D','#FEDD9E']},
-  'forest-rune': {name:'Forest Rune',description:isFa?'سبز خزه‌ای، برگ‌های بلوط و نقش‌های رونیک جنگل.':'Moss greens, oak leaves, and runes rooted in the forest.',palette:['#263822','#517530','#8CB34B','#BFCE8B','#F0E7BF']},
-  'frost-byte': {name:'Frost Byte',description:isFa?'آبی یخی، جزئیات نقره‌ای و روشنای شفاف زمستان.':'Ice blue, silver details, and the clarity of a winter morning.',palette:['#063168','#1167CD','#53B4F4','#98D9FB','#DEF4FD']}
+  'midnight-arcane': {name:'Midnight Arcane',description:isFa?'نور آمتیست، شاخه‌های درهم‌تنیده و آرامش نیمه‌شب.':'Amethyst light, intricate branches, and the stillness of midnight.',palette:["#090B14","#141225","#CAA0FD","#9F63FF","#F2EBFE"]},
+  'ember-forge': {name:'Ember Forge',description:isFa?'گرمای کهربا و نقش‌هایی که در روشنای اخگر می‌درخشند.':'Warm amber, copper branches, and the quiet glow of embers.',palette:["#110C0A","#211610","#FBA73D","#F46803","#FFF1DB"]},
+  'forest-rune': {name:'Forest Rune',description:isFa?'سبز خزه‌ای، برگ‌های بلوط و نقش‌های رونیک جنگل.':'Moss greens, oak leaves, and runes rooted in the forest.',palette:["#0A100B","#152016","#BFCE8B","#8CB34B","#F0F3E5"]},
+  'frost-byte': {name:'Frost Byte',description:isFa?'آبی یخی، جزئیات نقره‌ای و روشنای شفاف زمستان.':'Ice blue, silver details, and the clarity of a winter morning.',palette:["#071019","#0E1D2B","#98D9FB","#53B4F4","#DEF4FD"]}
 };
 const tabs = [...document.querySelectorAll('[role="tab"]')];
 function selectTheme(slug,focus=false){
@@ -64,9 +64,9 @@ function selectTheme(slug,focus=false){
   document.querySelector('.hero-art').dataset.theme=slug;
   document.querySelector('#hero-theme-name').textContent=theme.name;
   const heroPreview=document.querySelector('#hero-preview');
-  const nextPreview='/assets/ui-'+slug+'.webp';
+  const nextPreview='/assets/screen-'+slug+'.jpg';
   if(heroPreview.getAttribute('src')!==nextPreview){heroPreview.src=nextPreview;heroPreview.decode().then(()=>{if(heroPreview.getAttribute('src')===nextPreview)animatePreview(heroPreview)}).catch(()=>{});}
-  heroPreview.alt=isFa?'پیش‌نمایش طراحی رابط '+theme.name:theme.name+' interface design preview';
+  heroPreview.alt=isFa?'تصویر رابط واقعی راتاتوسک در تم '+theme.name:theme.name+' actual interface, captured in a browser';
   document.querySelectorAll('[data-preview-theme]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.previewTheme===slug)));
   document.querySelector('.themes-section').dataset.theme=slug;
   for(const tab of tabs){const active=tab.dataset.theme===slug;tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;if(active&&focus)tab.focus();}
@@ -76,7 +76,7 @@ function selectTheme(slug,focus=false){
   document.querySelector('#theme-description').textContent=theme.description;
   const preview=document.querySelector('#theme-preview');
   if(preview.getAttribute('src')!==nextPreview){preview.src=nextPreview;preview.decode().then(()=>{if(preview.getAttribute('src')===nextPreview)animatePreview(preview)}).catch(()=>{});}
-  preview.alt=isFa?'پیش‌نمایش طراحی رابط '+theme.name:theme.name+' interface design preview';
+  preview.alt=isFa?'تصویر رابط واقعی راتاتوسک در تم '+theme.name:theme.name+' actual interface, captured in a browser';
   document.querySelector('#theme-icon').src='/assets/icon-'+slug+'.webp';
   const palette=document.querySelector('#theme-palette');palette.replaceChildren();palette.setAttribute('aria-label',isFa?'پالت رنگ '+theme.name:theme.name+' color palette');
   for(const color of theme.palette){const span=document.createElement('span');span.style.backgroundColor=color;span.title=color;span.setAttribute('aria-label',color);palette.append(span);}
@@ -94,8 +94,8 @@ for(const tab of tabs){
     event.preventDefault();selectTheme(tabs[index].dataset.theme,true);
   });
 }
-let storedTheme='midnight-arcane';try{storedTheme=localStorage.getItem('ratatoskr-theme')||storedTheme;}catch{}
-selectTheme(Object.hasOwn(themes,storedTheme)?storedTheme:'midnight-arcane');
+let storedTheme='ember-forge';try{storedTheme=localStorage.getItem('ratatoskr-theme')||storedTheme;}catch{}
+selectTheme(Object.hasOwn(themes,storedTheme)?storedTheme:'ember-forge');
 document.querySelectorAll('[data-preview-theme]').forEach(button=>button.addEventListener('click',()=>selectTheme(button.dataset.previewTheme)));
 document.querySelector('#year').textContent=new Date().getFullYear();
 
@@ -106,19 +106,19 @@ function applyRelease(config){
   if(typeof config.repository==='string'&&/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(config.repository))configureLink('project-link','https://github.com/'+config.repository);
   const release=config.release;if(!release||!Array.isArray(release.downloads))return;
   configureLink('release-notes',release.notesUrl);
-  const downloads=release.downloads.filter(item=>['windows','macos','linux'].includes(item.platform)&&safeUrl(item.url));
+  const downloads=release.downloads.filter(item=>['windows','android'].includes(item.platform)&&safeUrl(item.url));
   if(!downloads.length)return;
   document.querySelector('#hero-status').textContent=words.ready;
   document.querySelector('#hero-status').parentElement.setAttribute('aria-label',words.ready);
   const status=document.querySelector('#release-state');status.replaceChildren();status.append(document.createElement('span'),document.createTextNode(words.ready+(release.version?' · '+release.version:'')));
   document.querySelector('#release-summary').textContent=words.summary;
   const panels=document.querySelectorAll('#release-downloads article');
-  for(const [i,platform] of ['windows','macos','linux'].entries()){
-    const panel=panels[i],available=downloads.filter(item=>item.platform===platform);
+  for(const [i,platform] of ['windows','android'].entries()){
+    const panel=document.querySelector('#release-downloads [data-platform="'+platform+'"]'),available=downloads.filter(item=>item.platform===platform);
     const description=panel.querySelector('p');description.textContent=available.length?(release.version?words.version+' '+release.version:words.ready):words.unavailable;
     const status=panel.querySelector('.availability');status.remove();
     if(!available.length){const pending=document.createElement('span');pending.className='availability';pending.textContent=words.pending;panel.append(pending);continue;}
-    for(const item of available){const link=document.createElement('a');link.className='button button-gold';link.href=safeUrl(item.url);link.rel='noopener noreferrer';link.textContent=item.label||words.download+' '+({windows:'Windows',macos:'macOS',linux:'Linux'}[platform]);panel.append(link);}
+    for(const item of available){const link=document.createElement('a');link.className='button button-gold';link.href=safeUrl(item.url);link.rel='noopener noreferrer';link.textContent=item.label||words.download+' '+({windows:'Windows',android:'Android'}[platform]);panel.append(link);}
   }
   const date=new Date(release.publishedAt);
   document.querySelector('#release-date').textContent=release.publishedAt&&!Number.isNaN(date.getTime())?words.date+' '+new Intl.DateTimeFormat(isFa?'fa-IR':'en',{dateStyle:'medium',timeZone:'UTC'}).format(date):(release.version?words.version+' '+release.version:words.ready);

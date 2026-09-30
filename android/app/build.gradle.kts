@@ -53,8 +53,8 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // yt-dlp (YouTube, Instagram and many more sites) and ffmpeg for Android.
-    implementation("io.github.junkfood02.youtubedl-android:library:0.17.2")
-    implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.17.2")
+    implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
+    implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")
 
     testImplementation("junit:junit:4.13.2")
 }

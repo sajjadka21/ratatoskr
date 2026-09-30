@@ -85,7 +85,7 @@ export function Sidebar({
       <div className="sidebar__brand">
         <RatatoskMark />
         <div className="sidebar__brand-copy">
-          <Wordmark height={19} className="brand-wordmark" />
+          <Wordmark height={24} className="brand-wordmark" />
           <span>{t("app.fullName")}</span>
         </div>
       </div>

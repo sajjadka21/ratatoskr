@@ -29,3 +29,7 @@
 - اگر در ایران از فیلترشکن استفاده می‌کنید، فیلترشکن روی کل گوشی باشد تا دانلودها هم از آن عبور کنند.
 - برنامه هیچ کوکی یا رمزی ذخیره نمی‌کند.
 - Google Play سیاست‌های سخت‌گیرانه‌ای درباره‌ی دانلود از یوتیوب دارد؛ انتشار به‌صورت APK مستقیم (یا F-Droid) ساده‌تر است.
+
+## Native dependencies
+
+Install the pinned NDK/CMake packages and Python 3.12+ before building. Gradle rebuilds WebP automatically; see [NATIVE_COMPATIBILITY.md](NATIVE_COMPATIBILITY.md). Both CI and release builds recursively validate final APK native payloads.

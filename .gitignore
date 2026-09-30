@@ -38,3 +38,8 @@ dist/
 __pycache__/
 .pytest_cache/
 *.pyc
+
+# Android generated files and local SDK paths
+/android/**/build/
+/android/.gradle/
+/android/local.properties

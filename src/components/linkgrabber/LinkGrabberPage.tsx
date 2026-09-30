@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Copy, Filter, Radar, Wand2 } from "lucide-react";
+import { Check, Copy, Filter, Globe, Radar, Wand2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 
 import type { DownloadQueue } from "../../types/download";
@@ -61,6 +61,13 @@ export function LinkGrabberPage({ queues, engineReady, submitting = false, onSub
   const [probes, setProbes] = useState<Map<string, LinkProbe>>(new Map());
   const [probing, setProbing] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [siteUrl, setSiteUrl] = useState("");
+  const [siteDepth, setSiteDepth] = useState(1);
+  const [siteSameHost, setSiteSameHost] = useState(true);
+  const [siteFolder, setSiteFolder] = useState(true);
+  const [siteTypes, setSiteTypes] = useState("");
+  const [siteBusy, setSiteBusy] = useState(false);
+  const [siteNote, setSiteNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (!queues.some((queue) => queue.id === queueId)) setQueueId(queues[0]?.id ?? "");
@@ -113,6 +120,33 @@ export function LinkGrabberPage({ queues, engineReady, submitting = false, onSub
       setError(null);
     } catch (reason) {
       setError(String(reason));
+    }
+  }
+
+  async function grabSite() {
+    if (!siteUrl.trim() || siteBusy) return;
+    setSiteBusy(true);
+    setSiteNote(null);
+    try {
+      const result = await invoke<{ files: LinkCandidate[]; pagesRead: number; truncated: boolean }>("grab_site", {
+        url: siteUrl,
+        depth: siteDepth,
+        sameHost: siteSameHost,
+        withinFolder: siteFolder,
+        extensions: siteTypes.split(/[\s,;]+/).filter(Boolean),
+      });
+      if (result.files.length) appendLinks(result.files.map((file) => file.url).join("\n"));
+      setSiteNote(
+        result.files.length
+          ? t("grabber.siteDone", { files: fmt.number(result.files.length), pages: fmt.number(result.pagesRead) }) +
+              (result.truncated ? t("grabber.siteTruncated") : "")
+          : t("grabber.siteNone"),
+      );
+      setError(null);
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setSiteBusy(false);
     }
   }
 
@@ -192,6 +226,27 @@ export function LinkGrabberPage({ queues, engineReady, submitting = false, onSub
         />
         <button type="button" onClick={() => void generate()} disabled={!pattern.trim()}>{t("grabber.generate")}</button>
       </div>
+      <div className="linkgrabber-page__generator">
+        <Globe size={14} />
+        <input
+          value={siteUrl}
+          dir="ltr"
+          onChange={(event) => setSiteUrl(event.target.value)}
+          onKeyDown={(event) => { if (event.key === "Enter") void grabSite(); }}
+          placeholder={t("grabber.siteUrl")}
+          aria-label={t("grabber.siteUrl")}
+        />
+        <button type="button" onClick={() => void grabSite()} disabled={!siteUrl.trim() || siteBusy}>{siteBusy ? t("grabber.siteBusy") : t("grabber.siteGo")}</button>
+      </div>
+      <div className="linkgrabber-page__site-options">
+        <select value={siteDepth} onChange={(event) => setSiteDepth(Number(event.target.value))} aria-label={t("grabber.siteDepth")}>
+          {[0, 1, 2, 3].map((value) => <option key={value} value={value}>{t(`grabber.siteDepth${value}` as "grabber.siteDepth0")}</option>)}
+        </select>
+        <label><input type="checkbox" checked={siteSameHost} onChange={(event) => setSiteSameHost(event.target.checked)} /> {t("grabber.siteSameHost")}</label>
+        <label><input type="checkbox" checked={siteFolder} onChange={(event) => setSiteFolder(event.target.checked)} /> {t("grabber.siteFolder")}</label>
+        <input className="linkgrabber-page__site-types" dir="ltr" value={siteTypes} onChange={(event) => setSiteTypes(event.target.value)} placeholder={t("grabber.siteTypes")} aria-label={t("grabber.siteTypes")} />
+      </div>
+      {siteNote ? <div className="linkgrabber-page__note">{siteNote}</div> : null}
       <div className="linkgrabber-page__toolbar">
         <span className="num">{t("grabber.counts", { count: fmt.number(candidates.length), selected: fmt.number(selected.size) })}</span>
         <button type="button" onClick={() => navigator.clipboard?.writeText([...selected].join("\n"))} disabled={!selected.size}><Copy size={14} /> {t("grabber.copySelected")}</button>

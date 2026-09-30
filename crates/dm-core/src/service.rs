@@ -344,6 +344,34 @@ impl DownloadService {
         crate::linkgrabber::probe_links(&self.base_downloader(), urls).await
     }
 
+    /// Collects the files a site links to, following links to further pages
+    /// up to the chosen depth. Uses the plain engine, so the proxy and rate
+    /// settings apply; a page that is slow, large or not text is skipped.
+    pub async fn grab_site(
+        &self,
+        start: &str,
+        options: crate::sitegrab::SiteGrabOptions,
+    ) -> Option<crate::sitegrab::SiteGrabResult> {
+        const PAGE_LIMIT: usize = 2 * 1024 * 1024;
+        const PAGE_TIMEOUT: Duration = Duration::from_secs(20);
+        let downloader = self.base_downloader();
+        crate::sitegrab::grab_site(start, &options, |url| {
+            let downloader = downloader.clone();
+            async move {
+                let control = TaskControl::new();
+                let bytes = tokio::time::timeout(
+                    PAGE_TIMEOUT,
+                    downloader.fetch_bytes(&url, None, PAGE_LIMIT, &control),
+                )
+                .await
+                .ok()?
+                .ok()?;
+                Some(String::from_utf8_lossy(&bytes).into_owned())
+            }
+        })
+        .await
+    }
+
     /// Drops a task's browser session. Called when the task can no longer
     /// need it: finished, cancelled or removed.
     pub fn forget_browser_session(&self, download_id: &str) {

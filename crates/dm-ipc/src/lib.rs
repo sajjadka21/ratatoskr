@@ -478,6 +478,15 @@ pub struct LinkCandidateResponse {
     pub extension: Option<String>,
 }
 
+/// What collecting a site's files found.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SiteGrabResponse {
+    pub files: Vec<LinkCandidateResponse>,
+    pub pages_read: usize,
+    pub truncated: bool,
+}
+
 /// What checking a link found out. `error` never contains the URL.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

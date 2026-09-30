@@ -19,6 +19,7 @@ pub mod rules;
 pub mod segment_planner;
 pub mod service;
 pub mod session;
+pub mod sitegrab;
 pub mod slot;
 pub mod stats;
 #[cfg(test)]

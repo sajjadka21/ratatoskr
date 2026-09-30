@@ -2262,6 +2262,39 @@ fn generate_links(pattern: String) -> Result<Vec<LinkCandidateResponse>, String>
         .map_err(|error| error.to_string())
 }
 
+/// Reads a web page and the pages it links to, and returns the links to
+/// files found, for review in LinkGrabber.
+#[tauri::command]
+async fn grab_site(
+    state: State<'_, AppState>,
+    url: String,
+    depth: u8,
+    same_host: bool,
+    within_folder: bool,
+    extensions: Vec<String>,
+) -> Result<dm_ipc::SiteGrabResponse, String> {
+    let options = dm_core::sitegrab::SiteGrabOptions {
+        depth,
+        same_host,
+        within_folder,
+        extensions,
+    };
+    let result = state
+        .downloads
+        .grab_site(url.trim(), options)
+        .await
+        .ok_or_else(|| "enter a web address that starts with http:// or https://".to_owned())?;
+    Ok(dm_ipc::SiteGrabResponse {
+        files: result
+            .files
+            .into_iter()
+            .map(link_candidate_response)
+            .collect(),
+        pages_read: result.pages_read,
+        truncated: result.truncated,
+    })
+}
+
 /// Checks links before they become tasks: reachable, size, name, and
 /// whether they can be resumed. Bounded in count and concurrency.
 #[tauri::command]
@@ -3288,6 +3321,7 @@ pub fn run() {
             inspect_links,
             generate_links,
             probe_links,
+            grab_site,
             take_pending_link_intake,
             get_download_settings,
             set_default_download_directory,

@@ -72,7 +72,7 @@ pub fn candidate_for(value: &str) -> Option<LinkCandidate> {
 
 /// File types that are worth offering as a download when a link to one is
 /// copied. Web pages, scripts and images embedded in pages are left alone.
-const DOWNLOAD_EXTENSIONS: &[&str] = &[
+pub(crate) const DOWNLOAD_EXTENSIONS: &[&str] = &[
     "zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "zst", "exe", "msi", "msix", "appx",
     "apk", "dmg", "pkg", "deb", "rpm", "appimage", "iso", "img", "vhd", "vhdx", "mp4", "mkv",
     "webm", "mov", "avi", "wmv", "flv", "m4v", "ts", "mp3", "m4a", "aac", "flac", "wav", "ogg",

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Persian is the default language. -->
+<resources>
+    <string name="app_name">راتاتوسک</string>
+    <string name="tile_label">دانلود لینک کپی‌شده</string>
+    <string name="main_title">دانلود با راتاتوسک</string>
+    <string name="main_hint">در یوتیوب، اینستاگرام یا مرورگر دکمه‌ی «اشتراک‌گذاری» را بزنید و راتاتوسک را انتخاب کنید. یا لینک را اینجا بچسبانید.</string>
+    <string name="paste">چسباندن لینک کپی‌شده</string>
+    <string name="update_engine">به‌روزرسانی موتور دانلود</string>
+    <string name="updating">در حال به‌روزرسانی…</string>
+    <string name="updated">موتور دانلود به‌روز شد.</string>
+    <string name="update_failed">به‌روزرسانی انجام نشد.</string>
+    <string name="no_link">لینکی پیدا نشد.</string>
+    <string name="bad_link">این لینک پذیرفته نشد.</string>
+    <string name="checking">در حال بررسی لینک…</string>
+    <string name="cannot_read">نتوانستم این لینک را بخوانم. ممکن است خصوصی یا حذف‌شده باشد.</string>
+    <string name="choose_quality">کیفیت را انتخاب کنید</string>
+    <string name="best_quality">بهترین کیفیت</string>
+    <string name="audio_only">فقط صدا</string>
+    <string name="video_height">%1$dp</string>
+    <string name="cancel">انصراف</string>
+    <string name="downloading">در حال دانلود…</string>
+    <string name="saving">در حال ذخیره…</string>
+    <string name="done">دانلود شد: %1$s</string>
+    <string name="failed">دانلود انجام نشد.</string>
+    <string name="saved_in">در پوشه‌ی Downloads/Ratatosk ذخیره شد.</string>
+    <string name="notification_channel">دانلودها</string>
+    <string name="stop">توقف</string>
+</resources>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Ratatosk</string>
+    <string name="tile_label">Download copied link</string>
+    <string name="main_title">Download with Ratatosk</string>
+    <string name="main_hint">In YouTube, Instagram or a browser tap Share and choose Ratatosk. Or paste a link here.</string>
+    <string name="paste">Paste copied link</string>
+    <string name="update_engine">Update the download engine</string>
+    <string name="updating">Updating…</string>
+    <string name="updated">The download engine is up to date.</string>
+    <string name="update_failed">The update failed.</string>
+    <string name="no_link">No link found.</string>
+    <string name="bad_link">That link was not accepted.</string>
+    <string name="checking">Checking the link…</string>
+    <string name="cannot_read">I could not read this link. It may be private or removed.</string>
+    <string name="choose_quality">Choose the quality</string>
+    <string name="best_quality">Best quality</string>
+    <string name="audio_only">Audio only</string>
+    <string name="video_height">%1$dp</string>
+    <string name="cancel">Cancel</string>
+    <string name="downloading">Downloading…</string>
+    <string name="saving">Saving…</string>
+    <string name="done">Downloaded: %1$s</string>
+    <string name="failed">The download failed.</string>
+    <string name="saved_in">Saved in Downloads/Ratatosk.</string>
+    <string name="notification_channel">Downloads</string>
+    <string name="stop">Stop</string>
+</resources>

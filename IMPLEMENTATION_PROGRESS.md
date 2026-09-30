@@ -1652,3 +1652,13 @@ Compared menu by menu with IDM 6.42 on the user's machine.
 - Not added on purpose: saved site passwords (AGENTS.md forbids storing
   them).
 
+
+## Step 17 — More IDM features, portable build, bot and Android
+
+- **New queue from the right-click menu** of a download (name it, it is created and the download moves in).
+- **Finish sound** (setting; one sound even when several finish together) and **server file date** (setting; `Last-Modified` applied to the finished file).
+- **Floating drop box**: a small always-on-top circle (Settings → General); drop links from a browser onto it.
+- **Site grabber** (`dm-core::sitegrab`, command `grab_site`, LinkGrabber page): reads a page, follows links to a chosen depth (0–3), same host / same folder options, file-type filter; one page at a time with a pause; limits of 200 pages and 2,000 files. Tested offline with fake pages.
+- **Portable version**: `portable.txt` beside the exe keeps database, tools, browser setup and WebView2 data in `data\`; `scripts\make-portable.cmd` builds the zip. The installer path (`scripts\release.cmd`) already existed.
+- **Telegram bot** (`telegram-bot/`): yt-dlp, quality buttons, Spotify tracks by name via YouTube, private-address refusal, per-user limit, Docker deploy. Logic tested (pytest); not run against Telegram from here.
+- **Android app** (`android/`): share target, Quick Settings tile, foreground download service, yt-dlp inside. Not compiled from here (no SDK access); build guide in its README.

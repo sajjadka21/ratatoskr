@@ -1,0 +1,4 @@
+<resources>
+    <style name="Theme.Ratatosk" parent="Theme.Material3.DayNight.NoActionBar" />
+    <style name="Theme.Ratatosk.Dialog" parent="Theme.Material3.DayNight.Dialog" />
+</resources>

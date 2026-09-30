@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ratatoskr-site",
+  "account_id": "29dab81db949743646b76d7b213a054b",
+  "compatibility_date": "2026-09-30",
+  "workers_dev": true,
+  "assets": {
+    "directory": "./dist",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  "routes": [
+    { "pattern": "ratatoskr.hivenest.ir", "custom_domain": true }
+  ]
+}

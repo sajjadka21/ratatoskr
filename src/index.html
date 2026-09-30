@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0a0e11">
+  <title>Ratatoskr — A world for your downloads</title>
+  <meta name="description" content="Meet Ratatoskr, a desktop download manager taking shape with a distinctive Norse-inspired identity and four expressive themes. Explore the design and follow release availability.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Ratatoskr — A world for your downloads">
+  <meta property="og:description" content="A desktop download manager with a Norse-inspired soul. Explore four themes and follow the first release.">
+  <!-- SITE_META -->
+  <link rel="icon" href="/assets/favicon.png" type="image/png">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="preload" as="image" href="/assets/ui-midnight-arcane.webp" fetchpriority="high">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header wrap">
+    <a class="brand" href="#" aria-label="Ratatoskr home"><img src="/assets/wordmark.svg" width="1202" height="218" alt="Ratatoskr"></a>
+    <nav aria-label="Main navigation">
+      <a href="#about">The idea</a>
+      <a href="#themes">Four themes</a>
+      <a class="nav-release" href="#download">Release status <span aria-hidden="true">↗</span></a>
+      <a class="language-switch" href="/fa/" lang="fa" hreflang="fa">فارسی</a>
+    </nav>
+  </header>
+  <main id="main">
+    <section class="hero wrap" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="release-pill"><span></span><span id="hero-status">Taking shape. First release ahead.</span></p>
+        <h1 id="hero-title">Your downloads.<br>A world of<br class="desktop-break"> their own.</h1>
+        <p class="hero-description">Meet Ratatoskr. A desktop download manager with a clear view of your files, four expressive themes, and a little Norse mythology.</p>
+        <div class="hero-actions"><a class="button button-gold" href="#themes">Explore the themes <span aria-hidden="true">↓</span></a><a class="text-link" href="#download">See release status <span aria-hidden="true">↗</span></a></div>
+        <p class="hero-note">The app is in development. This is a first look at its design.</p>
+      </div>
+      <div class="hero-art">
+        <div class="hero-ornament" aria-hidden="true"></div>
+        <div class="orbit orbit-one" aria-hidden="true"></div>
+        <div class="orbit orbit-two" aria-hidden="true"></div>
+        <img class="hero-rune" src="/assets/tree-rune.svg" width="256" height="256" alt="" aria-hidden="true">
+        <div class="hero-window">
+          <div class="preview-caption"><span><i></i> Midnight Arcane</span><span>Design preview</span></div>
+          <img src="/assets/ui-midnight-arcane.webp" width="1440" height="920" alt="Midnight Arcane design preview, showing a download list in a dark purple interface" fetchpriority="high">
+        </div>
+        <div class="hero-dock"><img src="/assets/app-icon.webp" width="512" height="512" alt="Golden Ratatoskr squirrel app icon"><div><strong>Ratatoskr</strong><span>Download manager</span></div></div>
+        <span class="hero-art-note">A quieter interface. A richer character.</span>
+      </div>
+    </section>
+
+    <div class="world-strip" aria-hidden="true"><div class="wrap"><span>Midnight Arcane</span><span>Ember Forge</span><img src="/assets/tree-rune.svg" alt="" width="256" height="256"><span>Forest Rune</span><span>Frost Byte</span></div></div>
+
+    <section id="about" class="intro wrap section" aria-labelledby="intro-title">
+      <div class="intro-heading"><img src="/assets/squirrel-silhouette.svg" width="256" height="256" alt="" aria-hidden="true"><h2 id="intro-title">A familiar task.<br>A more thoughtful home.</h2></div>
+      <div class="intro-copy"><p>Downloads are part of everyday life. Ratatoskr is being built to give them a place of their own, with a focused desktop interface and a visual identity worth keeping open.</p><p>Its name comes from the squirrel of Norse mythology. Here, the squirrel becomes a companion for the files moving through your day.</p><div class="concept-list"><div><span aria-hidden="true">↓</span><p><strong>See what’s moving</strong><span>A clear place for active downloads and their progress.</span></p></div><div><span aria-hidden="true">≡</span><p><strong>Keep a sense of order</strong><span>A design that gives downloads, queue and completed files their own space.</span></p></div><div><span aria-hidden="true">✧</span><p><strong>Make the space yours</strong><span>One consistent identity, expressed through four distinct themes.</span></p></div></div></div>
+    </section>
+
+    <section id="themes" class="themes-section section" aria-labelledby="themes-title" data-theme="midnight-arcane">
+      <div class="wrap">
+        <div class="section-heading"><div><h2 id="themes-title">Four moods.<br>One Ratatoskr.</h2><p>From a quiet midnight to the glow of the forge.<br>Choose a theme to explore the design.</p></div><span class="theme-count" aria-hidden="true">✧</span></div>
+        <div class="theme-tabs" role="tablist" aria-label="Preview a Ratatoskr theme">
+          <button role="tab" id="tab-midnight-arcane" aria-selected="true" aria-controls="theme-panel" data-theme="midnight-arcane" tabindex="0"><span class="theme-dot midnight"></span><span>Midnight Arcane</span><span class="tab-arrow" aria-hidden="true">↗</span></button>
+          <button role="tab" id="tab-ember-forge" aria-selected="false" aria-controls="theme-panel" data-theme="ember-forge" tabindex="-1"><span class="theme-dot ember"></span><span>Ember Forge</span><span class="tab-arrow" aria-hidden="true">↗</span></button>
+          <button role="tab" id="tab-forest-rune" aria-selected="false" aria-controls="theme-panel" data-theme="forest-rune" tabindex="-1"><span class="theme-dot forest"></span><span>Forest Rune</span><span class="tab-arrow" aria-hidden="true">↗</span></button>
+          <button role="tab" id="tab-frost-byte" aria-selected="false" aria-controls="theme-panel" data-theme="frost-byte" tabindex="-1"><span class="theme-dot frost"></span><span>Frost Byte</span><span class="tab-arrow" aria-hidden="true">↗</span></button>
+        </div>
+        <div id="theme-panel" class="theme-panel" role="tabpanel" aria-labelledby="tab-midnight-arcane" tabindex="0">
+          <div class="theme-pattern" aria-hidden="true"></div>
+          <div class="theme-stage"><div class="stage-bar"><span id="theme-name">Midnight Arcane</span><span>Interface design preview</span></div><img id="theme-preview" src="/assets/ui-midnight-arcane.webp" width="1440" height="920" alt="Midnight Arcane interface design preview" loading="lazy"></div>
+          <div class="theme-details"><div class="theme-details-heading"><img id="theme-icon" src="/assets/icon-midnight-arcane.webp" width="256" height="256" alt="" aria-hidden="true"><div><h3 id="theme-detail-name">Midnight Arcane</h3><p id="theme-description">Amethyst light, intricate branches, and the stillness of midnight.</p></div></div><div id="theme-palette" class="mini-palette" aria-label="Midnight Arcane color palette"></div></div>
+        </div>
+        <p class="preview-note">These are design previews. Final screenshots and confirmed features will arrive with the app.</p>
+      </div>
+    </section>
+
+    <section id="download" class="download-section section wrap" aria-labelledby="download-title">
+      <div class="download-heading"><div><p class="release-state" id="release-state"><span></span>First release in development</p><h2 id="download-title">The next chapter<br>starts here.</h2><p id="release-summary">Ratatoskr is still taking shape. Download links and release notes will appear here when builds are published.</p></div><img src="/assets/app-icon.webp" width="512" height="512" loading="lazy" alt="Ratatoskr app icon"></div>
+      <div id="release-downloads" class="platforms"><article><div class="platform-heading"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M2 4.6l8-1.1v8H2V4.6zm10-1.4L22 2v9.5H12V3.2zM2 13h8v8l-8-1.1V13zm10 0h10v9.5L12 21V13z"/></svg><h3>Windows</h3></div><p>Release availability to follow.</p><span class="availability">Awaiting first release</span></article><article><div class="platform-heading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="4" y="3" width="16" height="12" rx="1.5"/><path d="M1 20l3-5h16l3 5H1zM9 18h6"/></svg><h3>macOS</h3></div><p>Release availability to follow.</p><span class="availability">Awaiting first release</span></article><article><div class="platform-heading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M6 8l4 4-4 4M13 16h5"/></svg><h3>Linux</h3></div><p>Release availability to follow.</p><span class="availability">Awaiting first release</span></article></div>
+      <div class="release-links"><p id="release-date">No public release has been linked yet.</p><a id="release-notes" href="#download" hidden>Read release notes <span aria-hidden="true">↗</span></a><a id="project-link" href="#download" hidden>View project on GitHub <span aria-hidden="true">↗</span></a></div>
+    </section>
+
+    <section class="faq-section wrap section" aria-labelledby="faq-title"><div><h2 id="faq-title">A few things<br>you might wonder.</h2><p>A first look at Ratatoskr,<br>and what comes next.</p></div><div class="faq-list"><details><summary>What is Ratatoskr?<span aria-hidden="true">+</span></summary><p>Ratatoskr is a desktop download manager in development. This page introduces its identity and interface design. Confirmed functionality will be documented alongside the app’s releases.</p></details><details><summary>Can I download it now?<span aria-hidden="true">+</span></summary><p>Check the release section above for current availability. When the first public builds are ready, that section will include the download files and release notes.</p></details><details><summary>Why the squirrel?<span aria-hidden="true">+</span></summary><p>Ratatoskr is named after a squirrel from Norse mythology. The squirrel, tree motifs and runic details give the project a distinct visual character.</p></details><details><summary>Are these real screenshots?<span aria-hidden="true">+</span></summary><p>The images currently shown are interface design previews. They will be replaced with screenshots from the finished application as development progresses.</p></details></div></section>
+  </main>
+  <footer class="site-footer wrap"><a class="brand" href="#" aria-label="Back to top"><img src="/assets/wordmark.svg" width="1202" height="218" alt="Ratatoskr"></a><p>A little mythology. A place for your downloads.</p><a href="#download">Release status</a><span>© <span id="year">2026</span> Ratatoskr</span></footer>
+</body>
+</html>

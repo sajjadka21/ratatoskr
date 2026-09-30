@@ -19,10 +19,7 @@ const UPDATE_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// The app's own copies, which it may replace and update.
 pub fn managed_dir<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
-    app.path()
-        .app_data_dir()
-        .ok()
-        .map(|folder| folder.join("tools"))
+    crate::portable::app_data(app).map(|folder| folder.join("tools"))
 }
 
 /// The copies installed with the app (read-only in Program Files).

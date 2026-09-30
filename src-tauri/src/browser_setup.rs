@@ -25,10 +25,7 @@ pub struct BrowserConnection {
 }
 
 fn manifests_folder<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
-    app.path()
-        .app_data_dir()
-        .ok()
-        .map(|folder| folder.join("native-messaging"))
+    crate::portable::app_data(app).map(|folder| folder.join("native-messaging"))
 }
 
 fn host_program() -> Option<PathBuf> {

@@ -49,6 +49,15 @@ app contacts nothing.
 Installed copies check once a day (if allowed in Settings) and offer the new
 version; nothing installs without the user choosing it.
 
+## The portable version
+
+`scripts\make-portable.cmd` writes `target\portable\Ratatosk-portable.zip`.
+Unzip it anywhere (a USB drive works); the file `portable.txt` next to
+`Ratatosk.exe` makes the app keep its database, tools and web view data in a
+`data` folder beside it, and nothing in the user's profile. Delete
+`portable.txt` to make a copy use the normal folders again. Portable copies do
+not update themselves: replace the folder, keeping `data`.
+
 ## The browser extension in the stores
 
 `node scripts/package-extension.mjs` writes

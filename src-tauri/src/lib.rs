@@ -13,6 +13,7 @@ mod automation;
 mod browser_setup;
 mod clipboard_watch;
 mod mini;
+mod portable;
 mod tools;
 mod tray;
 mod updates;
@@ -3034,6 +3035,7 @@ fn spawn_transfer(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    portable::prepare_webview();
     init_logging();
 
     let launch_requests = parse_launch_args(&std::env::args().skip(1).collect::<Vec<_>>());
@@ -3057,7 +3059,10 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(move |app| {
-            let app_data_dir = app.path().app_data_dir()?;
+            let app_data_dir = match portable::app_data(app.handle()) {
+                Some(folder) => folder,
+                None => app.path().app_data_dir()?,
+            };
             let database_path = app_data_dir.join("downloads.db");
 
             // A restore chosen in the previous run is swapped in before the

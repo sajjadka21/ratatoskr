@@ -1,4 +1,37 @@
 const isFa = document.documentElement.lang === 'fa';
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+const header = document.querySelector('.site-header');
+const menuToggle = document.querySelector('.menu-toggle');
+function setMenu(open,restoreFocus=false) {
+  header.dataset.menuOpen=String(open);
+  menuToggle.setAttribute('aria-expanded',String(open));
+  menuToggle.setAttribute('aria-label',open?(isFa?'بستن منو':'Close navigation'):(isFa?'باز کردن منو':'Open navigation'));
+  if(restoreFocus)menuToggle.focus();
+}
+menuToggle.addEventListener('click',()=>setMenu(header.dataset.menuOpen!=='true'));
+header.querySelectorAll('a').forEach(link=>link.addEventListener('click',()=>{
+  const fromOpenMenu=header.dataset.menuOpen==='true';
+  setMenu(false);
+  if(fromOpenMenu&&link.hash){const target=document.querySelector(link.hash);if(target){target.setAttribute('tabindex','-1');target.focus({preventScroll:true});}}
+}));
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&header.dataset.menuOpen==='true')setMenu(false,true)});
+document.addEventListener('click',event=>{if(!header.contains(event.target))setMenu(false)});
+const mobileQuery=matchMedia('(max-width: 900px)');
+mobileQuery.addEventListener('change',()=>setMenu(false));
+const sections=[...document.querySelectorAll('.hero,#about,#themes,#faq,#download')];
+const navObserver=new IntersectionObserver(entries=>{
+  const visible=entries.filter(entry=>entry.isIntersecting).sort((a,b)=>b.intersectionRatio-a.intersectionRatio)[0];
+  if(!visible)return;
+  header.querySelectorAll('a[href^="#"]').forEach(link=>{
+    if(link.hash==='#'+visible.target.id)link.setAttribute('aria-current','location');else link.removeAttribute('aria-current');
+  });
+},{rootMargin:'-15% 0px -45% 0px',threshold:[0,.2,.5]});
+sections.forEach(section=>navObserver.observe(section));
+function animatePreview(image) {
+  if(reducedMotion.matches)return;
+  image.getAnimations().forEach(animation=>animation.cancel());
+  image.animate([{opacity:.65,transform:'translateY(5px) scale(.992)'},{opacity:1,transform:'none'}],{duration:320,easing:'cubic-bezier(.2,0,0,1)'});
+}
 const appearanceToggle = document.querySelector('.appearance-toggle');
 const appearanceQuery = matchMedia('(prefers-color-scheme: dark)');
 let appearanceChosen = false;
@@ -28,6 +61,13 @@ const tabs = [...document.querySelectorAll('[role="tab"]')];
 function selectTheme(slug,focus=false){
   if (!Object.hasOwn(themes,slug)) return;
   const theme=themes[slug];
+  document.querySelector('.hero-art').dataset.theme=slug;
+  document.querySelector('#hero-theme-name').textContent=theme.name;
+  const heroPreview=document.querySelector('#hero-preview');
+  const nextPreview='/assets/ui-'+slug+'.webp';
+  if(heroPreview.getAttribute('src')!==nextPreview){heroPreview.src=nextPreview;heroPreview.decode().then(()=>{if(heroPreview.getAttribute('src')===nextPreview)animatePreview(heroPreview)}).catch(()=>{});}
+  heroPreview.alt=isFa?'پیش‌نمایش طراحی رابط '+theme.name:theme.name+' interface design preview';
+  document.querySelectorAll('[data-preview-theme]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.previewTheme===slug)));
   document.querySelector('.themes-section').dataset.theme=slug;
   for(const tab of tabs){const active=tab.dataset.theme===slug;tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;if(active&&focus)tab.focus();}
   document.querySelector('#theme-panel').setAttribute('aria-labelledby','tab-'+slug);
@@ -35,7 +75,7 @@ function selectTheme(slug,focus=false){
   document.querySelector('#theme-detail-name').textContent=theme.name;
   document.querySelector('#theme-description').textContent=theme.description;
   const preview=document.querySelector('#theme-preview');
-  preview.src='/assets/ui-'+slug+'.webp';
+  if(preview.getAttribute('src')!==nextPreview){preview.src=nextPreview;preview.decode().then(()=>{if(preview.getAttribute('src')===nextPreview)animatePreview(preview)}).catch(()=>{});}
   preview.alt=isFa?'پیش‌نمایش طراحی رابط '+theme.name:theme.name+' interface design preview';
   document.querySelector('#theme-icon').src='/assets/icon-'+slug+'.webp';
   const palette=document.querySelector('#theme-palette');palette.replaceChildren();palette.setAttribute('aria-label',isFa?'پالت رنگ '+theme.name:theme.name+' color palette');
@@ -56,6 +96,7 @@ for(const tab of tabs){
 }
 let storedTheme='midnight-arcane';try{storedTheme=localStorage.getItem('ratatoskr-theme')||storedTheme;}catch{}
 selectTheme(Object.hasOwn(themes,storedTheme)?storedTheme:'midnight-arcane');
+document.querySelectorAll('[data-preview-theme]').forEach(button=>button.addEventListener('click',()=>selectTheme(button.dataset.previewTheme)));
 document.querySelector('#year').textContent=new Date().getFullYear();
 
 const words=isFa?{ready:'نسخهٔ انتشار آماده است',download:'دریافت',date:'تاریخ انتشار',version:'نسخه',unavailable:'هنوز فایل دانلودی برای این سیستم منتشر نشده است.',pending:'در انتظار انتشار',preview:'نسخهٔ پیش‌انتشار',summary:'فایل مناسب سیستم خود را انتخاب کنید. جزئیات هر نسخه را در یادداشت‌های انتشار بخوانید.'}:{ready:'A release is ready',download:'Download',date:'Released',version:'Version',unavailable:'No download file has been published for this platform yet.',pending:'Awaiting a build',preview:'Pre-release',summary:'Choose the file for your system. Read the release notes for the details of this build.'};

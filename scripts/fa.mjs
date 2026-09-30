@@ -1,5 +1,11 @@
 export default {
- 'Downloads, <br>with a little character.':'دانلودها، <br>با حال‌وهوای خودت.',
+ 'Overview':'معرفی',
+ 'FAQ':'پرسش‌ها',
+ 'Download status':'وضعیت دانلود',
+ 'Open navigation':'باز کردن منو',
+ 'Choose the preview theme':'انتخاب تم پیش‌نمایش',
+ 'Make it yours':'به سلیقهٔ خودت',
+ 'A new home<br>for your downloads.':'خانهٔ جدیدی<br>برای دانلودهای تو.',
  'Ratatoskr — A world for your downloads':'Ratatoskr — دنیایی برای دانلودهای تو',
  'Meet Ratatoskr, a desktop download manager taking shape with a distinctive Norse-inspired identity and four expressive themes. Explore the design and follow release availability.':'راتاتوسک، دانلود منیجر دسکتاپ با هویتی الهام‌گرفته از اسطوره‌های نورس و چهار تم متفاوت، در حال ساخت است. طراحی آن را ببینید و وضعیت انتشار را دنبال کنید.',
  'A desktop download manager with a Norse-inspired soul. Explore four themes and follow the first release.':'دانلود منیجر دسکتاپ با حال‌وهوای اسطوره‌های نورس. چهار تم را ببینید و نخستین انتشار را دنبال کنید.',

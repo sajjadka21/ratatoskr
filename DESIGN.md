@@ -30,6 +30,8 @@ Review against brief: the ornate squirrel and four approved theme palettes drive
 Interaction: theme tabs switch preview/pattern/name/description, with keyboard navigation and state persistence; FAQ uses native details; release actions appear only when real links are configured. No ornamental perpetual animation.
 # Redesign direction — 2026-09-30
 
+Header refinement: Motrix's floating grouped navigation and Free Download Manager's clear product/download path informed the structure (https://motrix.app/ and https://www.freedownloadmanager.org/). The actual brand, artwork and copy remain Ratatoskr. The hero uses a balanced split layout so the introduction and interface preview are visible together. Motion uses 180ms feedback, 320ms theme changes and a single 550–700ms entrance, with a reduced-motion fallback and no perpetual loops.
+
 The original dark editorial direction was rejected by the owner. The active design is a light product landing page. Product artwork carries the Norse identity; the surrounding interface stays quiet and clear.
 
 - Base #F9FAFB; cards #FFFFFF; text #202532; muted #616775; border #E4E6ED; antique gold #9B6924.
@@ -38,4 +40,3 @@ The original dark editorial direction was rejected by the owner. The active desi
 - One source stylesheet, consistent 8px spacing rhythm, 44px minimum primary touch controls, visible focus, reduced motion and RTL layout.
 - Ant Design SVG icons, bundled locally with MIT license. UI/UX Pro Max guidance favors a product demo with a feature breakdown; its generic teal/orange palette was adapted to the approved Ratatoskr brand.
 - References: https://ant.design/docs/spec/icon/ and https://ant.design/docs/spec/font/ .
-

@@ -34,3 +34,7 @@ dist/
 
 # Helper programs fetched at release time (scripts/fetch-ytdlp.ps1).
 /src-tauri/extras/*.exe
+
+__pycache__/
+.pytest_cache/
+*.pyc

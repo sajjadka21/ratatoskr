@@ -2,6 +2,11 @@ const NATIVE_HOST = "com.download_manager.native";
 
 const SESSION_PERMISSIONS = { permissions: ["cookies"], origins: ["<all_urls>"] };
 
+// After an Alt+click on a link, the next download for a few seconds stays in
+// the browser.
+const ALT_WINDOW_MS = 4000;
+let altUntil = 0;
+
 async function settings() {
   return chrome.storage.local.get({
     takeoverEnabled: false,
@@ -138,6 +143,10 @@ chrome.downloads.onCreated.addListener(async (download) => {
   const options = await settings();
   const url = download.finalUrl || download.url || "";
   if (!options.takeoverEnabled || !/^https?:\/\//i.test(url)) return;
+  if (Date.now() < altUntil) {
+    altUntil = 0;
+    return;
+  }
   const size = download.totalBytes > 0 ? download.totalBytes : download.fileSize;
   if (size > 0 && size < Number(options.minimumBytes)) return;
   if (hostExcluded(url, options.excludedHosts) || extensionExcluded(download.filename, url, options.excludedExtensions)) return;
@@ -154,9 +163,23 @@ chrome.downloads.onCreated.addListener(async (download) => {
   }
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, reply) => {
+chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (message?.type === "status") {
     handoff({ type: "ping" }).then(reply);
+    return true;
+  }
+  // Only this extension's own content scripts send the ones below.
+  if (sender.id !== chrome.runtime.id) return false;
+  if (message?.type === "alt-click") {
+    altUntil = Date.now() + ALT_WINDOW_MS;
+    return false;
+  }
+  if (message?.type === "download-page" && /^https?:\/\//i.test(message.url || "")) {
+    handoff({ type: "inspect", text: message.url }).then(reply);
+    return true;
+  }
+  if (message?.type === "download-file" && /^https?:\/\//i.test(message.url || "")) {
+    sendLink(message.url, message.referrer || null).then(reply);
     return true;
   }
   return false;

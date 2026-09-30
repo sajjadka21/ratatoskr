@@ -1619,3 +1619,24 @@ Tested the running app by hand (real downloads from proof.ovh.net through the sy
   user's language; the browser extension's size and type filters work when
   the browser does not know the file name yet; small text sizes raised.
 
+## Step 16: What IDM has that we lacked
+
+Compared menu by menu with IDM 6.42 on the user's machine.
+
+- **Save as and category** in the small download window: the file name
+  (schema v15, `download_names`; the extension is kept when the new name has
+  none) and a category whose folder is used. yt-dlp downloads take the chosen
+  name instead of the video's title.
+- **Remove all finished** from the list, from the Finished section.
+- **Open with…**: Windows' own "Open with" dialog.
+- **When everything has finished**: sleep, hibernate, shut down or close
+  Ratatosk, chosen in the band above the list; for this session, runs once
+  nothing is downloading, retrying or waiting in a running queue, with the
+  usual 60-second chance to cancel.
+- **When this download finishes**: open the file or a power action, in the
+  small window's progress view.
+- **Browser**: a "Download with Ratatosk" button over videos on the video
+  sites, and optional Alt+click to leave a download to the browser.
+- Not added on purpose: saved site passwords (AGENTS.md forbids storing
+  them).
+

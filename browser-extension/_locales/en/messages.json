@@ -58,5 +58,17 @@
   },
   "saved": {
     "message": "Saved."
+  },
+  "overlayButton": {
+    "message": "Download with Ratatosk"
+  },
+  "overlaySent": {
+    "message": "Sent to Ratatosk"
+  },
+  "altSkip": {
+    "message": "Alt+click leaves a download to the browser"
+  },
+  "altSkipHint": {
+    "message": "Hold Alt while clicking a link and the browser downloads it itself. This needs a small script on every site, so the browser asks for access to all sites."
   }
 }

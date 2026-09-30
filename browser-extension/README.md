@@ -49,3 +49,17 @@ that one download URL and passes it to Ratatosk.
   finishes, is cancelled or removed, or the application closes.
 - If the application cannot receive it, the handoff is refused and the
   browser keeps its own download.
+
+## On video sites
+
+On the sites Ratatosk downloads with yt-dlp (YouTube, Aparat, Vimeo and
+others listed in `manifest.json`), a "Download with Ratatosk" button appears
+over a video while the pointer is on it. It sends the page address (or, for a
+plain video file, the file's address); the app then asks for the quality.
+
+## Alt+click
+
+With "Alt+click leaves a download to the browser" turned on in the options,
+holding Alt while clicking a link lets the browser download it itself. This
+registers a tiny script on every site (`alt.js`), so it asks for access to
+all sites only when turned on and gives it back when turned off.

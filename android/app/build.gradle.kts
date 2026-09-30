@@ -11,30 +11,27 @@ android {
         applicationId = "app.ratatoskr.android"
         minSdk = 29          // saving to Downloads needs no storage permission from here up
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
         // yt-dlp and ffmpeg ship as native code; keep to the usual phone CPUs.
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
 
-    // A release keystore comes from the environment (CI secrets); without one,
-    // the release build is signed with the debug key so the APK still installs.
-    val releaseKeystore = System.getenv("ANDROID_KEYSTORE_PATH")
+    // Public releases always use the same private keystore. Debug builds keep
+    // their own key; never fall back to it for a release.
+    val releaseKeystore = System.getenv("ANDROID_KEYSTORE_PATH")?.takeIf { it.isNotBlank() }
     signingConfigs {
-        if (releaseKeystore != null) {
-            create("release") {
-                storeFile = file(releaseKeystore)
-                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
-                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
-            }
+        create("release") {
+            storeFile = releaseKeystore?.let { file(it) }
+            storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+            keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
         }
     }
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = if (releaseKeystore != null) signingConfigs.getByName("release")
-            else signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     packaging {

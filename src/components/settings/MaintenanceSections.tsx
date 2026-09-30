@@ -52,7 +52,7 @@ export function BackupSection({ onError, onSaved }: SectionProps) {
     try {
       const path = await saveDialog({
         title: t("backup.createButton"),
-        defaultPath: `ratatosk-backup-${today()}.${BACKUP_EXTENSION}`,
+        defaultPath: `ratatoskr-backup-${today()}.${BACKUP_EXTENSION}`,
         filters: [{ name: t("backup.fileKind"), extensions: [BACKUP_EXTENSION] }],
       });
       if (!path) return;
@@ -96,7 +96,7 @@ export function BackupSection({ onError, onSaved }: SectionProps) {
       const extension = format === "csv" ? "csv" : "txt";
       const path = await saveDialog({
         title: t(format === "csv" ? "export.csv" : "export.links"),
-        defaultPath: `ratatosk-downloads-${today()}.${extension}`,
+        defaultPath: `ratatoskr-downloads-${today()}.${extension}`,
         filters: [{ name: t(format === "csv" ? "export.csv" : "export.links"), extensions: [extension] }],
       });
       if (!path) return;
@@ -244,7 +244,7 @@ export function DiagnosticsSection({ onError, onSaved }: SectionProps) {
     try {
       const path = await saveDialog({
         title: t("diag.report"),
-        defaultPath: `ratatosk-diagnostics-${today()}.txt`,
+        defaultPath: `ratatoskr-diagnostics-${today()}.txt`,
         filters: [{ name: "Text", extensions: ["txt"] }],
       });
       if (!path) return;

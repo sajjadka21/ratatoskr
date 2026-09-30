@@ -1,4 +1,4 @@
-//! `tosk`: Ratatosk from the command line.
+//! `tosk`: Ratatoskr from the command line.
 //!
 //! It works on the application's own database and hands anything that
 //! changes a running transfer to the application itself, so there is one
@@ -19,7 +19,7 @@ use std::{
 };
 
 const USAGE: &str = "\
-tosk - Ratatosk from the command line
+tosk - Ratatoskr from the command line
 
 Usage:
   tosk add <url>... [--later]     add downloads (start now, or keep for later)

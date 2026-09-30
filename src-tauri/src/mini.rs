@@ -54,6 +54,64 @@ fn title(app: &AppHandle) -> &'static str {
     }
 }
 
+/// Setting key: the floating drop box is shown (`true`) or not.
+pub const SETTING_DROP_BOX: &str = "drop_box";
+const DROP_LABEL: &str = "mini-drop";
+/// The drop box's size, in logical pixels.
+const DROP_SIZE: f64 = 84.0;
+
+pub fn drop_box_enabled(storage: &Storage) -> bool {
+    storage
+        .get_setting(SETTING_DROP_BOX)
+        .ok()
+        .flatten()
+        .as_deref()
+        == Some("true")
+}
+
+/// Shows or hides the floating drop box: a small round target that stays
+/// on top of other windows, where links can be dropped from a browser.
+pub fn set_drop_box(app: &AppHandle, visible: bool) {
+    if let Some(window) = app.get_webview_window(DROP_LABEL) {
+        if visible {
+            let _ = window.show();
+        } else {
+            let _ = window.close();
+        }
+        return;
+    }
+    if !visible {
+        return;
+    }
+    let url = WebviewUrl::App("index.html?view=mini&mode=drop".into());
+    let mut builder = WebviewWindowBuilder::new(app, DROP_LABEL, url)
+        .title(title(app))
+        .inner_size(DROP_SIZE, DROP_SIZE)
+        .resizable(false)
+        .maximizable(false)
+        .minimizable(false)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .focused(false)
+        // HTML drag and drop, so links from a browser can be dropped.
+        .disable_drag_drop_handler();
+    // Bottom right of the main screen, clear of the taskbar.
+    if let Ok(Some(monitor)) = app.primary_monitor() {
+        let scale = monitor.scale_factor();
+        let size = monitor.size().to_logical::<f64>(scale);
+        builder = builder.position(
+            size.width - DROP_SIZE - 40.0,
+            size.height - DROP_SIZE - 110.0,
+        );
+    }
+    if let Err(error) = builder.build() {
+        warn!(error = %error, "could not open the drop box");
+    }
+}
+
 /// Opens the add window with `links`, or adds them to the one already open.
 pub fn open_add(app: &AppHandle, links: Vec<String>) {
     let Some(state) = app.try_state::<AppState>() else {

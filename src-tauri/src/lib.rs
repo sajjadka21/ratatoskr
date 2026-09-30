@@ -83,6 +83,69 @@ struct EventPublisher {
     last_sent: Arc<Mutex<HashMap<String, Instant>>>,
 }
 
+/// Setting key: a sound when a download finishes or fails (on unless turned
+/// off).
+const SETTING_FINISH_SOUND: &str = "finish_sound";
+/// When the last sound played; downloads ending together sound once.
+static LAST_SOUND: Mutex<Option<Instant>> = Mutex::new(None);
+
+fn finish_sound_enabled(app: &AppHandle) -> bool {
+    app.try_state::<AppState>().is_none_or(|state| {
+        state
+            .storage
+            .get_setting(SETTING_FINISH_SOUND)
+            .ok()
+            .flatten()
+            .as_deref()
+            != Some("false")
+    })
+}
+
+fn play_finish_sound(app: &AppHandle, failed: bool) {
+    if !finish_sound_enabled(app) {
+        return;
+    }
+    if let Ok(mut last) = LAST_SOUND.lock() {
+        if last.is_some_and(|at| at.elapsed() < Duration::from_secs(3)) {
+            return;
+        }
+        *last = Some(Instant::now());
+    }
+    dm_system::sound::play(if failed {
+        dm_system::sound::Chime::Failed
+    } else {
+        dm_system::sound::Chime::Finished
+    });
+}
+
+#[tauri::command]
+fn get_keep_server_time(state: State<'_, AppState>) -> bool {
+    state.downloads.keep_server_time()
+}
+
+#[tauri::command]
+fn set_keep_server_time(state: State<'_, AppState>, enabled: bool) -> Result<bool, String> {
+    state
+        .downloads
+        .set_keep_server_time(enabled)
+        .map_err(|error| error.to_string())?;
+    Ok(state.downloads.keep_server_time())
+}
+
+#[tauri::command]
+fn get_finish_sound(app: AppHandle) -> bool {
+    finish_sound_enabled(&app)
+}
+
+#[tauri::command]
+fn set_finish_sound(state: State<'_, AppState>, enabled: bool) -> Result<bool, String> {
+    state
+        .storage
+        .set_setting(SETTING_FINISH_SOUND, if enabled { "true" } else { "false" })
+        .map_err(|error| error.to_string())?;
+    Ok(enabled)
+}
+
 /// Endings already announced by a system notification, as `id:status`, so a
 /// row published again (a refresh) is not announced twice.
 static ANNOUNCED: std::sync::LazyLock<Mutex<std::collections::HashSet<String>>> =
@@ -173,6 +236,7 @@ impl EventPublisher {
         if !first {
             return;
         }
+        play_finish_sound(&self.app, record.status == DownloadStatus::Failed);
         let in_view = self.app.get_webview_window("main").is_some_and(|window| {
             window.is_visible().unwrap_or(false)
                 && window.is_focused().unwrap_or(false)
@@ -2604,6 +2668,47 @@ fn take_mini_links(state: State<'_, AppState>) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Whether the floating drop box is shown.
+#[tauri::command]
+fn get_drop_box(state: State<'_, AppState>) -> bool {
+    mini::drop_box_enabled(&state.storage)
+}
+
+#[tauri::command]
+fn set_drop_box(app: AppHandle, state: State<'_, AppState>, enabled: bool) -> Result<bool, String> {
+    state
+        .storage
+        .set_setting(
+            mini::SETTING_DROP_BOX,
+            if enabled { "true" } else { "false" },
+        )
+        .map_err(|error| error.to_string())?;
+    mini::set_drop_box(&app, enabled);
+    Ok(enabled)
+}
+
+/// Links dropped on the drop box (or pasted into it): they open where
+/// copied links do, the small add window or the main window's Add dialog.
+#[tauri::command]
+fn add_dropped_links(app: AppHandle, state: State<'_, AppState>, text: String) -> usize {
+    let links: Vec<String> = dm_core::linkgrabber::extract_links(&text)
+        .into_iter()
+        .map(|link| link.url)
+        .take(500)
+        .collect();
+    if links.is_empty() {
+        return 0;
+    }
+    let count = links.len();
+    if mini::compact(&state.storage) {
+        mini::open_add(&app, links);
+    } else {
+        tray::show_main_window(&app);
+        let _ = app.emit(clipboard_watch::CLIPBOARD_LINKS_EVENT, links);
+    }
+    count
+}
+
 /// Opens the progress window of a download started from the add window.
 #[tauri::command]
 async fn open_download_window(app: AppHandle, id: String) {
@@ -3029,6 +3134,10 @@ pub fn run() {
                 }
             }
 
+            if mini::drop_box_enabled(&storage) {
+                mini::set_drop_box(app.handle(), true);
+            }
+
             tauri::async_runtime::spawn(automation::run_keep_awake(app.handle().clone()));
             tauri::async_runtime::spawn(serve_browser_sessions(app.handle().clone()));
 
@@ -3128,6 +3237,10 @@ pub fn run() {
             get_download_speed_limit,
             get_clipboard_watch,
             get_start_with_windows,
+            get_finish_sound,
+            get_keep_server_time,
+            set_keep_server_time,
+            set_finish_sound,
             set_start_with_windows,
             get_browser_connection,
             connect_browsers,
@@ -3189,6 +3302,9 @@ pub fn run() {
             start_handoff,
             get_download,
             take_mini_links,
+            get_drop_box,
+            set_drop_box,
+            add_dropped_links,
             open_download_window,
             show_main_window,
             get_after_all,

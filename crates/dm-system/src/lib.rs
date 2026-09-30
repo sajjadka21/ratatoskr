@@ -10,6 +10,7 @@ pub mod browser_hosts;
 pub mod disk;
 pub mod locate;
 pub mod session_channel;
+pub mod sound;
 pub mod sparse;
 
 use std::{fmt, io, str::FromStr, sync::mpsc, thread};

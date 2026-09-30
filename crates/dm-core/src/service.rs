@@ -160,6 +160,7 @@ pub const SETTING_POLITE_HOSTS: &str = "polite_hosts";
 const POLITE_CONNECTIONS: usize = 2;
 /// Highest stream quality chosen automatically (a height such as 720).
 pub const SETTING_STREAM_MAX_HEIGHT: &str = "stream_max_height";
+pub const SETTING_KEEP_SERVER_TIME: &str = "keep_server_time";
 /// Stream segments fetched at the same time.
 const STREAM_CONNECTIONS: usize = 4;
 /// Where FFmpeg is; empty to look for it automatically.
@@ -2605,6 +2606,24 @@ impl DownloadService {
     }
 
     /// Highest stream quality picked automatically; `None` for the best.
+    /// Whether finished files take the date the server gives them.
+    pub fn keep_server_time(&self) -> bool {
+        self.storage
+            .get_setting(SETTING_KEEP_SERVER_TIME)
+            .ok()
+            .flatten()
+            .as_deref()
+            == Some("true")
+    }
+
+    pub fn set_keep_server_time(&self, enabled: bool) -> Result<()> {
+        self.storage.set_setting(
+            SETTING_KEEP_SERVER_TIME,
+            if enabled { "true" } else { "false" },
+        )?;
+        Ok(())
+    }
+
     /// The height cap and the sound-only choice for one download: what was
     /// chosen for it when it was added, otherwise the setting.
     pub fn quality_for(&self, url: &str) -> (Option<u32>, bool) {
@@ -3186,6 +3205,17 @@ impl DownloadService {
         self.storage
             .mark_completed(download_id, &completion, unix_timestamp_seconds()?)?;
 
+        // Like other download managers can, the file takes the date the
+        // server gives it rather than today's.
+        if self.keep_server_time()
+            && let Some(time) = task.last_modified.as_deref().and_then(parse_http_date)
+            && let Ok(file) = std::fs::File::options()
+                .write(true)
+                .open(&outcome.final_path)
+        {
+            let _ = file.set_modified(time);
+        }
+
         // A finished download never needs its session again.
         self.forget_browser_session(download_id);
 
@@ -3701,6 +3731,58 @@ async fn remove_partial_file(temp_path: Option<&str>) {
         let _ = tokio::fs::remove_file(stream_record_path(Path::new(path))).await;
         let _ = tokio::fs::remove_file(path).await;
     }
+}
+
+/// An HTTP date (`Sun, 06 Nov 1994 08:49:37 GMT`, the form servers send in
+/// `Last-Modified`) as a time. Other, obsolete forms are not accepted.
+fn parse_http_date(text: &str) -> Option<std::time::SystemTime> {
+    let mut parts = text.split_whitespace();
+    let _weekday = parts.next()?;
+    let day: i64 = parts.next()?.parse().ok()?;
+    let month = match parts.next()? {
+        "Jan" => 1,
+        "Feb" => 2,
+        "Mar" => 3,
+        "Apr" => 4,
+        "May" => 5,
+        "Jun" => 6,
+        "Jul" => 7,
+        "Aug" => 8,
+        "Sep" => 9,
+        "Oct" => 10,
+        "Nov" => 11,
+        "Dec" => 12,
+        _ => return None,
+    };
+    let year: i64 = parts.next()?.parse().ok()?;
+    let mut clock = parts.next()?.split(':');
+    let hour: i64 = clock.next()?.parse().ok()?;
+    let minute: i64 = clock.next()?.parse().ok()?;
+    let second: i64 = clock.next()?.parse().ok()?;
+    if parts.next()? != "GMT"
+        || !(1..=31).contains(&day)
+        || !(1970..=9999).contains(&year)
+        || hour > 23
+        || minute > 59
+        || second > 60
+    {
+        return None;
+    }
+    // Days since 1970-01-01 (Howard Hinnant's days_from_civil).
+    let (y, m) = if month <= 2 {
+        (year - 1, month + 9)
+    } else {
+        (year, month - 3)
+    };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * m + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    let seconds = days * 86_400 + hour * 3_600 + minute * 60 + second;
+    u64::try_from(seconds)
+        .ok()
+        .map(|seconds| std::time::UNIX_EPOCH + Duration::from_secs(seconds))
 }
 
 /// `name`, with the extension of `model` added when `name` has none (a user
@@ -6344,6 +6426,22 @@ mkdir -p \"$w\"
             .await;
         let row = harness.storage.get_download(&task.id).unwrap().unwrap();
         assert_eq!(row.error_code.as_deref(), Some("needs_muxing"));
+    }
+
+    #[test]
+    fn server_dates_are_read() {
+        let at = |text| {
+            parse_http_date(text).map(|time| {
+                time.duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+            })
+        };
+        assert_eq!(at("Sun, 06 Nov 1994 08:49:37 GMT"), Some(784_111_777));
+        assert_eq!(at("Thu, 01 Jan 1970 00:00:00 GMT"), Some(0));
+        assert_eq!(at("Tue, 29 Feb 2028 12:00:00 GMT"), Some(1_835_438_400));
+        assert_eq!(at("Sunday, 06-Nov-94 08:49:37 GMT"), None);
+        assert_eq!(at("not a date"), None);
     }
 
     #[test]

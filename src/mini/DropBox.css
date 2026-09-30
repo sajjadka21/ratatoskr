@@ -1,0 +1,79 @@
+/* The floating drop box: a circle in a see-through 84 × 84 window. */
+
+.drop-box {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  user-select: none;
+}
+
+.drop-box__circle {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: 3px solid color-mix(in srgb, var(--accent-ink) 25%, transparent);
+  border-radius: 50%;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  cursor: grab;
+  opacity: 0.88;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+.drop-box__circle svg {
+  pointer-events: none;
+}
+
+.drop-box:hover .drop-box__circle {
+  opacity: 1;
+}
+
+.drop-box--over .drop-box__circle {
+  transform: scale(1.12);
+  opacity: 1;
+}
+
+.drop-box--ok .drop-box__circle {
+  background: var(--success, #3fb27f);
+}
+
+.drop-box--none .drop-box__circle {
+  background: var(--danger, #d9534f);
+}
+
+.drop-box__menu {
+  position: absolute;
+  inset-block-end: 2px;
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  background: var(--bg-elevated, #1b2429);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.drop-box__menu button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 24px;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.drop-box__menu button:hover {
+  background: var(--bg-surface-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drop-box__circle {
+    transition: none;
+  }
+}

@@ -134,3 +134,37 @@
 
   font-size: 11px;
 }
+
+.download-context-menu__new-queue {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px 4px;
+}
+
+.download-context-menu__new-queue input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  color: var(--text-primary);
+  background: var(--bg-app);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 12px;
+}
+
+.download-context-menu__new-queue button {
+  flex: 0 0 auto;
+  width: auto !important;
+  height: 28px;
+  padding: 0 10px !important;
+  color: var(--accent-ink) !important;
+  background: var(--accent) !important;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+.download-context-menu__new-queue button:disabled {
+  opacity: 0.5;
+}

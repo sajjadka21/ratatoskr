@@ -65,6 +65,8 @@ type DownloadContextMenuProps = {
     item: DownloadListItem,
   ) => void;
   onRefreshSource: (item: DownloadListItem) => void;
+  /** Makes a new queue with this name and puts the download in it. */
+  onCreateQueue?: (item: DownloadListItem, name: string) => void;
   onError?: (message: string) => void;
 };
 
@@ -96,8 +98,10 @@ export function DownloadContextMenu({
   onChangePriority,
   onRemoveFromHistory,
   onRefreshSource,
+  onCreateQueue,
   onError,
 }: DownloadContextMenuProps) {
+  const [newQueue, setNewQueue] = useState("");
   const { t } = useI18n();
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -433,6 +437,30 @@ export function DownloadContextMenu({
                   {t("action.noQueues")}
                 </span>
               )}
+              {onCreateQueue ? (
+                <form
+                  className="download-context-menu__new-queue"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const name = newQueue.trim();
+                    if (!name) return;
+                    onCreateQueue(item, name);
+                    setNewQueue("");
+                    onClose();
+                  }}
+                >
+                  <input
+                    value={newQueue}
+                    placeholder={t("action.newQueue")}
+                    aria-label={t("action.newQueue")}
+                    onChange={(event) => setNewQueue(event.target.value)}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  />
+                  <button type="submit" disabled={!newQueue.trim()}>
+                    {t("action.createQueue")}
+                  </button>
+                </form>
+              ) : null}
             </div>
           ) : null}
 

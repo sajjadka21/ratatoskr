@@ -374,6 +374,16 @@ function AppearanceSection({
           divided={false}
           onError={onError}
         />
+
+        <BackendSwitchRow
+          id="drop-box"
+          label={t("settings.dropBox")}
+          hint={t("settings.dropBoxHint")}
+          read="get_drop_box"
+          write="set_drop_box"
+          divided
+          onError={onError}
+        />
       </div>
     </div>
   );
@@ -472,6 +482,26 @@ function DownloadsSection({
             ) : null}
           </div>
         </div>
+
+        <BackendSwitchRow
+          id="keep-server-time"
+          label={t("settings.keepServerTime")}
+          hint={t("settings.keepServerTimeHint")}
+          read="get_keep_server_time"
+          write="set_keep_server_time"
+          divided={false}
+          onError={onError}
+        />
+
+        <BackendSwitchRow
+          id="finish-sound"
+          label={t("settings.finishSound")}
+          hint={t("settings.finishSoundHint")}
+          read="get_finish_sound"
+          write="set_finish_sound"
+          divided={false}
+          onError={onError}
+        />
 
         <div className="settings-page__row">
           <div className="settings-page__row-label">

@@ -1423,6 +1423,11 @@ function App({ preferences, onPreferencesChange }: AppProps) {
         }}
         onAction={(target, action) => void runTaskAction(target, action)}
         onAssignQueue={(item, queueId) => void assignToQueue(item, queueId)}
+        onCreateQueue={(item, name) =>
+          void createQueue({ name, maxConcurrent: 3, maxConcurrentPerHost: 2, defaultPriority: "normal" })
+            .then((queue) => assignToQueue(item, queue.id))
+            .catch((reason) => notify("error", String(reason)))
+        }
         onRemoveFromQueue={(item) => void runQueueAction(() => removeFromQueue(item.id))}
         onChangePriority={(item, priority) => void runQueueAction(() => changePriority(item.id, priority))}
         onRemoveFromHistory={(item) => {

@@ -38,6 +38,8 @@ import {
   type VideoQuality,
 } from "../utils/videoPages";
 
+import { DropBox } from "./DropBox";
+
 import "../components/downloads/AddDownloadModal.css";
 import "./MiniWindow.css";
 
@@ -66,6 +68,11 @@ type TaskEvent = {
  * browser handed over).
  */
 export function MiniWindow() {
+  const drop = new URLSearchParams(window.location.search).get("mode") === "drop";
+  return drop ? <DropBox /> : <MiniDialog />;
+}
+
+function MiniDialog() {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
   const [taskId, setTaskId] = useState<string | null>(
     params.get("mode") === "task" ? params.get("id") : null,

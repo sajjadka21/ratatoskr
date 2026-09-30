@@ -12,6 +12,8 @@
   --brand-primary: #CAA0FD;
   --brand-progress: #9F63FF;
   --brand-pattern: url("/brand/pattern-midnight-arcane.webp");
+  --brand-pattern-subtle: url("/brand/pattern-subtle-midnight-arcane.webp");
+  --brand-squirrel: url("/brand/squirrel-midnight-arcane.webp");
 
   --bg-app: #090B14;
   --bg-sidebar: color-mix(in srgb, #090B14 82%, black);
@@ -59,6 +61,8 @@
   --brand-primary: #FBA73D;
   --brand-progress: #F46803;
   --brand-pattern: url("/brand/pattern-ember-forge.webp");
+  --brand-pattern-subtle: url("/brand/pattern-subtle-ember-forge.webp");
+  --brand-squirrel: url("/brand/squirrel-ember-forge.webp");
 
   --bg-app: #110C0A;
   --bg-sidebar: color-mix(in srgb, #110C0A 82%, black);
@@ -106,6 +110,8 @@
   --brand-primary: #BFCE8B;
   --brand-progress: #8CB34B;
   --brand-pattern: url("/brand/pattern-forest-rune.webp");
+  --brand-pattern-subtle: url("/brand/pattern-subtle-forest-rune.webp");
+  --brand-squirrel: url("/brand/squirrel-forest-rune.webp");
 
   --bg-app: #0A100B;
   --bg-sidebar: color-mix(in srgb, #0A100B 82%, black);
@@ -153,6 +159,8 @@
   --brand-primary: #98D9FB;
   --brand-progress: #53B4F4;
   --brand-pattern: url("/brand/pattern-frost-byte.webp");
+  --brand-pattern-subtle: url("/brand/pattern-subtle-frost-byte.webp");
+  --brand-squirrel: url("/brand/squirrel-frost-byte.webp");
 
   --bg-app: #071019;
   --bg-sidebar: color-mix(in srgb, #071019 82%, black);
@@ -205,4 +213,49 @@
     var(--brand-pattern);
   background-size: auto, auto, 256px 256px;
   background-repeat: no-repeat, no-repeat, repeat;
+}
+
+/* The theme-matched squirrel icon (the brand kit's in-app icon). */
+.brand-squirrel {
+  display: block;
+  flex: none;
+  background: var(--brand-squirrel) center / contain no-repeat;
+}
+
+/* The kit's quiet "ui-subtle" pattern fades in from the edge of the top bar
+ * and behind the empty list. It is decoration only: it never sits under
+ * the rows or body text, and a mask fades it out before the content. */
+:root[data-theme] .topbar {
+  position: relative;
+  isolation: isolate;
+}
+:root[data-theme] .topbar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--brand-pattern-subtle) center / 420px repeat;
+  opacity: 0.35;
+  -webkit-mask-image: linear-gradient(to left, #000 0%, transparent 55%);
+  mask-image: linear-gradient(to left, #000 0%, transparent 55%);
+  pointer-events: none;
+}
+:root[dir="rtl"][data-theme] .topbar::before {
+  -webkit-mask-image: linear-gradient(to right, #000 0%, transparent 55%);
+  mask-image: linear-gradient(to right, #000 0%, transparent 55%);
+}
+:root[data-theme] .download-table__empty {
+  position: relative;
+  isolation: isolate;
+}
+:root[data-theme] .download-table__empty::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--brand-pattern-subtle) center / 480px repeat;
+  opacity: 0.22;
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 10%, transparent 70%);
+  mask-image: radial-gradient(ellipse at center, #000 10%, transparent 70%);
+  pointer-events: none;
 }

@@ -352,8 +352,7 @@
 
 /* The runic tree from the brand kit above the empty-list message. */
 .download-table__empty-mark {
-  display: block;
   margin: 0 auto 14px;
-  color: var(--accent);
-  opacity: 0.85;
+  opacity: 0.92;
+  filter: drop-shadow(0 6px 18px color-mix(in srgb, var(--accent) 35%, transparent));
 }

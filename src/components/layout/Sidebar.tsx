@@ -1,4 +1,4 @@
-import { TreeMark, Wordmark } from "../../brand/Wordmark";
+import { Wordmark } from "../../brand/Wordmark";
 import {
   BarChart3,
   CheckCircle2,
@@ -63,7 +63,7 @@ const PAGES: Array<{
  * the squirrel runs up and down carrying messages.
  */
 export function RatatoskMark({ size = 34 }: { size?: number }) {
-  return <TreeMark size={size} className="brand-mark" />;
+  return <span className="brand-squirrel brand-mark" style={{ width: size, height: size }} role="img" aria-label="Ratatoskr" />;
 }
 
 export function Sidebar({
@@ -83,7 +83,7 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <div className="sidebar__brand">
-        <RatatoskMark />
+        <RatatoskMark size={44} />
         <div className="sidebar__brand-copy">
           <Wordmark height={24} className="brand-wordmark" />
           <span>{t("app.fullName")}</span>

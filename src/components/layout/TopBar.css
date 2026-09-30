@@ -15,9 +15,10 @@
 }
 
 .topbar__heading h1 {
+  font-family: var(--font-display);
   margin: 0;
   font-size: 20px;
-  font-weight: 800;
+  font-weight: 700;
   white-space: nowrap;
 }
 
@@ -69,4 +70,8 @@
   border-radius: 5px;
   font-family: var(--font-mono);
   font-size: 11px;
+}
+
+:root[lang="en"] .topbar__heading h1 {
+  letter-spacing: 0.04em;
 }

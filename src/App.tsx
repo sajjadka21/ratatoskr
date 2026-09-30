@@ -1,4 +1,3 @@
-import { TreeMark } from "./brand/Wordmark";
 
 const THEME_CYCLE: UiPreferences["theme"][] = [
   "ember-forge",
@@ -1265,7 +1264,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   const emptyState = (
     <div className="download-table__empty">
       <div>
-        <TreeMark size={84} className="download-table__empty-mark" />
+        <span className="brand-squirrel download-table__empty-mark" style={{ width: 120, height: 120 }} aria-hidden="true" />
         <strong>
           {query ? t("table.empty.search") : downloads.length === 0 ? t("table.empty.none") : t("table.empty.section")}
         </strong>

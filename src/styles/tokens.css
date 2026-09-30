@@ -149,8 +149,9 @@
   --topbar-height: 64px;
   --row-height: 56px;
 
-  --font-ui: "Vazirmatn Variable", "Vazirmatn", "Segoe UI Variable", "Segoe UI", Tahoma,
+  --font-ui: "Inter Variable", "Vazirmatn Variable", "Vazirmatn", "Segoe UI Variable", "Segoe UI", Tahoma,
     system-ui, sans-serif;
+  --font-display: "Cinzel", "Vazirmatn Variable", "Georgia", serif;
   --font-mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
 
   font-family: var(--font-ui);

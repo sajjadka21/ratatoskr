@@ -1,4 +1,4 @@
-package ir.ratatosk.app
+package app.ratatoskr.android
 
 import android.content.Intent
 import android.os.Bundle

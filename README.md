@@ -18,7 +18,7 @@
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Android-FBA73D" alt="Platforms">
   <img src="https://img.shields.io/badge/Rust-Tauri%202-CAA0FD" alt="Rust and Tauri 2">
   <img src="https://img.shields.io/badge/UI-React%2019-98D9FB" alt="React 19">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-BFCE8B" alt="MIT license"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-BFCE8B" alt="PolyForm Noncommercial license"></a>
   · <a href="README.fa.md">فارسی</a>
 </p>
 
@@ -168,5 +168,16 @@ Ratatoskr brand kit; see [docs/brand](docs/brand).
 
 ## License
 
-[MIT](LICENSE). yt-dlp is bundled under its own (Unlicense) terms. Please
-download only content you have the right to save.
+Source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE):
+free for personal use, study, hobby projects, charities, schools and
+government; **commercial use needs a separate licence from the author**. (This
+is not an OSI "open source" licence, because it restricts commercial use.)
+yt-dlp is bundled under its own (Unlicense) terms. Please download only content
+you have the right to save.
+
+## Security
+
+Only the installers, portable zip and APK attached to releases of this
+repository are official; installed copies accept updates only when they are
+signed with our key. Found a vulnerability? Please report it privately, see
+[SECURITY.md](SECURITY.md).

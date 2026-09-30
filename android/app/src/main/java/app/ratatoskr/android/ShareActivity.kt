@@ -1,4 +1,4 @@
-package ir.ratatosk.app
+package app.ratatoskr.android
 
 import android.Manifest
 import android.content.ClipboardManager

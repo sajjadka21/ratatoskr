@@ -1678,7 +1678,7 @@ Compared menu by menu with IDM 6.42 on the user's machine.
   and `release.yml` (tag `v*` builds the signed installer, `latest.json`,
   portable zip and APK and publishes the release).
 - Updater endpoint now points at the GitHub releases of `sajjadka21/ratatoskr`.
-- README (English and Persian), LICENSE (MIT), `docs/INSTAGRAM.md`.
+- README (English and Persian), LICENSE (PolyForm Noncommercial 1.0.0), `docs/INSTAGRAM.md`.
 - Test `a_video_page_without_ytdlp_fails_with_a_reason` skips itself when a
   yt-dlp is on PATH (it cannot stage the "missing" case there).
 - Not yet verified on Windows or a phone: the whole batch since step 17, the

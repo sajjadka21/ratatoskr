@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "ir.ratatosk.app"
+    namespace = "app.ratatoskr.android"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "ir.ratatosk.app"
+        applicationId = "app.ratatoskr.android"
         minSdk = 29          // saving to Downloads needs no storage permission from here up
         targetSdk = 35
         versionCode = 1

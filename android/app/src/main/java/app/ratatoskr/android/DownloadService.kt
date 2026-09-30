@@ -1,4 +1,4 @@
-package ir.ratatosk.app
+package app.ratatoskr.android
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -112,7 +112,7 @@ class DownloadService : Service() {
 
     companion object {
         private const val CHANNEL = "downloads"
-        const val ACTION_STOP = "ir.ratatosk.app.STOP"
+        const val ACTION_STOP = "app.ratatoskr.android.STOP"
         const val EXTRA_URL = "url"
         const val EXTRA_HEIGHT = "height"
         const val EXTRA_AUDIO = "audio"

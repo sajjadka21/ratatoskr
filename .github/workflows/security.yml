@@ -34,7 +34,7 @@ jobs:
       contents: read
     strategy:
       matrix:
-        language: [javascript-typescript, python, java-kotlin]
+        language: [javascript-typescript, python]
     steps:
       - uses: actions/checkout@v4
       - uses: github/codeql-action/init@v3

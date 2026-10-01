@@ -6,6 +6,18 @@ import java.net.URLDecoder
 
 /** Pure helpers with no Android classes, so they run as plain unit tests. */
 object LinkUtils {
+    /** At most [limit] bytes of a stream as text; a bigger answer is cut off, never buffered whole. */
+    fun readText(stream: java.io.InputStream, limit: Int = 512 * 1024): String {
+        val out = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(16 * 1024)
+        while (out.size() < limit) {
+            val count = stream.read(buffer)
+            if (count < 0) break
+            out.write(buffer, 0, count)
+        }
+        return out.toString("UTF-8")
+    }
+
     private val urlRegex = Regex("""https?://[^\s<>"']+""", RegexOption.IGNORE_CASE)
     private const val TRAILING = ".,;:!?)]}»"
 

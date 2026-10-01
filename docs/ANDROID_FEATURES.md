@@ -19,6 +19,9 @@ repository's code. ✅ done · 🟡 partly · ⬜ not yet.
 | Pause / resume all, remove from list | ✅ | ✅ |
 | Wi-Fi only, roaming rules | ✅ | ✅ |
 | Speed limit | ✅ | ✅ (shared across a file's connections) |
+| Several connections: last bytes never wait on one slow connection | ✅ | ✅ a finished connection takes half of the slowest part |
+| Update the app from inside it | ✅ | ✅ asks first, checks the published SHA-256, Android confirms the install |
+| Plugins / customisation | ✗ | ✅ JSON rule files (docs/PLUGINS.md), shared with the desktop app |
 | Themes, Persian and English | partly | ✅ four brand themes, RTL |
 | Built-in browser with link sniffer | ✅ | ⬜ |
 | Scheduler (start at a time) | ✅ | ⬜ |

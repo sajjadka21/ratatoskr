@@ -18,16 +18,7 @@ object Spotify {
             uri.host?.lowercase() == "open.spotify.com" && track.matches(uri.path.orEmpty())
     }
 
-    fun readLimited(stream: InputStream, limit: Int = 512 * 1024): String {
-        val out = java.io.ByteArrayOutputStream()
-        val buffer = ByteArray(16 * 1024)
-        while (out.size() < limit) {
-            val count = stream.read(buffer)
-            if (count < 0) break
-            out.write(buffer, 0, count)
-        }
-        return out.toString("UTF-8")
-    }
+    fun readLimited(stream: InputStream, limit: Int = 512 * 1024): String = LinkUtils.readText(stream, limit)
 
     /** Reads the public page's Open Graph tags: og:title is the song, og:description starts with the artist. */
     fun parsePage(html: String): SpotifyTrack? {

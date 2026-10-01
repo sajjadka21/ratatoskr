@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Desktop: **Part info** in the download window — the file drawn as one block per connection, filling as it arrives, plus a per-part table and "Resume support".
+- Desktop and Android: **plugins** — small JSON rule files (rewrite a link, rename a file, per-site Referer/User-Agent on desktop). Data only, never code. See docs/PLUGINS.md.
+- Desktop: a new version now asks first ("Update now / Later / Skip this version") before anything is downloaded; still verified against the app's signing key.
+- Android: checks for a new version daily (switchable), asks before downloading, verifies the published SHA-256, then hands the APK to Android's installer, which asks you to confirm.
+- Android: a connection that finishes early takes half of the slowest remaining part, so the end of a download is not left to one slow connection.
+
 - Android: direct file downloads use up to 8 connections per file with a per-segment journal (resume after a break), falling back to a single stream when the server has no byte ranges or no file validator.
 - Android: Spotify track links are saved as audio (matched on YouTube; Spotify itself is DRM-protected).
 - Android: speed, size and time-left on every download, pause/resume all, remove from history, one-tap download for a copied link.

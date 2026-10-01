@@ -10,6 +10,7 @@ import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.activity.result.contract.ActivityResultContracts
 import kotlinx.coroutines.*
 
 class MainActivity : MobileActivity() {
@@ -20,6 +21,7 @@ class MainActivity : MobileActivity() {
     private val meter = SpeedMeter()
     private lateinit var banner: LinearLayout
     private var dismissedLink = ""
+    private val pickPlugin = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) importPlugin(uri) }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         history = savedInstanceState?.getBoolean("history") ?: false
@@ -53,10 +55,12 @@ class MainActivity : MobileActivity() {
         box.addView(ScrollView(this).apply { addView(tasks) }, LinearLayout.LayoutParams(-1, 0, 1f))
         val footer = LinearLayout(this)
         footer.addView(button(getString(R.string.settings)) { settings() }, LinearLayout.LayoutParams(0, -2, 1f))
+        footer.addView(button(getString(R.string.plugins)) { plugins() }, LinearLayout.LayoutParams(0, -2, 1f))
         footer.addView(button(getString(R.string.about)) { about() }, LinearLayout.LayoutParams(0, -2, 1f))
         box.addView(footer)
         setContentView(box)
         lifecycleScope.launch { repeatOnLifecycle(Lifecycle.State.STARTED) { while (isActive) { render(); delay(750) } } }
+        checkForUpdate(manual = false)
         if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
     }
@@ -205,6 +209,7 @@ class MainActivity : MobileActivity() {
         val quick = toggle(R.string.quick_setting, prefs.quickDownload)
         val watch = toggle(R.string.clipboard_setting, prefs.watchClipboard)
         val categories = toggle(R.string.category_setting, prefs.categoryFolders)
+        val autoUpdate = toggle(R.string.auto_update_setting, prefs.autoUpdateCheck)
         val audio = toggle(R.string.default_audio, prefs.defaultAudio)
         val heights = listOf<Int?>(null, 1080, 720, 480)
         val quality = choices(getString(R.string.default_quality), heights.map { it?.let { height -> "${height}p" } ?: getString(R.string.best_quality) }, heights.indexOf(prefs.defaultHeight))
@@ -228,7 +233,7 @@ class MainActivity : MobileActivity() {
             if (links == null || links !in 1..8) { connections.error = getString(R.string.settings_invalid); return@setOnClickListener }
             if (count == null || count !in 1..3 || rate == null || rate < 0 || rate > Long.MAX_VALUE / 1024) { speed.error = getString(R.string.settings_invalid); return@setOnClickListener }
             prefs.networkPolicy = NetworkPolicy.entries[network.selectedItemPosition]; prefs.allowRoaming = roaming.isChecked
-            prefs.quickDownload = quick.isChecked; prefs.watchClipboard = watch.isChecked; prefs.categoryFolders = categories.isChecked; prefs.defaultAudio = audio.isChecked; prefs.defaultHeight = heights[quality.selectedItemPosition]
+            prefs.quickDownload = quick.isChecked; prefs.watchClipboard = watch.isChecked; prefs.categoryFolders = categories.isChecked; prefs.autoUpdateCheck = autoUpdate.isChecked; prefs.defaultAudio = audio.isChecked; prefs.defaultHeight = heights[quality.selectedItemPosition]
             prefs.concurrency = count; prefs.connections = links; prefs.speedLimit = rate * 1024; prefs.mode = modes[mode.selectedItemPosition]; prefs.brand = brands[brand.selectedItemPosition]
             prefs.language = languages[language.selectedItemPosition]
             androidx.appcompat.app.AppCompatDelegate.setApplicationLocales(androidx.core.os.LocaleListCompat.forLanguageTags(prefs.language))
@@ -251,6 +256,93 @@ class MainActivity : MobileActivity() {
             }
         }
         box.addView(update)
+        box.addView(button(getString(R.string.check_app_update)) { checkForUpdate(manual = true) })
         AlertDialog.Builder(this).setView(ScrollView(this).apply { addView(box) }).setPositiveButton(android.R.string.ok, null).show()
+    }
+
+    // ---- plugins -------------------------------------------------------------------------------
+    private fun importPlugin(uri: android.net.Uri) {
+        val ok = runCatching {
+            val text = contentResolver.openInputStream(uri)?.use { LinkUtils.readText(it, Plugins.MAX_BYTES + 1) } ?: error("unreadable")
+            PluginStore(this).import(text)
+        }.isSuccess
+        Toast.makeText(this, if (ok) R.string.plugin_added else R.string.plugin_invalid, Toast.LENGTH_LONG).show()
+        if (ok) plugins()
+    }
+    private fun plugins() {
+        val store = PluginStore(this)
+        val box = column().apply { setPadding(dp(20), dp(12), dp(20), dp(12)) }
+        box.addView(label(getString(R.string.plugins_hint), 13f))
+        val installed = store.all()
+        if (installed.isEmpty()) box.addView(label(getString(R.string.plugins_none)))
+        lateinit var dialog: AlertDialog
+        for (plugin in installed) {
+            val row = LinearLayout(this)
+            row.addView(CheckBox(this).apply {
+                text = "${plugin.name} · ${plugin.version.ifEmpty { "-" }}"; isChecked = store.enabled(plugin.id); setTextColor(ink)
+                setOnCheckedChangeListener { _, on -> store.setEnabled(plugin.id, on) }
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(button(getString(R.string.plugin_remove)) { store.remove(plugin.id); dialog.dismiss(); plugins() })
+            box.addView(row)
+        }
+        box.addView(button(getString(R.string.plugins_add)) { dialog.dismiss(); pickPlugin.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) })
+        dialog = AlertDialog.Builder(this).setTitle(R.string.plugins).setView(ScrollView(this).apply { addView(box) }).setPositiveButton(android.R.string.ok, null).create()
+        dialog.show()
+    }
+
+    // ---- app updates: ask first, verify, then let Android confirm the install ----------------------
+    private fun checkForUpdate(manual: Boolean) {
+        val prefs = MobilePreferences(this)
+        if (!manual && (!prefs.autoUpdateCheck || System.currentTimeMillis() - prefs.lastUpdateCheck < 24L * 3600 * 1000)) return
+        prefs.lastUpdateCheck = System.currentTimeMillis()
+        val current = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
+        lifecycleScope.launch {
+            val result = runCatching { withContext(Dispatchers.IO) {
+                val connection = SafeHttp.open(AppUpdate.LATEST, mapOf("Accept" to "application/vnd.github+json"))
+                try {
+                    SafeHttp.requireSuccess(connection.responseCode)
+                    AppUpdate.parse(LinkUtils.readText(connection.inputStream, 512 * 1024), android.os.Build.SUPPORTED_ABIS.toList(), current)
+                } finally { connection.disconnect() }
+            } }
+            val offer = result.getOrNull()
+            when {
+                result.isFailure -> if (manual) Toast.makeText(this@MainActivity, R.string.update_check_failed, Toast.LENGTH_LONG).show()
+                offer == null -> if (manual) Toast.makeText(this@MainActivity, R.string.update_up_to_date, Toast.LENGTH_LONG).show()
+                !manual && offer.version == prefs.skippedUpdate -> Unit
+                else -> offerUpdate(offer, prefs)
+            }
+        }
+    }
+    private fun offerUpdate(offer: UpdateOffer, prefs: MobilePreferences) {
+        val size = if (offer.size > 0) Format.bytes(offer.size) else "?"
+        AlertDialog.Builder(this).setTitle(getString(R.string.update_available, offer.version))
+            .setMessage((if (offer.notes.isNotBlank()) offer.notes + "\n\n" else "") + getString(R.string.update_consent))
+            .setPositiveButton(getString(R.string.update_now, size)) { _, _ -> startUpdate(offer) }
+            .setNeutralButton(R.string.update_skip) { _, _ -> prefs.skippedUpdate = offer.version }
+            .setNegativeButton(R.string.update_later, null).show()
+    }
+    private fun startUpdate(offer: UpdateOffer) {
+        if (offer.sha256.isEmpty()) {
+            Toast.makeText(this, R.string.update_unverifiable, Toast.LENGTH_LONG).show()
+            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(AppUpdate.RELEASES_PAGE))); return
+        }
+        if (!UpdateInstaller.canInstall(this)) {
+            Toast.makeText(this, R.string.update_allow_install, Toast.LENGTH_LONG).show()
+            UpdateInstaller.requestPermission(this); return
+        }
+        val control = TransferControl { true }
+        val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100 }
+        val box = column().apply { setPadding(dp(20), dp(12), dp(20), dp(12)); addView(label(getString(R.string.update_downloading), 14f)); addView(bar) }
+        val dialog = AlertDialog.Builder(this).setView(box).setCancelable(false).setNegativeButton(R.string.cancel) { _, _ -> control.stop() }.show()
+        val target = java.io.File(cacheDir, "updates/ratatoskr-${offer.version}.apk")
+        lifecycleScope.launch {
+            val failure = runCatching { withContext(Dispatchers.IO) {
+                AppUpdate.download(offer, target, control, { done, total -> if (total > 0) runOnUiThread { bar.progress = (done * 100 / total).toInt() } })
+                UpdateInstaller.install(this@MainActivity, target)
+            } }.exceptionOrNull()
+            dialog.dismiss()
+            if (failure != null && !(failure is TransferFailure && failure.code == "interrupted"))
+                Toast.makeText(this@MainActivity, if (failure is TransferFailure && failure.code == "checksum_mismatch") R.string.update_bad_file else R.string.update_install_failed, Toast.LENGTH_LONG).show()
+        }
     }
 }

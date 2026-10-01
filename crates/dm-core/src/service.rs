@@ -273,6 +273,8 @@ pub struct DownloadService {
     /// Bumped whenever the share of bandwidth a yt-dlp run should get may
     /// have changed: a limit was set, or a transfer started or ended.
     rate_epoch: Arc<tokio::sync::watch::Sender<u64>>,
+    /// Plugins the user has switched on (link, file-name and header rules).
+    plugins: Arc<RwLock<crate::plugins::PluginSet>>,
 }
 
 impl DownloadService {
@@ -311,6 +313,7 @@ impl DownloadService {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             post_events: tokio::sync::broadcast::channel(64).0,
             rate_epoch: Arc::new(tokio::sync::watch::channel(0).0),
+            plugins: Arc::new(RwLock::new(crate::plugins::PluginSet::default())),
             stall_timeout: crate::network::DEFAULT_STALL_TIMEOUT,
         })
     }
@@ -562,7 +565,12 @@ impl DownloadService {
             .get_download_name(download_id)
             .ok()
             .flatten()
-            .map(|name| crate::sanitize_filename(&name))?;
+            .map(|name| crate::sanitize_filename(&name));
+        let Some(chosen) = chosen else {
+            // Nothing chosen by the user: a plugin may still tidy the server's name.
+            let renamed = self.plugins().rename(server_name);
+            return (renamed != server_name).then(|| crate::sanitize_filename(&renamed));
+        };
         Some(with_extension_of(&chosen, server_name))
     }
 
@@ -852,7 +860,24 @@ impl DownloadService {
     /// The shared downloader carrying this task's stored browser context and
     /// every bandwidth limit that applies to it.
     fn downloader_for(&self, download_id: &str) -> Result<Downloader> {
-        let context = self.storage.get_request_context(download_id)?;
+        let mut context = self.storage.get_request_context(download_id)?;
+        // A plugin supplies what the browser did not hand over for this site.
+        if (context.referrer.is_none() || context.user_agent.is_none())
+            && let Ok(task) = self.get_task(download_id)
+            && let Some(host) = task
+                .source_url
+                .parse::<http::Uri>()
+                .ok()
+                .and_then(|uri| uri.host().map(str::to_owned))
+        {
+            let plugins = self.plugins();
+            context.referrer = context
+                .referrer
+                .or_else(|| plugins.referer_for(&host).map(str::to_owned));
+            context.user_agent = context
+                .user_agent
+                .or_else(|| plugins.user_agent_for(&host).map(str::to_owned));
+        }
         let mut downloader = self
             .base_downloader()
             .with_context(&context)
@@ -870,8 +895,29 @@ impl DownloadService {
         Ok(downloader)
     }
 
+    /// Replaces the active plugins; takes effect for the next link, name and request.
+    pub fn set_plugins(&self, plugins: crate::plugins::PluginSet) {
+        *self
+            .plugins
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = plugins;
+    }
+
+    fn plugins(&self) -> crate::plugins::PluginSet {
+        self.plugins
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
     pub fn create_task(&self, source_url: &str) -> Result<DownloadRecord> {
         validate_source_url(source_url)?;
+        let rewritten = self.plugins().rewrite_url(source_url);
+        let source_url = if rewritten == source_url || validate_source_url(&rewritten).is_err() {
+            source_url
+        } else {
+            rewritten.as_str()
+        };
 
         self.storage
             .create_download(source_url, unix_timestamp_seconds()?)
@@ -6530,6 +6576,71 @@ mkdir -p \"$w\"
         assert_eq!(with_extension_of("My film", "movie.mkv"), "My film.mkv");
         assert_eq!(with_extension_of("My film.mp4", "movie.mkv"), "My film.mp4");
         assert_eq!(with_extension_of("notes", "README"), "notes");
+    }
+
+    fn plugin_set(json: &str) -> crate::plugins::PluginSet {
+        crate::plugins::PluginSet::new(vec![crate::plugins::Plugin::parse(json).unwrap()])
+    }
+
+    #[test]
+    fn a_plugin_rewrites_the_link_of_a_new_task() {
+        let harness = harness();
+        harness.service.set_plugins(plugin_set(
+            r#"{ "schema": 1, "id": "p", "rules": [
+            { "type": "rewrite_url", "match": "https://example.com/view/*", "replace": "https://cdn.example.com/f/{1}.zip" } ] }"#,
+        ));
+        let task = harness
+            .service
+            .create_task("https://example.com/view/7")
+            .unwrap();
+        assert_eq!(task.source_url, "https://cdn.example.com/f/7.zip");
+        let plain = harness
+            .service
+            .create_task("https://example.com/other")
+            .unwrap();
+        assert_eq!(plain.source_url, "https://example.com/other");
+
+        harness
+            .service
+            .set_plugins(crate::plugins::PluginSet::default());
+        let again = harness
+            .service
+            .create_task("https://example.com/view/8")
+            .unwrap();
+        assert_eq!(again.source_url, "https://example.com/view/8");
+    }
+
+    #[test]
+    fn a_plugin_renames_server_names_but_never_overrides_the_users_choice() {
+        let harness = harness();
+        harness.service.set_plugins(plugin_set(
+            r#"{ "schema": 1, "id": "p", "rules": [
+            { "type": "rename", "match": "*.mp4.part", "replace": "{1}.mp4" } ] }"#,
+        ));
+        let task = harness
+            .service
+            .create_task("https://example.com/a")
+            .unwrap();
+        assert_eq!(
+            harness
+                .service
+                .chosen_name(&task.id, "clip.mp4.part")
+                .as_deref(),
+            Some("clip.mp4")
+        );
+        assert_eq!(harness.service.chosen_name(&task.id, "clip.mkv"), None);
+
+        harness
+            .service
+            .set_download_name(&task.id, Some("Mine"))
+            .unwrap();
+        assert_eq!(
+            harness
+                .service
+                .chosen_name(&task.id, "clip.mp4.part")
+                .as_deref(),
+            Some("Mine.part")
+        );
     }
 
     #[tokio::test]

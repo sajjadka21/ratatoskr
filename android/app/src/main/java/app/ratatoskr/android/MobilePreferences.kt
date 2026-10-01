@@ -35,6 +35,18 @@ class MobilePreferences(context: Context) {
     var watchClipboard: Boolean
         get() = prefs.getBoolean("watch_clipboard", true)
         set(value) { prefs.edit().putBoolean("watch_clipboard", value).apply() }
+    var disabledPlugins: Set<String>
+        get() = prefs.getStringSet("plugins_off", emptySet()) ?: emptySet()
+        set(value) { prefs.edit().putStringSet("plugins_off", value.toSet()).apply() }
+    var autoUpdateCheck: Boolean
+        get() = prefs.getBoolean("auto_update_check", true)
+        set(value) { prefs.edit().putBoolean("auto_update_check", value).apply() }
+    var lastUpdateCheck: Long
+        get() = prefs.getLong("last_update_check", 0)
+        set(value) { prefs.edit().putLong("last_update_check", value).apply() }
+    var skippedUpdate: String
+        get() = prefs.getString("skipped_update", "")!!
+        set(value) { prefs.edit().putString("skipped_update", value).apply() }
     var speedLimit: Long
         get() = prefs.getLong("speed", 0).coerceAtLeast(0)
         set(value) { prefs.edit().putLong("speed", value.coerceAtLeast(0)).apply() }

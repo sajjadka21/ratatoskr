@@ -177,7 +177,7 @@ object Engine {
     private fun publish(context: Context, id: String, index: Int, file: File, control: TransferControl): SavedMedia {
         if (file.length() == 0L) throw TransferFailure("invalid_output")
         ensureSpace(context.filesDir, file.length())
-        val name = LinkUtils.safeFileName(file.name)
+        val name = LinkUtils.safeFileName(Plugins.rename(PluginStore.active(context), file.name))
         val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "application/octet-stream"
         val images = mime.startsWith("image/")
         val collection = if (images) MediaStore.Images.Media.EXTERNAL_CONTENT_URI else MediaStore.Downloads.EXTERNAL_CONTENT_URI

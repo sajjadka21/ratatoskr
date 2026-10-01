@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "id": "example",
+  "name": "Example rules",
+  "version": "1.0.0",
+  "rules": [
+    { "type": "rewrite_url", "match": "https://example.com/view/*", "replace": "https://cdn.example.com/files/{1}.zip" },
+    { "type": "rename", "match": "*.mp4.part", "replace": "{1}.mp4" },
+    { "type": "referer", "host": "cdn.example.com", "value": "https://example.com/" },
+    { "type": "user_agent", "host": "cdn.example.com", "value": "Mozilla/5.0" }
+  ]
+}

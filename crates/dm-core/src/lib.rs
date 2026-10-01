@@ -11,6 +11,7 @@ pub mod linkgrabber;
 pub mod media;
 pub mod network;
 pub mod pac;
+pub mod plugins;
 pub mod postprocess;
 pub mod queue;
 pub mod ratelimit;

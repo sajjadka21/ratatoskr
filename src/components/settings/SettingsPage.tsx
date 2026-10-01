@@ -41,6 +41,7 @@ import { BRAND_THEMES, BRAND_THEME_SWATCHES } from "../../types/download";
 import { SHOW_WELCOME_EVENT } from "../../utils/appEvents";
 import { UpdateSection } from "./UpdateSection";
 import { BrowserSection } from "./BrowserSection";
+import { PluginsSection } from "./PluginsSection";
 import { AfterDownloadSection } from "./AfterDownloadSection";
 import { BackupSection, DiagnosticsSection } from "./MaintenanceSections";
 import {
@@ -202,6 +203,12 @@ export function SettingsPage({
       group: "browser",
       prefixes: ["browser."],
       content: <BrowserSection onError={onError} />,
+    },
+    {
+      id: "section-plugins",
+      group: "system",
+      prefixes: ["plugins."],
+      content: <PluginsSection onError={onError} />,
     },
     {
       id: "section-9",

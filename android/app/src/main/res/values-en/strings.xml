@@ -98,4 +98,25 @@
     <string name="clipboard_many">%1$d links copied</string>
     <string name="clipboard_setting">Offer to download a copied link when the app opens</string>
     <string name="category_setting">Sort files into Video, Music, Archives… folders</string>
+    <string name="update_available">Ratatoskr %1$s is ready.</string>
+    <string name="update_consent">Nothing is downloaded until you agree. The file is checked against its published SHA-256 before install, and Android asks you to confirm too.</string>
+    <string name="update_now">Update (%1$s)</string>
+    <string name="update_later">Later</string>
+    <string name="update_skip">Skip this version</string>
+    <string name="update_downloading">Downloading the update…</string>
+    <string name="update_up_to_date">You have the latest version.</string>
+    <string name="update_check_failed">Could not check for a new version.</string>
+    <string name="update_install_failed">The update could not be installed.</string>
+    <string name="update_unverifiable">This release has no published checksum, so it is not installed automatically. Opening the releases page.</string>
+    <string name="update_bad_file">The downloaded file did not match its published checksum and was discarded.</string>
+    <string name="update_allow_install">Android must allow Ratatoskr to install updates. The permission page opens; after allowing, tap Update again.</string>
+    <string name="check_app_update">Check for a new app version</string>
+    <string name="auto_update_setting">Check for new versions automatically (daily; nothing is downloaded without your say)</string>
+    <string name="plugins">Plugins</string>
+    <string name="plugins_hint">A plugin is a JSON file of rules: rewrite a link or a file name. Data only, it runs no code. Format: docs/PLUGINS.md</string>
+    <string name="plugins_none">No plugins yet.</string>
+    <string name="plugins_add">Add a plugin file</string>
+    <string name="plugin_added">Plugin added.</string>
+    <string name="plugin_invalid">That file is not a valid plugin.</string>
+    <string name="plugin_remove">Remove</string>
 </resources>

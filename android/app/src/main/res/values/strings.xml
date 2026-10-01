@@ -99,4 +99,25 @@
     <string name="clipboard_many">%1$d لینک کپی‌شده است</string>
     <string name="clipboard_setting">پیشنهاد دانلود برای لینک کپی‌شده هنگام باز کردن برنامه</string>
     <string name="category_setting">مرتب‌کردن فایل‌ها در پوشه‌های ویدیو، موسیقی، فشرده و…</string>
+    <string name="update_available">نسخه %1$s راتاتوسک آماده است.</string>
+    <string name="update_consent">تا موافقت نکنید چیزی دانلود نمی‌شود. فایل پیش از نصب با اثر انگشت SHA-256 منتشرشده بررسی می‌شود و اندروید هم قبل از نصب از شما تأیید می‌گیرد.</string>
+    <string name="update_now">به‌روزرسانی (%1$s)</string>
+    <string name="update_later">بعداً</string>
+    <string name="update_skip">این نسخه را رد کن</string>
+    <string name="update_downloading">در حال دریافت به‌روزرسانی…</string>
+    <string name="update_up_to_date">نسخه‌ی شما آخرین نسخه است.</string>
+    <string name="update_check_failed">بررسی نسخه‌ی جدید انجام نشد.</string>
+    <string name="update_install_failed">نصب به‌روزرسانی انجام نشد.</string>
+    <string name="update_unverifiable">این نسخه اثر انگشت منتشرشده ندارد و خودکار نصب نمی‌شود. صفحه‌ی نسخه‌ها را باز می‌کنم.</string>
+    <string name="update_bad_file">فایل دریافت‌شده با اثر انگشت منتشرشده نمی‌خواند و کنار گذاشته شد.</string>
+    <string name="update_allow_install">اندروید باید به راتاتوسک اجازه‌ی نصب به‌روزرسانی بدهد. صفحه‌ی اجازه باز می‌شود؛ پس از دادن اجازه دوباره «به‌روزرسانی» را بزنید.</string>
+    <string name="check_app_update">بررسی نسخه‌ی جدید برنامه</string>
+    <string name="auto_update_setting">بررسی خودکار نسخه‌ی جدید (روزی یک بار؛ بدون اجازه‌ی شما چیزی دانلود نمی‌شود)</string>
+    <string name="plugins">افزونه‌ها</string>
+    <string name="plugins_hint">افزونه یک فایل JSON از قاعده‌هاست: تغییر لینک یا نام فایل. فقط داده است و کدی اجرا نمی‌کند. قالب: docs/PLUGINS.md</string>
+    <string name="plugins_none">هنوز افزونه‌ای نیست.</string>
+    <string name="plugins_add">افزودن فایل افزونه</string>
+    <string name="plugin_added">افزونه اضافه شد.</string>
+    <string name="plugin_invalid">این فایل افزونه‌ی معتبری نیست.</string>
+    <string name="plugin_remove">حذف</string>
 </resources>

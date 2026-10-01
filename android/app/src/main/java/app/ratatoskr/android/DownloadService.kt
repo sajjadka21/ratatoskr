@@ -172,18 +172,23 @@ class DownloadService : Service() {
         const val EXTRA_PROCESS = "process"
         fun start(context: Context, url: String, height: Int?, audio: Boolean, title: String, kind: String = "media", items: String = "") {
             MobileRuntime.initialize(TaskStore.get(context))
-            TaskStore.get(context).enqueue(url, height, audio, title, kind, items)
+            TaskStore.get(context).enqueue(rewritten(context, url), height, audio, title, kind, items)
             wake(context)
         }
         /** Queue many links at once: files go to the segmented engine, media sites to yt-dlp. */
         fun startMany(context: Context, urls: List<String>, height: Int?, audio: Boolean) {
             MobileRuntime.initialize(TaskStore.get(context))
             val store = TaskStore.get(context)
-            urls.forEach { url ->
+            urls.map { rewritten(context, it) }.forEach { url ->
                 if (LinkPlan.classify(url) == LinkKind.FILE) store.enqueue(url, null, false, "", "file")
                 else store.enqueue(url, height, audio || Spotify.isTrackUrl(url), "", "media")
             }
             wake(context)
+        }
+        /** A plugin may point a link somewhere better; the result is still checked like any other link. */
+        private fun rewritten(context: Context, url: String): String {
+            val result = Plugins.rewriteUrl(PluginStore.active(context), url)
+            return if (result != url && LinkUtils.isPublicHttpUrl(result)) result else url
         }
         fun wake(context: Context) { context.startForegroundService(Intent(context, DownloadService::class.java)) }
         fun command(context: Context, id: String, action: String) {

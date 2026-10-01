@@ -13,6 +13,7 @@ android {
         targetSdk = 35
         versionCode = 5
         versionName = "1.1.1"
+        resourceConfigurations += listOf("en", "fa")   // library strings in other languages are dead weight
         // yt-dlp and ffmpeg ship as native code; keep to the usual phone CPUs.
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
@@ -51,7 +52,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    androidResources { localeFilters += listOf("en", "fa") }   // library strings in other languages are dead weight
     testOptions { unitTests.isIncludeAndroidResources = true }
 }
 

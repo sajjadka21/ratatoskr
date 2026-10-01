@@ -183,7 +183,8 @@ object Engine {
         val collection = if (images) MediaStore.Images.Media.EXTERNAL_CONTENT_URI else MediaStore.Downloads.EXTERNAL_CONTENT_URI
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, name); put(MediaStore.MediaColumns.MIME_TYPE, mime)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, "${if (images) Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_DOWNLOADS}/Ratatoskr")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "${if (images) Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_DOWNLOADS}/Ratatoskr" +
+                if (images || !MobilePreferences(context).categoryFolders) "" else FileCategory.folder(name, mime).let { if (it.isEmpty()) "" else "/$it" })
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
         val resolver = context.contentResolver

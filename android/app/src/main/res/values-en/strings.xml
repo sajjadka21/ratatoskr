@@ -91,4 +91,11 @@
     <string name="connections_setting">Connections per file, 1–8 (more = faster)</string>
     <string name="eta_left">%1$s left</string>
     <string name="spotify_note">Spotify tracks: the matching audio is downloaded from YouTube.</string>
+    <string name="links_summary">%1$d links · %2$d files · %3$d video/audio</string>
+    <string name="paste_clipboard">Paste from clipboard</string>
+    <string name="audio_only_all">Audio only (for video links)</string>
+    <string name="pattern_hint">Tip: an address like photo[01-20].jpg expands into 20 links.</string>
+    <string name="clipboard_many">%1$d links copied</string>
+    <string name="clipboard_setting">Offer to download a copied link when the app opens</string>
+    <string name="category_setting">Sort files into Video, Music, Archives… folders</string>
 </resources>

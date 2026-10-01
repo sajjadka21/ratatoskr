@@ -175,6 +175,16 @@ class DownloadService : Service() {
             TaskStore.get(context).enqueue(url, height, audio, title, kind, items)
             wake(context)
         }
+        /** Queue many links at once: files go to the segmented engine, media sites to yt-dlp. */
+        fun startMany(context: Context, urls: List<String>, height: Int?, audio: Boolean) {
+            MobileRuntime.initialize(TaskStore.get(context))
+            val store = TaskStore.get(context)
+            urls.forEach { url ->
+                if (LinkPlan.classify(url) == LinkKind.FILE) store.enqueue(url, null, false, "", "file")
+                else store.enqueue(url, height, audio || Spotify.isTrackUrl(url), "", "media")
+            }
+            wake(context)
+        }
         fun wake(context: Context) { context.startForegroundService(Intent(context, DownloadService::class.java)) }
         fun command(context: Context, id: String, action: String) {
             context.startForegroundService(Intent(context, DownloadService::class.java).setAction(action).putExtra(EXTRA_PROCESS, id))

@@ -92,4 +92,11 @@
     <string name="connections_setting">اتصال هم‌زمان برای هر فایل، از ۱ تا ۸ (بیشتر = سریع‌تر)</string>
     <string name="eta_left">%1$s مانده</string>
     <string name="spotify_note">آهنگ‌های اسپاتیفای: صدای هم‌نام از یوتیوب دانلود می‌شود.</string>
+    <string name="links_summary">%1$d لینک · %2$d فایل · %3$d ویدیو/صدا</string>
+    <string name="paste_clipboard">چسباندن از کلیپ‌بورد</string>
+    <string name="audio_only_all">فقط صدا (برای لینک‌های ویدیو)</string>
+    <string name="pattern_hint">نکته: آدرس‌هایی مثل photo[01-20].jpg خودکار به ۲۰ لینک باز می‌شوند.</string>
+    <string name="clipboard_many">%1$d لینک کپی‌شده است</string>
+    <string name="clipboard_setting">پیشنهاد دانلود برای لینک کپی‌شده هنگام باز کردن برنامه</string>
+    <string name="category_setting">مرتب‌کردن فایل‌ها در پوشه‌های ویدیو، موسیقی، فشرده و…</string>
 </resources>

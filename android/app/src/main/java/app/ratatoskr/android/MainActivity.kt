@@ -128,41 +128,67 @@ class MainActivity : MobileActivity() {
     private fun forEach(states: Set<TaskState>, action: String) {
         TaskStore.get(this).list().filter { it.state in states }.forEach { runCatching { DownloadService.command(this, it.id, action) } }
     }
-    /** A copied link is offered once, as a one-tap download; reading the clipboard needs window focus. */
+    /** Copied links are offered once, as a one-tap download; reading the clipboard needs window focus. */
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (!hasFocus || !::banner.isInitialized) return
+        banner.removeAllViews(); banner.visibility = android.view.View.GONE
+        if (!MobilePreferences(this).watchClipboard) return
         val clip = (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).primaryClip
-        val text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
-        val url = LinkUtils.extractUrl(text)?.takeIf { LinkUtils.isPublicHttpUrl(it) && it != dismissedLink }
-        banner.removeAllViews()
-        if (url == null) { banner.visibility = android.view.View.GONE; return }
+        val text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
+        val urls = LinkPlan.parse(text).filter { LinkUtils.isPublicHttpUrl(it) }
+        if (urls.isEmpty() || urls.joinToString("\n") == dismissedLink) return
+        val key = urls.joinToString("\n")
         banner.visibility = android.view.View.VISIBLE
-        val host = runCatching { java.net.URI(url).host.removePrefix("www.") }.getOrDefault(url)
-        banner.addView(label(getString(R.string.clipboard_found, host), 14f))
-        if (Spotify.isTrackUrl(url)) banner.addView(label(getString(R.string.spotify_note), 12f))
+        banner.addView(label(if (urls.size == 1) getString(R.string.clipboard_found, LinkPlan.host(urls.first())) else getString(R.string.clipboard_many, urls.size), 14f))
+        if (urls.any { Spotify.isTrackUrl(it) }) banner.addView(label(getString(R.string.spotify_note), 12f))
         val row = LinearLayout(this)
         row.addView(button(getString(R.string.download_now)) {
-            dismissedLink = url; banner.visibility = android.view.View.GONE
-            startActivity(Intent(this, ShareActivity::class.java).putExtra(Intent.EXTRA_TEXT, url))
+            dismissedLink = key; banner.visibility = android.view.View.GONE
+            if (urls.size == 1) startActivity(Intent(this, ShareActivity::class.java).putExtra(Intent.EXTRA_TEXT, urls.first()))
+            else addLinks(key)
         }, LinearLayout.LayoutParams(0, -2, 1f))
-        row.addView(button(getString(R.string.dismiss)) { dismissedLink = url; banner.visibility = android.view.View.GONE }, LinearLayout.LayoutParams(0, -2, 1f))
+        row.addView(button(getString(R.string.dismiss)) { dismissedLink = key; banner.visibility = android.view.View.GONE }, LinearLayout.LayoutParams(0, -2, 1f))
         banner.addView(row)
     }
-    private fun addLinks() {
-        val input = EditText(this).apply { hint = getString(R.string.links_hint); minLines = 3; maxLines = 6; inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE }
-        val dialog = AlertDialog.Builder(this).setTitle(R.string.add_links).setView(input)
-            .setPositiveButton(R.string.media_download, null).setNeutralButton(R.string.file_download, null).setNegativeButton(R.string.cancel, null).create()
+    /** Paste any number of links (or a `[1-20]` pattern); each one is routed to the right engine. */
+    private fun addLinks(prefill: String = "") {
+        val prefs = MobilePreferences(this)
+        val form = column().apply { setPadding(dp(20), dp(8), dp(20), 0) }
+        val input = EditText(this).apply { hint = getString(R.string.links_hint); minLines = 4; maxLines = 8; setText(prefill)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE }
+        val summary = label("", 13f)
+        val audio = CheckBox(this).apply { text = getString(R.string.audio_only_all); isChecked = prefs.defaultAudio; setTextColor(ink) }
+        form.addView(input); form.addView(summary); form.addView(audio); form.addView(label(getString(R.string.pattern_hint), 12f))
+        form.addView(button(getString(R.string.paste_clipboard)) {
+            val clip = (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).primaryClip
+            val text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
+            if (text.isNotBlank()) input.setText(if (input.text.isBlank()) text else input.text.toString() + "\n" + text)
+        })
+        val dialog = AlertDialog.Builder(this).setTitle(R.string.add_links).setView(ScrollView(this).apply { addView(form) })
+            .setPositiveButton(R.string.download_now, null).setNeutralButton(R.string.file_download, null).setNegativeButton(R.string.cancel, null).create()
+        fun links() = LinkPlan.parse(input.text.toString())
+        input.doAfterTextChanged {
+            val urls = links(); val counts = LinkPlan.summarize(urls)
+            summary.text = if (urls.isEmpty()) "" else getString(R.string.links_summary, urls.size, counts.files, counts.media)
+        }
         dialog.setOnShowListener {
-            fun submit(file: Boolean) {
-                val urls = LinkUtils.extractUrls(input.text.toString())
-                if (urls.isEmpty() || urls.any { !LinkUtils.isPublicHttpUrl(it) }) { input.error = getString(R.string.bad_link); return }
-                if (file) urls.forEach { DownloadService.start(this, it, null, false, "", "file") }
-                else startActivity(Intent(this, ShareActivity::class.java).putExtra(Intent.EXTRA_TEXT, input.text.toString()))
+            input.setText(input.text.toString())   // refresh the summary for a prefilled list
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val urls = links()
+                if (urls.isEmpty() || urls.any { !LinkUtils.isPublicHttpUrl(it) }) { input.error = getString(R.string.bad_link); return@setOnClickListener }
+                if (urls.size == 1 && LinkPlan.classify(urls.first()) == LinkKind.MEDIA && !Spotify.isTrackUrl(urls.first()))
+                    startActivity(Intent(this, ShareActivity::class.java).putExtra(Intent.EXTRA_TEXT, urls.first()))   // one video: choose quality
+                else DownloadService.startMany(this, urls, prefs.defaultHeight, audio.isChecked)
                 dialog.dismiss()
             }
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener { submit(false) }
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener { submit(true) }
+            // "Direct file": treat every link as a plain file, whatever the address looks like.
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                val urls = links()
+                if (urls.isEmpty() || urls.any { !LinkUtils.isPublicHttpUrl(it) }) { input.error = getString(R.string.bad_link); return@setOnClickListener }
+                urls.forEach { DownloadService.start(this, it, null, false, "", "file") }
+                dialog.dismiss()
+            }
         }
         dialog.show()
     }
@@ -177,6 +203,8 @@ class MainActivity : MobileActivity() {
         val network = choices(getString(R.string.network_setting), listOf(getString(R.string.network_any), getString(R.string.network_wifi), getString(R.string.network_unmetered)), prefs.networkPolicy.ordinal)
         val roaming = toggle(R.string.roaming_setting, prefs.allowRoaming)
         val quick = toggle(R.string.quick_setting, prefs.quickDownload)
+        val watch = toggle(R.string.clipboard_setting, prefs.watchClipboard)
+        val categories = toggle(R.string.category_setting, prefs.categoryFolders)
         val audio = toggle(R.string.default_audio, prefs.defaultAudio)
         val heights = listOf<Int?>(null, 1080, 720, 480)
         val quality = choices(getString(R.string.default_quality), heights.map { it?.let { height -> "${height}p" } ?: getString(R.string.best_quality) }, heights.indexOf(prefs.defaultHeight))
@@ -200,7 +228,7 @@ class MainActivity : MobileActivity() {
             if (links == null || links !in 1..8) { connections.error = getString(R.string.settings_invalid); return@setOnClickListener }
             if (count == null || count !in 1..3 || rate == null || rate < 0 || rate > Long.MAX_VALUE / 1024) { speed.error = getString(R.string.settings_invalid); return@setOnClickListener }
             prefs.networkPolicy = NetworkPolicy.entries[network.selectedItemPosition]; prefs.allowRoaming = roaming.isChecked
-            prefs.quickDownload = quick.isChecked; prefs.defaultAudio = audio.isChecked; prefs.defaultHeight = heights[quality.selectedItemPosition]
+            prefs.quickDownload = quick.isChecked; prefs.watchClipboard = watch.isChecked; prefs.categoryFolders = categories.isChecked; prefs.defaultAudio = audio.isChecked; prefs.defaultHeight = heights[quality.selectedItemPosition]
             prefs.concurrency = count; prefs.connections = links; prefs.speedLimit = rate * 1024; prefs.mode = modes[mode.selectedItemPosition]; prefs.brand = brands[brand.selectedItemPosition]
             prefs.language = languages[language.selectedItemPosition]
             androidx.appcompat.app.AppCompatDelegate.setApplicationLocales(androidx.core.os.LocaleListCompat.forLanguageTags(prefs.language))

@@ -69,7 +69,7 @@ object LinkUtils {
                 while (value.endsWith(closing) && value.count { it == closing } > value.count { it == opening }) value = value.dropLast(1)
             }
             value
-        }.distinct().take(50).toList()
+        }.distinct().take(200).toList()
 
     fun contentIdentity(url: String): String {
         val canonical = canonicalUrl(url)

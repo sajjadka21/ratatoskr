@@ -28,6 +28,13 @@ class MobilePreferences(context: Context) {
     var connections: Int
         get() = prefs.getInt("connections", 4).coerceIn(1, 8)
         set(value) { prefs.edit().putInt("connections", value.coerceIn(1, 8)).apply() }
+    /** Sort finished files into Video, Music, Archives... under Downloads/Ratatoskr. */
+    var categoryFolders: Boolean
+        get() = prefs.getBoolean("category_folders", true)
+        set(value) { prefs.edit().putBoolean("category_folders", value).apply() }
+    var watchClipboard: Boolean
+        get() = prefs.getBoolean("watch_clipboard", true)
+        set(value) { prefs.edit().putBoolean("watch_clipboard", value).apply() }
     var speedLimit: Long
         get() = prefs.getLong("speed", 0).coerceAtLeast(0)
         set(value) { prefs.edit().putLong("speed", value.coerceAtLeast(0)).apply() }

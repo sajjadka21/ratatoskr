@@ -8,6 +8,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      promote_stable:
+        description: "Promote after device acceptance (otherwise publish a preview)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -207,4 +212,8 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "Ratatoskr ${{ github.ref_name }}" \
             --notes-file "docs/releases/${GITHUB_REF_NAME#v}.md" --verify-tag --draft
-          gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --draft=false --latest
+          if [ "${{ inputs.promote_stable || false }}" = "true" ]; then
+            gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --draft=false --prerelease=false --latest
+          else
+            gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --draft=false --prerelease --latest=false
+          fi

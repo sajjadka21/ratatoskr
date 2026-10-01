@@ -19,4 +19,8 @@ object MediaOptions {
     fun format(height: Int?, audioOnly: Boolean): String =
         if (audioOnly) "bestaudio[ext=m4a]/bestaudio/best" else LinkUtils.videoFormat(height)
     fun requiresAudioExtraction(audioOnly: Boolean): Boolean = audioOnly
+    fun guardedFormat(height: Int?, audioOnly: Boolean): String = format(height, audioOnly)
+        .split('/').joinToString("/") { fallback -> fallback.split('+').joinToString("+") {
+            it + "[protocol~='^(https?|m3u8_native|http_dash_segments)$']"
+        } }
 }

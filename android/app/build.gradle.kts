@@ -11,8 +11,8 @@ android {
         applicationId = "app.ratatoskr.android"
         minSdk = 29          // saving to Downloads needs no storage permission from here up
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.0.2"
+        versionCode = 4
+        versionName = "1.1.0"
         // yt-dlp and ffmpeg ship as native code; keep to the usual phone CPUs.
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }

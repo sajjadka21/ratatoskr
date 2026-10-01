@@ -1125,6 +1125,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     const code = event.code;
     if (control && (code === "KeyK" || (event.shiftKey && code === "KeyP"))) {
       event.preventDefault();
+      if (phoneSource !== null) return;
       setPaletteOpen((open) => !open);
       return;
     }

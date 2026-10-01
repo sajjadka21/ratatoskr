@@ -43,7 +43,30 @@ object Engine {
         return info
     }
     fun work(context: Context, id: String) = File(context.filesDir, "download-work/$id")
-    fun discard(context: Context, id: String) { work(context, id).deleteRecursively() }
+    private fun isMediaRow(target: android.net.Uri): Boolean =
+        target.scheme == "content" && target.authority == "media" && target.query == null && target.fragment == null &&
+            Regex("/external(?:_primary)?/(?:downloads|images/media)/[0-9]+").matches(target.path.orEmpty())
+    fun discard(context: Context, id: String) {
+        val directory = work(context, id)
+        var cleaned = true
+        directory.listFiles().orEmpty().filter { Regex("pending-[0-9]+\\.uri").matches(it.name) }.forEach { journal ->
+            try {
+                val target = android.net.Uri.parse(journal.readText())
+                if (isMediaRow(target)) {
+                    val pending = context.contentResolver.query(target, arrayOf(MediaStore.MediaColumns.IS_PENDING,
+                        MediaStore.MediaColumns.OWNER_PACKAGE_NAME), null, null, null)?.use {
+                        it.moveToFirst() && it.getInt(0) == 1 && it.getString(1) == context.packageName
+                    } ?: false
+                    if (pending) context.contentResolver.delete(target, null, null)
+                }
+                journal.delete()
+            } catch (_: Exception) {
+                // Keep the journal for a later cleanup attempt; never remove published media.
+                cleaned = false
+            }
+        }
+        if (cleaned) directory.deleteRecursively()
+    }
 
     fun download(context: Context, task: MobileTask, control: TransferControl,
                  onState: (TaskState) -> Unit, onProgress: (Float) -> Unit): List<SavedMedia> {
@@ -86,11 +109,7 @@ object Engine {
                     val rate = MobilePreferences(context).speedLimit
                     if (rate > 0) addOption("--limit-rate", rate.toString())
                     // Restrict every fallback to protocols that use the guarded native transport.
-                    val guardedFormat = MediaOptions.format(task.height, task.audioOnly || item.kind == "audio")
-                        .split('/').joinToString("/") { fallback -> fallback.split('+').joinToString("+") {
-                            it + "[protocol~='^(https?|m3u8_native|http_dash_segments)$']"
-                        } }
-                    addOption("-f", guardedFormat)
+                    addOption("-f", MediaOptions.guardedFormat(task.height, task.audioOnly || item.kind == "audio"))
                     if (task.audioOnly || item.kind == "audio") { addOption("-x"); addOption("--audio-format", "m4a") }
                     else addOption("--merge-output-format", "mp4")
                 }
@@ -135,6 +154,7 @@ object Engine {
         val journal = File(work(context, id), "pending-$index.uri")
         if (journal.exists()) {
             val old = android.net.Uri.parse(journal.readText())
+            if (!isMediaRow(old)) { journal.delete(); throw TransferFailure("invalid_output") }
             val committed = runCatching { resolver.query(old, arrayOf(MediaStore.MediaColumns.IS_PENDING, MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.MIME_TYPE), null, null, null)?.use {
                 if (it.moveToFirst() && it.getInt(0) == 0) SavedMedia(old.toString(), it.getString(1), it.getString(2)) else null
             } }.getOrNull()
@@ -143,6 +163,7 @@ object Engine {
         }
         val target = resolver.insert(collection, values) ?: throw TransferFailure("no_space")
         journal.parentFile?.mkdirs(); journal.writeText(target.toString())
+        var published = false
         try {
             resolver.openOutputStream(target)?.use { output -> file.inputStream().use { input ->
                 val buffer = ByteArray(64 * 1024)
@@ -152,12 +173,13 @@ object Engine {
             control.check()
             values.clear(); values.put(MediaStore.MediaColumns.IS_PENDING, 0)
             if (resolver.update(target, values, null, null) != 1) throw TransferFailure("cannot_write")
+            published = true
             val result = SavedMedia(target.toString(), name, mime)
             TaskStore.get(context).recordOutput(id, index, result)
             journal.delete()
             return result
         } catch (error: Exception) {
-            runCatching { resolver.delete(target, null, null) }; journal.delete()
+            if (!published) { runCatching { resolver.delete(target, null, null) }; journal.delete() }
             throw error
         }
     }

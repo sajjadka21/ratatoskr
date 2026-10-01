@@ -37,7 +37,7 @@ export const insightEn = {
   "stats.nothing": "No finished files in this period.",
 
   "backup.title": "Backup and export",
-  "backup.hint": "A backup holds your downloads list, queues, categories, rules and settings. It never holds passwords or browser logins: those are not stored at all.",
+  "backup.hint": "A backup includes download links, file paths, history, queues, categories, rules and settings. It is not encrypted: keep it private. Browser passwords and login sessions are not included.",
   "backup.create": "Back up now",
   "backup.createHint": "A single file you can keep anywhere. Downloads can keep running while it is made.",
   "backup.createButton": "Save a backup…",
@@ -131,7 +131,7 @@ export const insightFa: Record<InsightMessageKey, string> = {
   "stats.nothing": "در این بازه فایلی تمام نشده است.",
 
   "backup.title": "پشتیبان و خروجی",
-  "backup.hint": "پشتیبان شامل فهرست دانلودها، صف‌ها، دسته‌ها، قانون‌ها و تنظیمات است. رمز عبور و اطلاعات ورود مرورگر در آن نیست، چون اصلاً ذخیره نمی‌شوند.",
+  "backup.hint": "پشتیبان شامل لینک دانلودها، مسیر فایل‌ها، تاریخچه، صف‌ها، دسته‌ها، قانون‌ها و تنظیمات است. فایل رمزگذاری نمی‌شود؛ آن را خصوصی نگه دار. رمز عبور و نشست ورود مرورگر در آن نیست.",
   "backup.create": "پشتیبان‌گیری",
   "backup.createHint": "یک فایل که می‌توانید هر جا نگهش دارید. هنگام ساختنش، دانلودها ادامه پیدا می‌کنند.",
   "backup.createButton": "ذخیره‌ی پشتیبان…",

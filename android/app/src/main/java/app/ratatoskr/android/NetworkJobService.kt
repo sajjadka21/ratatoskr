@@ -46,7 +46,7 @@ class NetworkJobService : JobService() {
         val run = ++generation
         scope.launch {
             val deadline = android.os.SystemClock.elapsedRealtime() + runBudgetMillis
-            if (!allowed()) { finishJob(params, true); return@launch }
+            if (!allowed()) { if (!stopped && run == generation) finishJob(params, true); return@launch }
             val jobs = store.list().filter { it.state in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) && !MobileRuntime.busy(it.id) }
             // Background slices are deliberately sequential; foreground user work
             // follows the selected 1–3 concurrency limit.
@@ -54,8 +54,9 @@ class NetworkJobService : JobService() {
                 if (stopped || run != generation || !allowed() || android.os.SystemClock.elapsedRealtime() >= deadline) break
                 val control = TransferControl { allowed() && !stopped && run == generation }
                 if (!MobileRuntime.claim(task.id, control)) continue
+                if (!store.begin(task.id)) { MobileRuntime.release(task.id); continue }
                 active[task.id] = control
-                store.state(task.id, TaskState.PROBING)
+                notifyTask(store.get(task.id)!!)
                 val timer = launch {
                     delay((deadline - android.os.SystemClock.elapsedRealtime()).coerceAtLeast(1))
                     MobileRuntime.stop(task.id)

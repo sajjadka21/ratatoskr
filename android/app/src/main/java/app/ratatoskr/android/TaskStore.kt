@@ -74,6 +74,12 @@ class TaskStore internal constructor(context: Context, databaseName: String = "d
         values.put("updated_at", System.currentTimeMillis())
         writableDatabase.update("tasks", values, "id=?", arrayOf(id))
     }
+    @Synchronized fun begin(id: String): Boolean {
+        val current = get(id) ?: return false
+        if (current.state !in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK)) return false
+        state(id, TaskState.PROBING)
+        return true
+    }
     @Synchronized fun updateActive(id: String, values: ContentValues): Boolean {
         val current = get(id) ?: return false
         if (current.state !in TaskPolicy.inFlight && current.state != TaskState.QUEUED) return false

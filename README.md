@@ -89,9 +89,12 @@ are still verified against the public key built into the app.
 
 ### Android
 
-Download `Ratatoskr-android.apk` from the release and open it (allow installing
-from your browser when asked). Then, in YouTube or Instagram, press **Share →
-Ratatoskr**, pick a quality and the download continues in the background. See
+Download `Ratatoskr-android.apk` (64-bit ARM, right for nearly every phone; 32-bit
+and x86 builds are listed beside it) and open it (allow installing from your
+browser when asked). Then, in YouTube, Instagram or Spotify, press **Share →
+Ratatoskr** and the download continues in the background. Direct file links are
+split over up to 8 connections for speed; Spotify tracks are saved as audio
+found on YouTube (Spotify's own streams are DRM-protected). See
 [android/README.md](android/README.md). The Android app is a preview: it builds
 in CI but has had little real-device testing.
 

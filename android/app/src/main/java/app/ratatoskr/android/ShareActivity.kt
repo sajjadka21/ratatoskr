@@ -54,6 +54,8 @@ class ShareActivity : MobileActivity() {
         val urls = LinkUtils.extractUrls(text)
         if (urls.isEmpty() || urls.any { !LinkUtils.isPublicHttpUrl(it) }) { finishWith(R.string.bad_link); return }
         val prefs = MobilePreferences(this)
+        // A Spotify track has one sensible outcome: its audio. No quality question.
+        if (urls.all { Spotify.isTrackUrl(it) }) { enqueue(urls, null, true); return }
         val allowed = TaskPolicy.mayRun(prefs.networkPolicy, MobileNetwork.snapshot(this), prefs.allowRoaming)
         if (prefs.quickDownload) { enqueue(urls, prefs.defaultHeight, prefs.defaultAudio); return }
         if (urls.size > 1 || !allowed) {

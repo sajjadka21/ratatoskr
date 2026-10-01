@@ -24,6 +24,10 @@ class MobilePreferences(context: Context) {
     var concurrency: Int
         get() = prefs.getInt("concurrency", 1).coerceIn(1, 3)
         set(value) { prefs.edit().putInt("concurrency", value.coerceIn(1, 3)).apply() }
+    /** Connections used for one file; 1 keeps the single-stream path. */
+    var connections: Int
+        get() = prefs.getInt("connections", 4).coerceIn(1, 8)
+        set(value) { prefs.edit().putInt("connections", value.coerceIn(1, 8)).apply() }
     var speedLimit: Long
         get() = prefs.getLong("speed", 0).coerceAtLeast(0)
         set(value) { prefs.edit().putLong("speed", value.coerceAtLeast(0)).apply() }

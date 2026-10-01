@@ -82,4 +82,14 @@
     <string name="notification_hint">برای دیدن پیشرفت بیرون برنامه، اجازهٔ اعلان را فعال کنید.</string>
     <string name="settings_invalid">عدد معتبر وارد کنید؛ سرعت می‌تواند صفر باشد.</string>
     <string name="search_history">جست‌وجوی دانلودها</string>
+    <string name="pause_all">توقف همه</string>
+    <string name="resume_all">ادامه همه</string>
+    <string name="clear_finished">پاک‌کردن تاریخچه</string>
+    <string name="remove">حذف</string>
+    <string name="clipboard_found">لینک کپی‌شده: %1$s</string>
+    <string name="download_now">دانلود</string>
+    <string name="dismiss">بستن</string>
+    <string name="connections_setting">اتصال هم‌زمان برای هر فایل، از ۱ تا ۸ (بیشتر = سریع‌تر)</string>
+    <string name="eta_left">%1$s مانده</string>
+    <string name="spotify_note">آهنگ‌های اسپاتیفای: صدای هم‌نام از یوتیوب دانلود می‌شود.</string>
 </resources>

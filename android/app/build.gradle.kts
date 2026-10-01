@@ -22,7 +22,7 @@ android {
             isEnable = true
             reset()
             include("arm64-v8a", "armeabi-v7a", "x86_64")
-            isUniversalApk = true
+            isUniversalApk = false   // one APK per CPU: each is about a third of the size of a universal one
         }
     }
 
@@ -51,6 +51,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    androidResources { localeFilters += listOf("en", "fa") }   // library strings in other languages are dead weight
     testOptions { unitTests.isIncludeAndroidResources = true }
 }
 

@@ -90,6 +90,14 @@ class TaskStore internal constructor(context: Context, databaseName: String = "d
     fun state(id: String, state: TaskState, error: String = "") = update(id, ContentValues().apply {
         put("state", state.name); put("error", error)
     })
+    /** Forget finished jobs; files already saved to Downloads are never touched. */
+    @Synchronized fun remove(id: String) {
+        val task = get(id) ?: return
+        if (task.state in TaskPolicy.inFlight || task.state == TaskState.QUEUED) return
+        writableDatabase.delete("outputs", "task_id=?", arrayOf(id))
+        writableDatabase.delete("tasks", "id=?", arrayOf(id))
+    }
+    @Synchronized fun clearFinished() = list().filter { it.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED, TaskState.FAILED) }.forEach { remove(it.id) }
     @Synchronized fun recover() {
         writableDatabase.beginTransaction()
         try {

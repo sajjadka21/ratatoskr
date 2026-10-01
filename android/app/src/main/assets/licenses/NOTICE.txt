@@ -1,0 +1,19 @@
+Ratatoskr Android
+Copyright (c) 2026 Ratatoskr authors
+
+Android application code, resources and Android-specific build/validation scripts are licensed under GNU GPL version 3 only (GPL-3.0-only). See android/LICENSE. This exception to the root Noncommercial licence applies to the android/ directory and scripts/build_android_native.py, scripts/verify_android_native.py, scripts/test_android_native.py and scripts/package-android-source.py. The desktop application retains its existing licence.
+
+Source for this release: https://github.com/sajjadka21/ratatoskr/tree/v1.0.2/android
+Build instructions: android/README.md and android/NATIVE_COMPATIBILITY.md
+The attached Ratatoskr-android-source.zip provides the application sources, build scripts and rebuilt WebP source.
+
+Third-party dependencies keep their own licences:
+- youtubedl-android library/common/FFmpeg integration 0.18.1: GPL-3.0; https://github.com/yausername/youtubedl-android/tree/0.18.1
+- Bundled FFmpeg and native dependencies: upstream components retain their respective GPL/LGPL/permissive licences; supplied by youtubedl-android. Upstream native sources/build packaging: https://github.com/termux/termux-packages
+- libwebp 1.6.0: BSD-style licence and patent grant; source/licence/provenance bundled under assets/third-party/libwebp-1.6.0.
+- yt-dlp: Unlicense; https://github.com/yt-dlp/yt-dlp
+- Python: PSF licence; https://www.python.org/psf/license/
+- Kotlin, AndroidX and Material Components: Apache-2.0.
+- Commons IO: Apache-2.0.
+
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License version 3 as published by the Free Software Foundation. This program is distributed without any warranty; see the full licence for details.

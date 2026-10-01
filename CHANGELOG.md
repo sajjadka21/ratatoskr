@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.2
+
+- Android: upgrade yt-dlp/FFmpeg integration to 0.18.1 and rebuild nested WebP libraries from official source for 16 KB memory pages.
+- Recursively check all 64-bit native executables/libraries, including ZIP payloads, before publishing.
+- Version 1.0.1 was cancelled before publication after the incompatible payloads were detected; its immutable tag is preserved.
+
 ## [1.0.1] — 2026-10-01
 
 ### Fixed

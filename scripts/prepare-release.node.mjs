@@ -39,13 +39,14 @@ function fixture(t) {
   writeFileSync(join(input, "release", "bundle", "msi", "Ratatoskr_1.0.1_x64_en-US.msi"), "MSI");
   writeFileSync(join(input, "portable", "Ratatoskr-portable.zip"), "ZIP");
   writeFileSync(join(input, "Ratatoskr-android.apk"), "APK");
+  writeFileSync(join(input, "Ratatoskr-android-source.zip"), "Android source");
   return { input, output: join(root, "staged"), version: "1.0.1", repository: "owner/repo", publicKey: keys.publicKey };
 }
 
 test("nested Windows and Android artifacts flatten and checksum every file once", (t) => {
   const options = fixture(t);
   const manifest = prepareRelease(options);
-  assert.equal(manifest.length, 6);
+  assert.equal(manifest.length, 7);
   assert.ok(manifest.every((line) => !line.endsWith("SHA256SUMS.txt")));
   for (const line of manifest) {
     const [digest, name] = line.split("  ");
@@ -62,6 +63,12 @@ test("incomplete releases are rejected", (t) => {
   rmSync(join(options.input, "Ratatoskr-android.apk"));
   assert.throws(() => prepareRelease(options), /Missing/);
 });
+test("Android source must be included with the binary release", (t) => {
+  const options = fixture(t);
+  rmSync(join(options.input, "Ratatoskr-android-source.zip"));
+  assert.throws(() => prepareRelease(options), /Missing release artifact: Ratatoskr-android-source.zip/);
+});
+
 test("tampered installers cannot be published with an old signature", (t) => {
   const options = fixture(t);
   writeFileSync(join(options.input, "release/bundle/nsis/Ratatoskr_1.0.1_x64-setup.exe"), "modified installer");

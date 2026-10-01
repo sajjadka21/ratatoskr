@@ -84,6 +84,10 @@ jobs:
           java-version: 17
       - name: Accept Android SDK licences (SDK is preinstalled on the runner)
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+      - name: Install the pinned native build toolchain
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" "cmake;3.22.1"'
+      - name: Test recursive native-library verification
+        run: python3 -m unittest discover -s scripts -p test_android_native.py -v
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.9
@@ -122,15 +126,21 @@ jobs:
           code=$(sed -n 's/.*versionCode = \([0-9]*\).*/\1/p' android/app/build.gradle.kts)
           grep -F "package: name='app.ratatoskr.android' versionCode='$code' versionName='$version'" apk-identity.txt
           if grep -q application-debuggable apk-identity.txt; then echo "::error::Release APK is debuggable"; exit 1; fi
+      - name: Verify all native payloads in the APK
+        run: python3 scripts/verify_android_native.py android/app/build/outputs/apk/release/app-release.apk
       - name: Remove the signing key from the runner
         if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
+      - name: Package Android source for this release
+        run: python3 scripts/package-android-source.py Ratatoskr-android-source.zip
       - run: mv android/app/build/outputs/apk/release/*.apk Ratatoskr-android.apk
       - uses: actions/upload-artifact@v4
         with:
           name: android
           if-no-files-found: error
-          path: Ratatoskr-android.apk
+          path: |
+            Ratatoskr-android.apk
+            Ratatoskr-android-source.zip
 
   publish:
     name: Publish the release

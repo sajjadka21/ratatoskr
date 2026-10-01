@@ -50,7 +50,7 @@ export function prepareRelease({ input, output, version, repository, publicKey }
   const files = collect(input);
   const installer = `Ratatoskr_${version}_x64-setup.exe`;
   const expected = [installer, `${installer}.sig`, `Ratatoskr_${version}_x64_en-US.msi`,
-    "Ratatoskr-portable.zip", "Ratatoskr-android.apk", "latest.json"];
+    "Ratatoskr-portable.zip", "Ratatoskr-android.apk", "Ratatoskr-android-source.zip", "latest.json"];
   for (const name of expected) {
     if (!files.has(name)) throw new Error(`Missing release artifact: ${name}`);
   }

@@ -22,18 +22,36 @@ object LinkUtils {
         catch (e: IllegalArgumentException) { return false }
         if (keys.any { it in setOf("access_token", "authorization", "password", "sessionid", "cookie") }) return false
         val host = uri.host?.lowercase()?.trimEnd('.') ?: return false
+        if (uri.port != -1 && uri.port !in 1..65535) return false
+        if (host.startsWith("0x") || (host.all { it.isDigit() || it == '.' } &&
+            !Regex("^(?:0|[1-9][0-9]{0,2})(?:\\.(?:0|[1-9][0-9]{0,2})){3}$").matches(host))) return false
         if (host == "localhost" || listOf(".local", ".internal", ".localhost", ".lan").any { host.endsWith(it) }) {
             return false
         }
-        val literal = Regex("""^(\d{1,3}(\.\d{1,3}){3}|\[?[0-9a-f:]+\]?)$""").matches(host)
+        val literal = Regex("""^(\d{1,3}(\.\d{1,3}){3}|\[?[0-9a-f:.]+\]?)$""").matches(host)
         if (literal) {
             val address = try { InetAddress.getByName(host.trim('[', ']')) } catch (e: Exception) { return false }
+            val bytes = address.address.map { it.toInt() and 255 }
+            if (bytes.size == 4 && (bytes[0] == 0 || bytes[0] >= 224 ||
+                (bytes[0] == 100 && bytes[1] in 64..127) || (bytes[0] == 198 && bytes[1] in 18..19))) return false
             return !(address.isAnyLocalAddress || address.isLoopbackAddress || address.isLinkLocalAddress ||
                 address.isSiteLocalAddress || address.isMulticastAddress ||
                 // unique-local IPv6 (fc00::/7)
                 (address.address.size == 16 && (address.address[0].toInt() and 0xFE) == 0xFC))
         }
         return '.' in host
+    }
+
+    /** Decode exactly once, then apply the same destination policy as shared links. */
+    fun handoffUrl(payload: String?): String? {
+        if (payload == null || payload.toByteArray(Charsets.UTF_8).size > 2000) return null
+        val uri = try { URI(payload) } catch (e: Exception) { return null }
+        if (uri.scheme != "ratatoskr" || uri.host != "add" || uri.port != -1 ||
+            uri.userInfo != null || !uri.rawPath.isNullOrEmpty() || uri.rawFragment != null) return null
+        val query = uri.rawQuery ?: return null
+        if (!query.startsWith("url=") || '&' in query) return null
+        val url = try { URLDecoder.decode(query.substring(4), "UTF-8") } catch (e: Exception) { return null }
+        return url.takeIf { isPublicHttpUrl(it) }
     }
 
     /** Label the actual source heights; never advertise 480p for a 540p source. */

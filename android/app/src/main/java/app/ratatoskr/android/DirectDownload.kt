@@ -54,6 +54,7 @@ object DirectDownload {
             }
             val range = Regex("bytes (\\d+)-(\\d+)/(\\d+)").matchEntire(response.contentRange.orEmpty())
             val total = range?.groupValues?.get(3)?.toLongOrNull() ?: response.contentLength
+            val expectedBody = response.contentLength ?: range?.let { it.groupValues[2].toLong() - it.groupValues[1].toLong() + 1 }
             Engine.ensureSpace(directory, ((total ?: (32L * 1024 * 1024)) - offset).coerceAtLeast(0))
             saved = JSONObject().put("source", url).put("name", name).put("etag", response.validators.etag.orEmpty())
                 .put("modified", response.validators.lastModified.orEmpty()).put("total", total ?: -1)
@@ -69,7 +70,7 @@ object DirectDownload {
                 while (true) {
                     control.check(); val count = input.read(buffer); if (count < 0) break
                     output.write(buffer, 0, count); received += count
-                    if (response.contentLength != null && received > response.contentLength!!) throw TransferFailure("invalid_range")
+                    if (expectedBody != null && received > expectedBody) throw TransferFailure("invalid_range")
                     if (rate > 0) {
                         val target = received * 1000 / rate
                         while (target > android.os.SystemClock.elapsedRealtime() - start) { control.check(); Thread.sleep(minOf(100, target - (android.os.SystemClock.elapsedRealtime() - start)).coerceAtLeast(1)) }
@@ -85,7 +86,7 @@ object DirectDownload {
                 output.fd.sync()
             } }
             control.check()
-            if (!HttpResumePolicy.transferFinished(response.contentLength, received) || !HttpResumePolicy.transferFinished(total, partial.length())) throw TransferFailure("incomplete")
+            if (!HttpResumePolicy.transferFinished(expectedBody, received) || !HttpResumePolicy.transferFinished(total, partial.length())) throw TransferFailure("incomplete")
             store.update(task.id, ContentValues().apply { put("bytes_done", partial.length()); put("total_bytes", total ?: partial.length()); put("file_name", name) })
             return complete(partial, File(directory, name), journal, saved)
         } finally { connection.disconnect() }

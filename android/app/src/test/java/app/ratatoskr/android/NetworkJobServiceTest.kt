@@ -120,7 +120,7 @@ class NetworkJobServiceTest {
     private fun awaitMain(message: String, condition: () -> Boolean) {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
         do {
-            shadowOf(Looper.getMainLooper()).idle()
+            shadowOf(Looper.getMainLooper()).idleFor(10, TimeUnit.MILLISECONDS)
             if (condition()) return
             Thread.sleep(5)
         } while (System.nanoTime() < deadline)
@@ -158,12 +158,12 @@ class NetworkJobServiceTest {
     }
 
     @Test fun chunkDeadlineDoesNotTurnAnExplicitUserPauseIntoAutomaticRetry() {
-        service.runBudgetMillis = 10
+        service.runBudgetMillis = 1_000
         afterRelease = { control, _, _ -> control.check() }
         val (task, _) = start()
         store.state(task.id, TaskState.PAUSED)
         MobileRuntime.stop(task.id)
-        shadowOf(Looper.getMainLooper()).idleFor(20, TimeUnit.MILLISECONDS)
+        shadowOf(Looper.getMainLooper()).idleFor(1_100, TimeUnit.MILLISECONDS)
         finishTransfer()
         assertEquals(TaskState.PAUSED, store.get(task.id)!!.state)
         assertEquals("", store.get(task.id)!!.error)
@@ -172,10 +172,10 @@ class NetworkJobServiceTest {
     }
 
     @Test fun boundedSliceCheckpointsAndRequestsAnotherOsWindow() {
-        service.runBudgetMillis = 10
+        service.runBudgetMillis = 1_000
         afterRelease = { control, _, _ -> control.check() }
         val (task, parameters) = start()
-        shadowOf(Looper.getMainLooper()).idleFor(20, TimeUnit.MILLISECONDS)
+        shadowOf(Looper.getMainLooper()).idleFor(1_100, TimeUnit.MILLISECONDS)
         assertTrue("old writer remains owned until it returns", MobileRuntime.busy(task.id))
         finishTransfer()
         assertEquals(TaskState.QUEUED, store.get(task.id)!!.state)

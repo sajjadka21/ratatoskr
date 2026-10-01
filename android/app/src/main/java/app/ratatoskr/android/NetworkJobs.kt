@@ -13,7 +13,11 @@ object NetworkJobs {
     const val JOB_ID = 0x524154
     fun schedule(context: Context, store: TaskStore = TaskStore.get(context)) {
         val scheduler = context.getSystemService(JobScheduler::class.java)
-        if (store.list().none { it.state in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) }) { scheduler.cancel(JOB_ID); return }
+        val tasks = store.list()
+        if (tasks.none { it.state in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) }) {
+            if (tasks.none { MobileRuntime.busy(it.id) }) scheduler.cancel(JOB_ID)
+            return
+        }
         val prefs = MobilePreferences(context)
         val network = NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
         when (prefs.networkPolicy) {
@@ -22,7 +26,11 @@ object NetworkJobs {
             NetworkPolicy.ANY -> Unit
         }
         if (!prefs.allowRoaming) network.addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING)
-        scheduler.schedule(JobInfo.Builder(JOB_ID, ComponentName(context, NetworkJobService::class.java))
-            .setRequiredNetwork(network.build()).setPersisted(true).setBackoffCriteria(30000, JobInfo.BACKOFF_POLICY_EXPONENTIAL).build())
+        val requirement = network.build()
+        val component = ComponentName(context, NetworkJobService::class.java)
+        val existing = scheduler.getPendingJob(JOB_ID)
+        if (existing?.service == component && existing.requiredNetwork == requirement) return
+        scheduler.schedule(JobInfo.Builder(JOB_ID, component)
+            .setRequiredNetwork(requirement).setPersisted(true).setBackoffCriteria(30000, JobInfo.BACKOFF_POLICY_EXPONENTIAL).build())
     }
 }

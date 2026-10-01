@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { CheckCircle2, ExternalLink, FolderOpen, Plug, RotateCcw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useI18n } from "../../i18n/I18n";
 
@@ -36,14 +36,20 @@ const NAMES: Record<string, string> = {
 export function BrowserSection({ onError }: { onError: (message: string) => void }) {
   const { t, fmt } = useI18n();
   const [connection, setConnection] = useState<BrowserConnection | null>(null);
+  const requestSequence = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
-    const refresh = () => invoke<BrowserConnection>("get_browser_connection")
+    const refresh = () => {
+      const request = ++requestSequence.current;
+      return invoke<BrowserConnection>("get_browser_connection")
       .then((value) => {
-        if (!cancelled) setConnection(value);
+        if (!cancelled && request === requestSequence.current) setConnection(value);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled && request === requestSequence.current) setConnection(current => current ? { ...current, connected: [] } : current);
+      });
+    };
     void refresh();
     const timer = window.setInterval(() => void refresh(), 5000);
     return () => {
@@ -58,14 +64,17 @@ export function BrowserSection({ onError }: { onError: (message: string) => void
     invoke(command, args).catch((reason) => onError(String(reason)));
 
   async function reconnect() {
+    const request = ++requestSequence.current;
     try {
-      setConnection(await invoke<BrowserConnection>("connect_browsers"));
+      const value = await invoke<BrowserConnection>("connect_browsers");
+      if (request === requestSequence.current) setConnection(value);
     } catch (reason) {
+      if (request === requestSequence.current) setConnection(current => current ? { ...current, connected: [] } : current);
       onError(String(reason));
     }
   }
 
-  const connected = connection.connected ?? [];
+  const connected = connection.hostFound ? connection.connected ?? [] : [];
   const registered = connected.map((name) => NAMES[name] ?? name).join(fmt.language === "fa" ? "، " : ", ");
 
   return (

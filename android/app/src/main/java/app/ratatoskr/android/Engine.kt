@@ -32,7 +32,10 @@ object Engine {
             addOption("--yes-playlist"); addOption("--playlist-end", "51"); addOption("--no-warnings")
             addOption("--socket-timeout", "15"); addOption("--no-cache-dir")
         }
-        val response = YoutubeDL.getInstance().execute(request, processId)
+        val response = SafeProxy(check).use { proxy ->
+            request.addOption("--proxy", proxy.url)
+            YoutubeDL.getInstance().execute(request, processId)
+        }
         check()
         val info = MediaMetadata.parse(canonical, response.out)
         if (cache.size >= 10) cache.clear()
@@ -82,11 +85,20 @@ object Engine {
                     addOption("-o", File(directory, "%(title).80s [%(id)s].%(ext)s").absolutePath)
                     val rate = MobilePreferences(context).speedLimit
                     if (rate > 0) addOption("--limit-rate", rate.toString())
-                    addOption("-f", MediaOptions.format(task.height, task.audioOnly || item.kind == "audio"))
+                    // Restrict every fallback to protocols that use the guarded native transport.
+                    val guardedFormat = MediaOptions.format(task.height, task.audioOnly || item.kind == "audio")
+                        .split('/').joinToString("/") { fallback -> fallback.split('+').joinToString("+") {
+                            it + "[protocol~='^(https?|m3u8_native|http_dash_segments)$']"
+                        } }
+                    addOption("-f", guardedFormat)
                     if (task.audioOnly || item.kind == "audio") { addOption("-x"); addOption("--audio-format", "m4a") }
                     else addOption("--merge-output-format", "mp4")
                 }
-                YoutubeDL.getInstance().execute(request, task.id) { value, _, _ -> progress(value.coerceAtMost(98f)) }
+                SafeProxy(control::check).use { proxy ->
+                    request.addOption("--proxy", proxy.url)
+                    request.addOption("--downloader", "native")
+                    YoutubeDL.getInstance().execute(request, task.id) { value, _, _ -> progress(value.coerceAtMost(98f)) }
+                }
                 control.check(); onState(TaskState.MERGING)
                 val files = directory.listFiles().orEmpty().filter { it.isFile && it.length() > 0 &&
                     it.extension.lowercase() in setOf("mp4", "m4a", "mp3", "webm", "mkv", "opus", "ogg", "aac", "wav", "flac", "mov") }

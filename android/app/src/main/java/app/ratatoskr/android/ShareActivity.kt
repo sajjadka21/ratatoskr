@@ -47,7 +47,9 @@ class ShareActivity : MobileActivity() {
         box = column().apply { setPadding(dp(20), dp(20), dp(20), dp(16)); setBackgroundColor(paper) }
         setContentView(ScrollView(this).apply { addView(box) })
         model = ViewModelProvider(this)[ShareModel::class.java]
-        val shared = intent?.getStringExtra(Intent.EXTRA_TEXT)
+        val shared = if (intent?.action == Intent.ACTION_VIEW) {
+            LinkUtils.handoffUrl(intent?.dataString) ?: run { finishWith(R.string.bad_link); return }
+        } else intent?.getStringExtra(Intent.EXTRA_TEXT)
         val text = shared ?: if (intent?.getBooleanExtra(EXTRA_FROM_CLIPBOARD, false) == true) clipboardText() else null
         val urls = LinkUtils.extractUrls(text)
         if (urls.isEmpty() || urls.any { !LinkUtils.isPublicHttpUrl(it) }) { finishWith(R.string.bad_link); return }

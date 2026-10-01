@@ -6,6 +6,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { prepareRelease, verifyUpdater } from "./prepare-release.mjs";
 
+const abiPackages = [
+  "Ratatoskr-android-arm64-v8a.apk",
+  "Ratatoskr-android-armeabi-v7a.apk",
+  "Ratatoskr-android-x86_64.apk",
+];
+const browserPackages = [
+  "Ratatoskr-extension-chrome.zip",
+  "Ratatoskr-extension-edge.zip",
+  "Ratatoskr-extension-firefox.zip",
+];
+
 function signed(data, algorithm = "ED") {
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
   const id = Buffer.from("12345678");
@@ -40,13 +51,24 @@ function fixture(t) {
   writeFileSync(join(input, "portable", "Ratatoskr-portable.zip"), "ZIP");
   writeFileSync(join(input, "Ratatoskr-android.apk"), "APK");
   writeFileSync(join(input, "Ratatoskr-android-source.zip"), "Android source");
+  mkdirSync(join(input, "android-abis"));
+  mkdirSync(join(input, "browser-packages"));
+  // These are artifact-manifest fixtures, not APK/ZIP compatibility checks.
+  // Only the updater envelope above uses a real cryptographic signature.
+  for (const name of abiPackages) writeFileSync(join(input, "android-abis", name), `Fixture APK: ${name}`);
+  for (const name of browserPackages) writeFileSync(join(input, "browser-packages", name), `Fixture ZIP: ${name}`);
   return { input, output: join(root, "staged"), version: "1.0.1", repository: "owner/repo", publicKey: keys.publicKey };
 }
 
-test("nested Windows and Android artifacts flatten and checksum every file once", (t) => {
+test("all thirteen Windows, Android, source, updater and browser artifacts flatten and checksum every file once", (t) => {
   const options = fixture(t);
   const manifest = prepareRelease(options);
-  assert.equal(manifest.length, 7);
+  assert.equal(manifest.length, 13);
+  const staged = manifest.map((line) => line.split("  ")[1]);
+  assert.equal(new Set(staged).size, 13);
+  for (const name of [...abiPackages, ...browserPackages, "Ratatoskr-android.apk", "Ratatoskr-android-source.zip", "latest.json"]) {
+    assert.ok(staged.includes(name), `mandatory payload ${name}`);
+  }
   assert.ok(manifest.every((line) => !line.endsWith("SHA256SUMS.txt")));
   for (const line of manifest) {
     const [digest, name] = line.split("  ");
@@ -67,6 +89,36 @@ test("Android source must be included with the binary release", (t) => {
   const options = fixture(t);
   rmSync(join(options.input, "Ratatoskr-android-source.zip"));
   assert.throws(() => prepareRelease(options), /Missing release artifact: Ratatoskr-android-source.zip/);
+});
+
+for (const name of abiPackages) {
+  test(`a missing Android ABI package is rejected: ${name}`, (t) => {
+    const options = fixture(t);
+    rmSync(join(options.input, "android-abis", name));
+    assert.throws(() => prepareRelease(options), error => error.message === `Missing release artifact: ${name}`);
+  });
+}
+
+for (const name of browserPackages) {
+  test(`a missing browser extension package is rejected: ${name}`, (t) => {
+    const options = fixture(t);
+    rmSync(join(options.input, "browser-packages", name));
+    assert.throws(() => prepareRelease(options), error => error.message === `Missing release artifact: ${name}`);
+  });
+}
+
+test("an unrelated file cannot silently enter an otherwise complete release", (t) => {
+  const options = fixture(t);
+  writeFileSync(join(options.input, "unrelated-notes.txt"), "Not a release payload");
+  assert.throws(() => prepareRelease(options), /Unexpected files/);
+});
+
+test("an unrelated file cannot substitute for a missing mandatory package even when the count matches", (t) => {
+  const options = fixture(t);
+  const name = "Ratatoskr-extension-firefox.zip";
+  rmSync(join(options.input, "browser-packages", name));
+  writeFileSync(join(options.input, "other-extension.zip"), "Wrong package");
+  assert.throws(() => prepareRelease(options), error => error.message === `Missing release artifact: ${name}`);
 });
 
 test("tampered installers cannot be published with an old signature", (t) => {

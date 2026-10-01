@@ -9,6 +9,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -28,6 +30,7 @@ class NetworkJobsTest {
     private lateinit var databaseName: String
     private lateinit var scheduler: JobScheduler
     private lateinit var preferences: MobilePreferences
+    private val ownedIds = mutableListOf<String>()
 
     @Before fun createIsolatedNetworkQueue() {
         context = RuntimeEnvironment.getApplication()
@@ -40,6 +43,7 @@ class NetworkJobsTest {
     }
 
     @After fun removeOnlyTestQueueAndPreferences() {
+        ownedIds.forEach { MobileRuntime.clearResume(it); MobileRuntime.release(it) }
         scheduler.cancelAll()
         store.close()
         context.deleteDatabase(databaseName)
@@ -126,5 +130,75 @@ class NetworkJobsTest {
         NetworkJobs.schedule(context, store)
         assertEquals(1, scheduler.allPendingJobs.size)
         assertTrue(scheduler.getPendingJob(NetworkJobs.JOB_ID)!!.requiredNetwork!!.hasTransport(NetworkCapabilities.TRANSPORT_WIFI))
+    }
+
+    @Test fun reopeningTheAppDoesNotCancelTheOnlyDownloadWhileItsWorkerOwnsIt() {
+        MobileRuntime.initialize(store)
+        val task = queuedTask(TaskState.WAITING_NETWORK)
+        val originalJob = scheduledJob()
+        val control = TransferControl { true }
+        ownedIds.add(task.id)
+        assertTrue(MobileRuntime.claim(task.id, control))
+        store.state(task.id, TaskState.DOWNLOADING)
+
+        // MainActivity calls schedule again when reopened. No queued task is
+        // left, but the running job must retain the worker that owns its file.
+        NetworkJobs.schedule(context, store)
+
+        assertSame(originalJob, scheduler.getPendingJob(NetworkJobs.JOB_ID))
+        assertTrue(MobileRuntime.busy(task.id))
+        assertEquals(TaskState.DOWNLOADING, store.get(task.id)!!.state)
+        control.check()
+    }
+
+    @Test fun anotherQueuedDownloadDoesNotReplaceTheRunningJobWithUnchangedPolicy() {
+        MobileRuntime.initialize(store)
+        val active = queuedTask(TaskState.WAITING_NETWORK)
+        val originalJob = scheduledJob()
+        ownedIds.add(active.id)
+        assertTrue(MobileRuntime.claim(active.id, TransferControl { true }))
+        store.state(active.id, TaskState.DOWNLOADING)
+        val next = queuedTask()
+
+        NetworkJobs.schedule(context, store)
+
+        assertSame("Scheduling the next item must not replace and stop its current worker",
+            originalJob, scheduler.getPendingJob(NetworkJobs.JOB_ID))
+        assertEquals(1, scheduler.allPendingJobs.size)
+        assertTrue(MobileRuntime.busy(active.id))
+        assertEquals(TaskState.QUEUED, store.get(next.id)!!.state)
+    }
+
+    @Test fun anExplicitPolicyChangeStillReplacesTheOldJobWhileAWorkerIsLive() {
+        MobileRuntime.initialize(store)
+        val active = queuedTask(TaskState.WAITING_NETWORK)
+        preferences.networkPolicy = NetworkPolicy.ANY
+        val originalJob = scheduledJob()
+        ownedIds.add(active.id)
+        assertTrue(MobileRuntime.claim(active.id, TransferControl { true }))
+        store.state(active.id, TaskState.DOWNLOADING)
+        queuedTask()
+        preferences.networkPolicy = NetworkPolicy.WIFI_ONLY
+
+        NetworkJobs.schedule(context, store)
+
+        val changed = scheduler.getPendingJob(NetworkJobs.JOB_ID)!!
+        assertNotSame(originalJob, changed)
+        assertTrue(changed.requiredNetwork!!.hasTransport(NetworkCapabilities.TRANSPORT_WIFI))
+        assertEquals(1, scheduler.allPendingJobs.size)
+    }
+
+    @Test fun terminalTasksWithNoLiveOwnerCancelTheirObsoleteScheduledJob() {
+        listOf(TaskState.COMPLETED, TaskState.CANCELLED).forEach { terminal ->
+            val task = queuedTask(TaskState.WAITING_NETWORK)
+            scheduledJob()
+            assertFalse(MobileRuntime.busy(task.id))
+            store.state(task.id, terminal)
+
+            NetworkJobs.schedule(context, store)
+
+            assertNull(scheduler.getPendingJob(NetworkJobs.JOB_ID))
+            assertEquals(terminal, store.get(task.id)!!.state)
+        }
     }
 }

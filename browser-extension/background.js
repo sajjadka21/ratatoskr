@@ -63,7 +63,9 @@ async function handoff(message) {
     if (message.type === "ping") {
       // Store a browser family only, never its user-agent or browsing history.
       const agent = navigator.userAgent;
-      message = { ...message, browser: /Firefox\//.test(agent) ? "firefox" : /Edg\//.test(agent) ? "edge" : navigator.brave ? "brave" : "chrome" };
+      const firefox = /Firefox\//.test(agent);
+      const permitted = !firefox || await chrome.permissions.contains({ data_collection: ["technicalAndInteraction"] }).catch(() => false);
+      message = permitted ? { ...message, browser: firefox ? "firefox" : /Edg\//.test(agent) ? "edge" : navigator.brave ? "brave" : "chrome" } : { ...message };
     }
     const response = await chrome.runtime.sendNativeMessage(NATIVE_HOST, message);
     return response ?? { accepted: false, error: "no response" };

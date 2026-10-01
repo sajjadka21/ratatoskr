@@ -1,0 +1,9 @@
+.mobile-handoff { width: min(440px, calc(100vw - 32px)); box-sizing: border-box; padding: 28px; border: 1px solid var(--border-subtle); border-radius: 18px; background: var(--bg-surface); color: var(--text-primary); }
+.mobile-handoff::backdrop { background: rgb(0 0 0 / .6); }
+.mobile-handoff h2 { margin: 12px 0; padding-inline-end: 28px; font-size: 20px; }
+.mobile-handoff p { line-height: 1.8; font-size: 14px; }
+.mobile-handoff__close { position: absolute; inset-inline-end: 12px; top: 12px; display: grid; place-items: center; width: 44px; height: 44px; background: transparent; color: inherit; border: 0; border-radius: 8px; cursor: pointer; }
+.mobile-handoff__close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mobile-handoff__qr { display: flex; justify-content: center; margin: 20px auto; background: white; padding: 8px; border-radius: 12px; width: fit-content; max-width: 100%; }
+.mobile-handoff__qr svg { max-width: 100%; height: auto; }
+.mobile-handoff__privacy { color: var(--text-muted); }

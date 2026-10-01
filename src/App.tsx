@@ -18,6 +18,7 @@ import { Welcome } from "./components/onboarding/Welcome";
 import { SHOW_WELCOME_EVENT } from "./utils/appEvents";
 import { BulkActionBar, type BulkAction } from "./components/downloads/BulkActionBar";
 import { DownloadContextMenu } from "./components/downloads/DownloadContextMenu";
+import { MobileHandoffDialog } from "./components/downloads/MobileHandoffDialog";
 import { DownloadDetailsPanel, type ActivityEntry } from "./components/downloads/DownloadDetailsPanel";
 import { DownloadTable, type SortKey, type SortState } from "./components/downloads/DownloadTable";
 import { RefreshLinkDialog } from "./components/downloads/RefreshLinkDialog";
@@ -199,6 +200,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   const lastEventAt = useRef(new Map<string, number>());
 
   const [contextMenu, setContextMenu] = useState<{ item: DownloadListItem; x: number; y: number } | null>(null);
+  const [phoneSource, setPhoneSource] = useState<string | null>(null);
   const [removeCandidates, setRemoveCandidates] = useState<DownloadListItem[]>([]);
   const [removingHistory, setRemovingHistory] = useState(false);
   const [removeHistoryError, setRemoveHistoryError] = useState<string | null>(null);
@@ -1112,6 +1114,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     paletteOpen ||
     welcomeOpen ||
     Boolean(contextMenu) ||
+    phoneSource !== null ||
     removeCandidates.length > 0 ||
     Boolean(refreshCandidate);
   const keyboard = useRef<(event: KeyboardEvent) => void>(() => {});
@@ -1420,6 +1423,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
       </AppShell>
 
       <DownloadContextMenu
+        onSendToPhone={(item) => setPhoneSource(item.sourceUrl)}
         item={contextMenu?.item ?? null}
         queues={queues}
         x={contextMenu?.x ?? 0}
@@ -1449,6 +1453,8 @@ function App({ preferences, onPreferencesChange }: AppProps) {
         }}
         onError={reportError}
       />
+
+      {phoneSource !== null ? <MobileHandoffDialog source={phoneSource} onClose={() => setPhoneSource(null)} /> : null}
 
       <RemoveHistoryDialog
         items={removeCandidates}

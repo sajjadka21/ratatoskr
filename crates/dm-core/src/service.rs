@@ -2428,6 +2428,12 @@ impl DownloadService {
         Ok(())
     }
 
+    /// The parts a segmented download is split into, in order, for the
+    /// "Part info" view. Empty for single-stream and unstarted downloads.
+    pub fn download_segments(&self, download_id: &str) -> Result<Vec<dm_common::DownloadSegment>> {
+        Ok(self.storage.list_download_segments(download_id)?)
+    }
+
     pub fn download_checks(&self, download_id: &str) -> Result<Option<dm_storage::DownloadChecks>> {
         Ok(self.storage.get_download_checks(download_id)?)
     }
@@ -4158,6 +4164,49 @@ mod tests {
             invalid,
             DownloadServiceError::Download(DownloadError::UnsupportedScheme(_))
         ));
+    }
+
+    #[test]
+    fn download_segments_lists_the_stored_parts_in_order() {
+        let harness = harness();
+        let created = harness
+            .service
+            .create_task("https://example.com/parts.bin")
+            .unwrap();
+        assert!(
+            harness
+                .service
+                .download_segments(&created.id)
+                .unwrap()
+                .is_empty()
+        );
+
+        let part =
+            |index: u32, start: u64, end: u64, done: u64, status| dm_common::DownloadSegment {
+                download_id: created.id.clone(),
+                segment_index: index,
+                start_byte: start,
+                end_byte: end,
+                downloaded_bytes: done,
+                temp_path: format!("parts.{index}.part"),
+                status,
+            };
+        harness
+            .storage
+            .replace_download_segments(
+                &created.id,
+                &[
+                    part(0, 0, 99, 100, dm_common::SegmentStatus::Completed),
+                    part(1, 100, 199, 40, dm_common::SegmentStatus::Downloading),
+                ],
+            )
+            .unwrap();
+
+        let parts = harness.service.download_segments(&created.id).unwrap();
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0].segment_index, 0);
+        assert_eq!(parts[1].downloaded_bytes, 40);
+        assert_eq!(parts[1].status, dm_common::SegmentStatus::Downloading);
     }
 
     fn size_rule(name: &str) -> DownloadRule {

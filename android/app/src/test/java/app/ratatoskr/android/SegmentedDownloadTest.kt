@@ -34,6 +34,7 @@ class SegmentedDownloadTest {
     @Volatile private var sendEtag = true
     @Volatile private var failFirstRange = false
     private val failed = AtomicInteger()
+    @Volatile private var slowFirstPart = false
     private val base get() = "http://127.0.0.1:${server.address.port}/big.bin"
     private val control = TransferControl { true }
 
@@ -63,7 +64,10 @@ class SegmentedDownloadTest {
             if (failFirstRange && from > 0 && failed.getAndIncrement() == 0) {
                 out.write(payload, from, 1000); out.flush(); ex.close(); return
             }
-            out.write(payload, from, to - from + 1)
+            if (slowFirstPart && from == 0 && to > 0) {
+                var at = from
+                while (at <= to) { val n = minOf(32 * 1024, to - at + 1); out.write(payload, at, n); out.flush(); at += n; Thread.sleep(8) }
+            } else out.write(payload, from, to - from + 1)
         }
     }
 
@@ -101,6 +105,23 @@ class SegmentedDownloadTest {
         assertTrue(rangeRequests.get() >= 5)
         assertFalse(File(directory, "segments.part").exists())
         assertFalse(File(directory, "segments.json").exists())
+    }
+
+    @Test fun aFastConnectionTakesOverTheTailOfASlowOne() {
+        slowFirstPart = true
+        val file = run(connections = 2)
+        assertArrayEquals(payload, file.readBytes())
+        // Two initial parts plus at least one stolen tail (and the size probe).
+        assertTrue("requests: ${rangeRequests.get()}", rangeRequests.get() >= 4)
+    }
+
+    @Test fun stealingNeverSplitsSmallRemainders() {
+        val plan = SegmentedDownload.Plan("u", 3L * 1024 * 1024, "n", HttpValidators("\"x\""), listOf(Segment(0, 3L * 1024 * 1024, 2L * 1024 * 1024 + 500_000)))
+        assertEquals(null, SegmentedDownload.steal(plan))
+        val big = SegmentedDownload.Plan("u", 10L * 1024 * 1024, "n", HttpValidators("\"x\""), listOf(Segment(0, 10L * 1024 * 1024, 0)))
+        val tail = SegmentedDownload.steal(big)!!
+        assertEquals(5L * 1024 * 1024, tail.start)
+        assertEquals(10L * 1024 * 1024, big.segments.sumOf { it.length })
     }
 
     @Test fun usesTheNameChosenByTheUser() {

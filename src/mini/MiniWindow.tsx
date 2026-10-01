@@ -39,6 +39,7 @@ import {
 } from "../utils/videoPages";
 
 import { DropBox } from "./DropBox";
+import { PartInfo } from "./PartInfo";
 
 import "../components/downloads/AddDownloadModal.css";
 import "./MiniWindow.css";
@@ -836,6 +837,15 @@ function TaskView({
             </div>
           </dl>
         )}
+        {!failed ? <PartInfo id={id} live={stoppable} /> : null}
+        {!failed && item.rangeSupported !== null ? (
+          <div className="mini__resume">
+            <span>{t("mini.resumeSupport")}</span>
+            <strong className={item.rangeSupported ? "mini__yes" : "mini__no"}>
+              {item.rangeSupported ? t("mini.yes") : t("mini.no")}
+            </strong>
+          </div>
+        ) : null}
         {!failed ? <AfterThis id={id} /> : null}
         {error ? <div className="mini__error">{error}</div> : null}
       </div>

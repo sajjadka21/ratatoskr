@@ -9,7 +9,7 @@ import java.net.URI
 import java.util.concurrent.atomic.AtomicLong
 
 /** One byte range of the file. [done] counts bytes that are on disk and synced. */
-class Segment(val start: Long, val length: Long, @Volatile var done: Long = 0) {
+class Segment(val start: Long, @Volatile var length: Long, @Volatile var done: Long = 0) {
     val end get() = start + length - 1
     val finished get() = done >= length
 }
@@ -50,7 +50,7 @@ object SegmentedDownload {
         if (File(directory, "transfer.json").exists() || connections <= 1) return single()
         val saved = readJournal(journal, url)
         val plan = saved ?: probe(url, connections, control, openConnection) ?: return single()
-        val segments = plan.segments
+        val segments = plan.segments   // grows when a fast connection takes over part of a slow one
         val part = File(directory, PART)
         if (saved == null || !part.isFile || part.length() != plan.total) {
             segments.forEach { it.done = 0 }
@@ -73,10 +73,16 @@ object SegmentedDownload {
             progress(segments.sumOf { it.done }, plan.total)
         }
 
-        val workers = segments.filter { !it.finished }.map { segment ->
+        val workers = segments.toList().filter { !it.finished }.map { segment ->
             Thread {
                 try {
-                    runSegment(plan, segment, part, url, control, openConnection, received, begin, startBytes, rate) { report() }
+                    // A connection that finishes early takes over half of the slowest part, so
+                    // the last bytes are never left to a single slow connection.
+                    var current: Segment? = segment
+                    while (current != null) {
+                        runSegment(plan, current, part, url, control, openConnection, received, begin, startBytes, rate) { report() }
+                        current = if (failure.get() == null) steal(plan) else null
+                    }
                 } catch (error: Throwable) {
                     failure.compareAndSet(null, error)
                 }
@@ -110,7 +116,21 @@ object SegmentedDownload {
         return output
     }
 
-    class Plan(val source: String, val total: Long, val name: String, val validators: HttpValidators, val segments: List<Segment>)
+    class Plan(val source: String, val total: Long, val name: String, val validators: HttpValidators, initial: List<Segment>) {
+        val segments: MutableList<Segment> = java.util.concurrent.CopyOnWriteArrayList(initial)
+    }
+
+    /** Splits the part with the most left in two and returns the new second half, if worth it. */
+    internal fun steal(plan: Plan): Segment? = synchronized(plan) {
+        val victim = plan.segments.filter { !it.finished }.maxByOrNull { it.length - it.done } ?: return null
+        val remaining = victim.length - victim.done
+        if (remaining < 2 * SegmentPlanner.MIN_SEGMENT) return null
+        val keep = victim.done + remaining / 2
+        val tail = Segment(victim.start + keep, victim.length - keep)
+        victim.length = keep
+        plan.segments.add(tail)
+        tail
+    }
 
     /** Ask for the first byte: a 206 with a total proves ranges work and gives size, name and identity. */
     internal fun probe(url: String, connections: Int, control: TransferControl, open: (String, Map<String, String>, () -> Unit) -> HttpConnection): Plan? {

@@ -265,6 +265,20 @@ pub struct DownloadChecksResponse {
     pub command_error: Option<String>,
 }
 
+/// One part of a segmented download, for the "Part info" view.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadPartResponse {
+    pub index: u32,
+    /// First byte of the file this part covers.
+    pub start: u64,
+    /// Bytes this part covers in total.
+    pub total: u64,
+    pub downloaded: u64,
+    /// `pending`, `downloading` or `completed`.
+    pub status: String,
+}
+
 /// After-download steps that run for every finished download.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

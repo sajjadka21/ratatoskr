@@ -31,7 +31,7 @@ use dm_ipc::{
     NetworkSettingsResponse, QueueResponse, QueueRunnerEventResponse, QueueScheduleResponse,
     RuleExplanationResponse, TrafficSummaryResponse, TransferProgressResponse,
 };
-use dm_ipc::{DownloadChecksResponse, PostProcessSettingsResponse};
+use dm_ipc::{DownloadChecksResponse, DownloadPartResponse, PostProcessSettingsResponse};
 use dm_ipc::{EngineSettingsResponse, FfmpegStatusResponse, StreamVariantResponse};
 use dm_storage::Storage;
 use std::{
@@ -1707,6 +1707,29 @@ fn get_download_checks(
         .download_checks(&download_id)
         .map(download_checks_response)
         .map_err(|error| error.to_string())
+}
+
+/// The parts of a segmented download with how much each has received.
+#[tauri::command]
+fn get_download_parts(
+    state: State<'_, AppState>,
+    download_id: String,
+) -> Result<Vec<DownloadPartResponse>, String> {
+    state
+        .downloads
+        .download_segments(&download_id)
+        .map(|segments| segments.iter().map(part_response).collect())
+        .map_err(|error| error.to_string())
+}
+
+fn part_response(segment: &dm_common::DownloadSegment) -> DownloadPartResponse {
+    DownloadPartResponse {
+        index: segment.segment_index,
+        start: segment.start_byte,
+        total: segment.expected_bytes().unwrap_or(0),
+        downloaded: segment.downloaded_bytes,
+        status: segment.status.as_str().to_owned(),
+    }
 }
 
 /// Stores the checksum the download should have; an empty value forgets
@@ -3416,6 +3439,7 @@ pub fn run() {
             check_database,
             check_connection,
             get_download_checks,
+            get_download_parts,
             set_expected_checksum,
             run_post_process,
             get_post_process_settings,

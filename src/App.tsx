@@ -1433,6 +1433,33 @@ function App({ preferences, onPreferencesChange }: AppProps) {
             .then((queue) => assignToQueue(item, queue.id))
             .catch((reason) => notify("error", String(reason)))
         }
+        onSchedule={(item, startAt, stopAt) =>
+          void createQueue({
+            name: `${displayName(item)}`.slice(0, 60),
+            maxConcurrent: 1,
+            maxConcurrentPerHost: 1,
+            defaultPriority: "normal",
+          })
+            .then(async (queue) => {
+              await assignToQueue(item, queue.id);
+              await invoke("set_queue_schedule", {
+                queueId: queue.id,
+                enabled: true,
+                kind: "once",
+                startAt,
+                stopAt,
+                weekdaysMask: 0b0111_1111,
+                intervalSeconds: null,
+                completionAction: "none",
+                preventSleep: true,
+                updatedAt: Math.floor(Date.now() / 1000),
+                windowStartMinute: null,
+                windowEndMinute: null,
+              });
+              notify("success", t("action.scheduled"));
+            })
+            .catch((reason) => notify("error", String(reason)))
+        }
         onRemoveFromQueue={(item) => void runQueueAction(() => removeFromQueue(item.id))}
         onChangePriority={(item, priority) => void runQueueAction(() => changePriority(item.id, priority))}
         onRemoveFromHistory={(item) => {

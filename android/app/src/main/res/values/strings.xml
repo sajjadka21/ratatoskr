@@ -120,4 +120,5 @@
     <string name="plugin_added">افزونه اضافه شد.</string>
     <string name="plugin_invalid">این فایل افزونه‌ی معتبری نیست.</string>
     <string name="plugin_remove">حذف</string>
+    <string name="error_storage">برای ذخیره‌ی فایل‌ها در پوشه‌ی Downloads به اجازه‌ی دسترسی به حافظه نیاز است. در تنظیمات اندروید اجازه بدهید و دوباره ادامه دهید.</string>
 </resources>

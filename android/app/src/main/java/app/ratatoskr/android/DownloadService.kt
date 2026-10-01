@@ -41,10 +41,13 @@ class DownloadService : Service() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL, getString(R.string.notification_channel), NotificationManager.IMPORTANCE_LOW))
         getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)
+        // The download window closes at a time of day, not when the network changes, so look again now and then.
+        scope.launch { while (isActive) { delay(30_000); networkChanged() } }
     }
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(SUMMARY_ID, notification(null), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        if (android.os.Build.VERSION.SDK_INT >= 29) startForeground(SUMMARY_ID, notification(null), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        else startForeground(SUMMARY_ID, notification(null))
         val id = intent?.getStringExtra(EXTRA_PROCESS)
         if (id != null) when (intent.action) {
             ACTION_PAUSE -> halt(id, TaskState.PAUSED)
@@ -58,7 +61,7 @@ class DownloadService : Service() {
         schedule()
         return START_NOT_STICKY
     }
-    private fun allowed() = TaskPolicy.mayRun(prefs.networkPolicy, networkSnapshotProvider(this), prefs.allowRoaming)
+    private fun allowed() = TaskPolicy.mayRun(prefs.networkPolicy, networkSnapshotProvider(this), prefs.allowRoaming) && Schedule.now(prefs.window)
     private fun halt(id: String, state: TaskState) {
         val task = store.get(id) ?: return
         if (task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED)) return
@@ -76,7 +79,8 @@ class DownloadService : Service() {
     }
     private fun schedule() {
         if (shuttingDown) return
-        val candidates = store.list().filter { it.state in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) && !MobileRuntime.busy(it.id) }
+        val now = System.currentTimeMillis()
+        val candidates = store.list().filter { it.state in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) && !MobileRuntime.busy(it.id) && Schedule.isDue(it.startAt, now) }
         if (!allowed()) candidates.forEach { store.state(it.id, TaskState.WAITING_NETWORK) }
         else for (task in candidates.take((prefs.concurrency - jobs.size).coerceAtLeast(0))) {
             val control = TransferControl { allowed() }

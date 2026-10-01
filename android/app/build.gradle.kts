@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "app.ratatoskr.android"
-        minSdk = 29          // saving to Downloads needs no storage permission from here up
+        minSdk = 26          // Android 8; from Android 10 saving to Downloads needs no storage permission
         targetSdk = 35
         versionCode = 5
         versionName = "1.1.1"

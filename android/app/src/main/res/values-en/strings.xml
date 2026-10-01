@@ -119,4 +119,5 @@
     <string name="plugin_added">Plugin added.</string>
     <string name="plugin_invalid">That file is not a valid plugin.</string>
     <string name="plugin_remove">Remove</string>
+    <string name="error_storage">Saving to the Downloads folder needs storage permission. Allow it in Android settings, then resume.</string>
 </resources>

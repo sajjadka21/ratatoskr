@@ -35,6 +35,7 @@ import type {
 } from "../../types/download";
 
 import { availableActions } from "../../utils/taskActions";
+import { checkOnce, fromLocalInput } from "../../utils/scheduleTime";
 import { useI18n } from "../../i18n/I18n";
 import type { MessageKey } from "../../i18n/messages";
 
@@ -68,6 +69,8 @@ type DownloadContextMenuProps = {
   onRefreshSource: (item: DownloadListItem) => void;
   /** Makes a new queue with this name and puts the download in it. */
   onCreateQueue?: (item: DownloadListItem, name: string) => void;
+  /** Runs this one download at a date and time (and stops it at another, if given). */
+  onSchedule?: (item: DownloadListItem, startAt: number, stopAt: number | null) => void;
   onError?: (message: string) => void;
   onSendToPhone?: (item: DownloadListItem) => void;
 };
@@ -101,10 +104,13 @@ export function DownloadContextMenu({
   onRemoveFromHistory,
   onRefreshSource,
   onCreateQueue,
+  onSchedule,
   onError,
   onSendToPhone,
 }: DownloadContextMenuProps) {
   const [newQueue, setNewQueue] = useState("");
+  const [runAt, setRunAt] = useState("");
+  const [stopAt, setStopAt] = useState("");
   const { t, language } = useI18n();
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -464,6 +470,43 @@ export function DownloadContextMenu({
                   />
                   <button type="submit" disabled={!newQueue.trim()}>
                     {t("action.createQueue")}
+                  </button>
+                </form>
+              ) : null}
+              {onSchedule ? (
+                <form
+                  className="download-context-menu__new-queue download-context-menu__schedule"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (checkOnce(runAt, stopAt) !== "ok") return;
+                    onSchedule(item, fromLocalInput(runAt) ?? 0, fromLocalInput(stopAt));
+                    setRunAt("");
+                    setStopAt("");
+                    onClose();
+                  }}
+                >
+                  <label>
+                    <span>{t("action.scheduleStart")}</span>
+                    <input
+                      type="datetime-local"
+                      dir="ltr"
+                      value={runAt}
+                      onChange={(event) => setRunAt(event.target.value)}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    />
+                  </label>
+                  <label>
+                    <span>{t("action.scheduleStop")}</span>
+                    <input
+                      type="datetime-local"
+                      dir="ltr"
+                      value={stopAt}
+                      onChange={(event) => setStopAt(event.target.value)}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    />
+                  </label>
+                  <button type="submit" disabled={checkOnce(runAt, stopAt) !== "ok"}>
+                    {t("action.schedule")}
                   </button>
                 </form>
               ) : null}

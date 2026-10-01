@@ -47,6 +47,10 @@ class MobilePreferences(context: Context) {
     var skippedUpdate: String
         get() = prefs.getString("skipped_update", "")!!
         set(value) { prefs.edit().putString("skipped_update", value).apply() }
+    /** "Only download between…": a daily window that may pass midnight. */
+    var window: DownloadWindow
+        get() = DownloadWindow(prefs.getBoolean("window_on", false), prefs.getInt("window_start", 2 * 60).coerceIn(0, 1439), prefs.getInt("window_end", 7 * 60).coerceIn(0, 1439))
+        set(value) { prefs.edit().putBoolean("window_on", value.enabled).putInt("window_start", value.startMinute).putInt("window_end", value.endMinute).apply() }
     var speedLimit: Long
         get() = prefs.getLong("speed", 0).coerceAtLeast(0)
         set(value) { prefs.edit().putLong("speed", value.coerceAtLeast(0)).apply() }
@@ -68,6 +72,7 @@ object MobileNetwork {
         return NetworkSnapshot(caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
             caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED),
             caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI), manager.isActiveNetworkMetered,
-            !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING))
+            // The roaming capability only exists from Android 9; before that, assume not roaming.
+            android.os.Build.VERSION.SDK_INT >= 28 && !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING))
     }
 }

@@ -35,7 +35,7 @@ class NetworkJobService : JobService() {
         override fun onLost(network: Network) { scope.launch { enforceNetwork() } }
         override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) { scope.launch { enforceNetwork() } }
     }
-    private fun allowed() = TaskPolicy.mayRun(prefs.networkPolicy, networkSnapshotProvider(this), prefs.allowRoaming)
+    private fun allowed() = TaskPolicy.mayRun(prefs.networkPolicy, networkSnapshotProvider(this), prefs.allowRoaming) && Schedule.now(prefs.window)
     override fun onCreate() {
         super.onCreate(); store = taskStoreProvider(this); prefs = MobilePreferences(this); MobileRuntime.initialize(store)
         getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("downloads", getString(R.string.notification_channel), NotificationManager.IMPORTANCE_LOW))
@@ -47,7 +47,7 @@ class NetworkJobService : JobService() {
         scope.launch {
             val deadline = android.os.SystemClock.elapsedRealtime() + runBudgetMillis
             if (!allowed()) { if (!stopped && run == generation) finishJob(params, true); return@launch }
-            val jobs = store.list().filter { it.state in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) && !MobileRuntime.busy(it.id) }
+            val jobs = store.list().filter { it.state in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) && !MobileRuntime.busy(it.id) && Schedule.isDue(it.startAt, System.currentTimeMillis()) }
             // Background slices are deliberately sequential; foreground user work
             // follows the selected 1–3 concurrency limit.
             for (task in jobs) {
@@ -95,7 +95,12 @@ class NetworkJobService : JobService() {
                     notifyTask(store.get(task.id)!!)
                 }
             }
-            if (!stopped && run == generation) finishJob(params, store.list().any { it.state in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) })
+            if (!stopped && run == generation) {
+                // Tasks waiting for a start time or the download window are woken by their own timer, not by retrying.
+                val now = System.currentTimeMillis()
+                finishJob(params, store.list().any { it.state in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) && Schedule.isDue(it.startAt, now) && Schedule.now(prefs.window) })
+                NetworkJobs.schedule(this@NetworkJobService, store)
+            } else if (!stopped) finishJob(params, false)   // a newer run took over; this one is done
         }
         return true
     }

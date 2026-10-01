@@ -176,6 +176,7 @@ object Engine {
     /** Journal the pending URI before copying so an interrupted save can be cleaned. */
     private fun publish(context: Context, id: String, index: Int, file: File, control: TransferControl): SavedMedia {
         if (file.length() == 0L) throw TransferFailure("invalid_output")
+        if (android.os.Build.VERSION.SDK_INT < 29) return publishLegacy(context, id, index, file, control)
         ensureSpace(context.filesDir, file.length())
         val name = LinkUtils.safeFileName(Plugins.rename(PluginStore.active(context), file.name))
         val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "application/octet-stream"
@@ -219,6 +220,40 @@ object Engine {
             if (!published) { runCatching { resolver.delete(target, null, null) }; journal.delete() }
             throw error
         }
+    }
+    /** Android 8 and 9 have no per-app Downloads access: write into the public Downloads folder (the user
+     * allowed storage once) and register the file so other apps can open and share it. */
+    private fun publishLegacy(context: Context, id: String, index: Int, file: File, control: TransferControl): SavedMedia {
+        if (context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+            throw TransferFailure("storage_permission")
+        val name = LinkUtils.safeFileName(Plugins.rename(PluginStore.active(context), file.name))
+        val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "application/octet-stream"
+        val images = mime.startsWith("image/")
+        val root = File(Environment.getExternalStoragePublicDirectory(if (images) Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_DOWNLOADS), "Ratatoskr")
+        val category = if (images || !MobilePreferences(context).categoryFolders) "" else FileCategory.folder(name, mime)
+        val directory = if (category.isEmpty()) root else File(root, category)
+        if (!directory.isDirectory && !directory.mkdirs()) throw TransferFailure("cannot_write")
+        ensureSpace(directory, file.length())
+        var target = File(directory, name)
+        var copy = 1
+        while (target.exists()) { target = File(directory, name.substringBeforeLast('.', name) + " ($copy)" + name.substringAfterLast('.', "").let { if (it.isEmpty()) "" else ".$it" }); copy++ }
+        val temp = File(directory, target.name + ".ratatoskr-part")
+        try {
+            file.inputStream().use { input -> temp.outputStream().use { output ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) { control.check(); val count = input.read(buffer); if (count < 0) break; output.write(buffer, 0, count) }
+            } }
+            control.check()
+            if (!temp.renameTo(target)) throw TransferFailure("cannot_write")
+        } catch (error: Exception) { temp.delete(); throw error }
+        val values = ContentValues().apply {
+            @Suppress("DEPRECATION") put(MediaStore.MediaColumns.DATA, target.absolutePath)
+            put(MediaStore.MediaColumns.DISPLAY_NAME, target.name); put(MediaStore.MediaColumns.MIME_TYPE, mime); put(MediaStore.MediaColumns.SIZE, target.length())
+        }
+        val uri = context.contentResolver.insert(MediaStore.Files.getContentUri("external"), values) ?: throw TransferFailure("cannot_write")
+        val result = SavedMedia(uri.toString(), target.name, mime)
+        TaskStore.get(context).recordOutput(id, index, result)
+        return result
     }
     fun update(context: Context): Boolean { init(context); return YoutubeDL.getInstance().updateYoutubeDL(context, YoutubeDL.UpdateChannel.STABLE) != null }
 }

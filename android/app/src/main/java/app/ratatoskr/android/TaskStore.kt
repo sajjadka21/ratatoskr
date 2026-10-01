@@ -14,10 +14,12 @@ data class MobileTask(
     val uri: String = "", val fileName: String = "", val mime: String = "",
     val selectedItems: String = "", val bytesDone: Long = 0, val totalBytes: Long = -1,
     val validator: String = "", val createdAt: Long = System.currentTimeMillis(),
+    /** Epoch millis before which the task must not start; 0 = as soon as allowed. */
+    val startAt: Long = 0,
 )
 
 /** The mobile backend's job journal. A job exists before any network request. */
-class TaskStore internal constructor(context: Context, databaseName: String = "downloads.db") : SQLiteOpenHelper(context, databaseName, null, 2) {
+class TaskStore internal constructor(context: Context, databaseName: String = "downloads.db") : SQLiteOpenHelper(context, databaseName, null, 3) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE tasks (
             notification_id INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE,
@@ -26,13 +28,17 @@ class TaskStore internal constructor(context: Context, databaseName: String = "d
             error TEXT NOT NULL DEFAULT '', uri TEXT NOT NULL DEFAULT '', file_name TEXT NOT NULL DEFAULT '',
             mime TEXT NOT NULL DEFAULT '', selected_items TEXT NOT NULL DEFAULT '',
             bytes_done INTEGER NOT NULL DEFAULT 0, total_bytes INTEGER NOT NULL DEFAULT -1,
-            validator TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+            validator TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+            start_at INTEGER NOT NULL DEFAULT 0
         )""")
         db.execSQL("CREATE INDEX task_state ON tasks(state, created_at)")
         createOutputs(db)
     }
     private fun createOutputs(db: SQLiteDatabase) = db.execSQL("CREATE TABLE IF NOT EXISTS outputs (task_id TEXT NOT NULL, position INTEGER NOT NULL, uri TEXT NOT NULL, name TEXT NOT NULL, mime TEXT NOT NULL, PRIMARY KEY(task_id, position))")
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) { if (oldVersion < 2) createOutputs(db) }
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) createOutputs(db)
+        if (oldVersion < 3) db.execSQL("ALTER TABLE tasks ADD COLUMN start_at INTEGER NOT NULL DEFAULT 0")
+    }
 
     @Synchronized fun recordOutput(id: String, index: Int, result: SavedMedia) {
         writableDatabase.insertWithOnConflict("outputs", null, ContentValues().apply {
@@ -98,6 +104,15 @@ class TaskStore internal constructor(context: Context, databaseName: String = "d
         writableDatabase.delete("tasks", "id=?", arrayOf(id))
     }
     @Synchronized fun clearFinished() = list().filter { it.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED, TaskState.FAILED) }.forEach { remove(it.id) }
+    /** Start the task at [startAt] (epoch millis; 0 clears it). A paused or failed task is queued again so the time can take effect. */
+    @Synchronized fun schedule(id: String, startAt: Long) {
+        val task = get(id) ?: return
+        if (task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED) || task.state in TaskPolicy.inFlight) return
+        update(id, ContentValues().apply {
+            put("start_at", startAt.coerceAtLeast(0))
+            if (task.state in setOf(TaskState.PAUSED, TaskState.FAILED, TaskState.WAITING_NETWORK)) { put("state", TaskState.QUEUED.name); put("error", "") }
+        })
+    }
     @Synchronized fun recover() {
         writableDatabase.beginTransaction()
         try {
@@ -114,7 +129,7 @@ class TaskStore internal constructor(context: Context, databaseName: String = "d
         return MobileTask(s("id"), s("url"), s("title"), TaskState.valueOf(s("state")),
             if (c.isNull(c.getColumnIndexOrThrow("height"))) null else n("height").toInt(), n("audio") == 1L,
             s("kind"), n("progress").toInt(), n("notification_id").toInt(), s("error"), s("uri"), s("file_name"),
-            s("mime"), s("selected_items"), n("bytes_done"), n("total_bytes"), s("validator"), n("created_at"))
+            s("mime"), s("selected_items"), n("bytes_done"), n("total_bytes"), s("validator"), n("created_at"), n("start_at"))
     }
     companion object {
         @Volatile private var instance: TaskStore? = null

@@ -17,7 +17,7 @@ data class MobileTask(
 )
 
 /** The mobile backend's job journal. A job exists before any network request. */
-class TaskStore internal constructor(context: Context, databaseName: String = "downloads.db") : SQLiteOpenHelper(context, databaseName, null, 1) {
+class TaskStore internal constructor(context: Context, databaseName: String = "downloads.db") : SQLiteOpenHelper(context, databaseName, null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE tasks (
             notification_id INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE,
@@ -29,12 +29,27 @@ class TaskStore internal constructor(context: Context, databaseName: String = "d
             validator TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
         )""")
         db.execSQL("CREATE INDEX task_state ON tasks(state, created_at)")
+        createOutputs(db)
     }
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    private fun createOutputs(db: SQLiteDatabase) = db.execSQL("CREATE TABLE IF NOT EXISTS outputs (task_id TEXT NOT NULL, position INTEGER NOT NULL, uri TEXT NOT NULL, name TEXT NOT NULL, mime TEXT NOT NULL, PRIMARY KEY(task_id, position))")
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) { if (oldVersion < 2) createOutputs(db) }
+
+    @Synchronized fun recordOutput(id: String, index: Int, result: SavedMedia) {
+        writableDatabase.insertWithOnConflict("outputs", null, ContentValues().apply {
+            put("task_id", id); put("position", index); put("uri", result.uri); put("name", result.name); put("mime", result.mime)
+        }, SQLiteDatabase.CONFLICT_REPLACE)
+        update(id, ContentValues().apply { put("uri", result.uri); put("file_name", result.name); put("mime", result.mime) })
+    }
+    @Synchronized fun outputs(id: String): List<SavedMedia> = readableDatabase.query("outputs", null, "task_id=?", arrayOf(id), null, null, "position ASC").use {
+        buildList { while (it.moveToNext()) add(SavedMedia(it.getString(it.getColumnIndexOrThrow("uri")), it.getString(it.getColumnIndexOrThrow("name")), it.getString(it.getColumnIndexOrThrow("mime")))) }
+    }
+    @Synchronized fun outputAt(id: String, index: Int): SavedMedia? = readableDatabase.query("outputs", null, "task_id=? AND position=?", arrayOf(id, index.toString()), null, null, null).use {
+        if (it.moveToFirst()) SavedMedia(it.getString(it.getColumnIndexOrThrow("uri")), it.getString(it.getColumnIndexOrThrow("name")), it.getString(it.getColumnIndexOrThrow("mime"))) else null
+    }
 
     @Synchronized fun enqueue(url: String, height: Int?, audio: Boolean, title: String, kind: String = "media", items: String = ""): MobileTask {
         val canonical = LinkUtils.canonicalUrl(url)
-        val existing = list().firstOrNull { it.url == canonical && it.height == height && it.audioOnly == audio &&
+        val existing = list().firstOrNull { LinkUtils.contentIdentity(it.url) == LinkUtils.contentIdentity(canonical) && it.height == height && it.audioOnly == audio &&
             it.kind == kind && it.selectedItems == items && it.state !in setOf(TaskState.COMPLETED, TaskState.CANCELLED, TaskState.FAILED) }
         if (existing != null) return existing
         val now = System.currentTimeMillis()
@@ -59,6 +74,13 @@ class TaskStore internal constructor(context: Context, databaseName: String = "d
         values.put("updated_at", System.currentTimeMillis())
         writableDatabase.update("tasks", values, "id=?", arrayOf(id))
     }
+    @Synchronized fun updateActive(id: String, values: ContentValues): Boolean {
+        val current = get(id) ?: return false
+        if (current.state !in TaskPolicy.inFlight && current.state != TaskState.QUEUED) return false
+        update(id, values)
+        return true
+    }
+    fun transitionActive(id: String, state: TaskState, error: String = ""): Boolean = updateActive(id, ContentValues().apply { put("state", state.name); put("error", error) })
     fun state(id: String, state: TaskState, error: String = "") = update(id, ContentValues().apply {
         put("state", state.name); put("error", error)
     })

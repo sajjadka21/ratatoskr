@@ -33,6 +33,9 @@ class MobilePreferences(context: Context) {
     var brand: String
         get() = prefs.getString("brand", "ember-forge")!!
         set(value) { prefs.edit().putString("brand", value).apply() }
+    var language: String
+        get() = prefs.getString("language", "")!!
+        set(value) { prefs.edit().putString("language", value).apply() }
 }
 
 object MobileNetwork {

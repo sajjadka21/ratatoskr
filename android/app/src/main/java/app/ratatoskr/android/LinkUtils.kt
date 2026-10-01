@@ -11,7 +11,7 @@ object LinkUtils {
 
     /** The first web address in shared text, without trailing punctuation. */
     fun extractUrl(text: String?): String? =
-        urlRegex.find(text.orEmpty())?.value?.trimEnd { it in TRAILING }
+        extractUrls(text).firstOrNull()
 
     /** True for http(s) addresses that do not point at the phone's own network. */
     fun isPublicHttpUrl(url: String): Boolean {
@@ -45,7 +45,23 @@ object LinkUtils {
         if (height == null || height <= 0) "bv*+ba/b" else "bv*[height<=$height]+ba/b[height<=$height]"
 
     fun extractUrls(text: String?): List<String> = urlRegex.findAll(text.orEmpty())
-        .map { it.value.trimEnd { c -> c in TRAILING } }.distinct().take(50).toList()
+        .map { match ->
+            var value = if ('?' in match.value) match.value else match.value.trimEnd { c -> c in TRAILING }
+            for ((closing, opening) in listOf(')' to '(', ']' to '[', '}' to '{')) {
+                while (value.endsWith(closing) && value.count { it == closing } > value.count { it == opening }) value = value.dropLast(1)
+            }
+            value
+        }.distinct().take(50).toList()
+
+    fun contentIdentity(url: String): String {
+        val canonical = canonicalUrl(url)
+        val uri = URI(canonical)
+        if (uri.host == "www.instagram.com") {
+            val match = Regex("^/(?:p|reel|tv)/([A-Za-z0-9_-]+)/$").matchEntire(uri.path)
+            if (match != null) return "instagram:${match.groupValues[1]}"
+        }
+        return canonical
+    }
 
     fun canonicalUrl(url: String): String {
         require(isPublicHttpUrl(url)) { "bad_link" }

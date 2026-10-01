@@ -175,6 +175,31 @@ class RecoveryPolicyTest {
         assertEquals(address, LinkUtils.canonicalUrl(address))
     }
 
+    @Test fun sharedGenericSignedQueryCanEndInValidPunctuation() {
+        listOf("!", ".", ";", ":", "?").forEach { suffix ->
+            val signed = "https://files.example.org/archive.zip?signature=keep$suffix"
+            assertEquals("Do not trim a valid query value", signed, LinkUtils.extractUrl("$signed "))
+            assertEquals("Batch intake also keeps the signature", listOf(signed), LinkUtils.extractUrls("$signed\n"))
+        }
+    }
+
+    @Test fun instagramPostAndReelPathsDeduplicateByContentWithoutChangingTheirUrls() {
+        val post = "https://www.instagram.com/p/Ab_C-123/?igsh=post"
+        val reel = "https://m.instagram.com/reel/Ab_C-123/?igsh=reel"
+        assertEquals(LinkUtils.contentIdentity(post), LinkUtils.contentIdentity(reel))
+        assertEquals("https://www.instagram.com/p/Ab_C-123/", LinkUtils.canonicalUrl(post))
+        assertEquals("https://www.instagram.com/reel/Ab_C-123/", LinkUtils.canonicalUrl(reel))
+        assertFalse(LinkUtils.contentIdentity(post) ==
+            LinkUtils.contentIdentity("https://instagram.com/reel/different/"))
+    }
+
+    @Test fun nonInstagramIdentityKeepsDifferentSignedQueriesDistinct() {
+        val first = "https://files.example.org/archive.zip?signature=one"
+        val second = "https://files.example.org/archive.zip?signature=two"
+        assertFalse(LinkUtils.contentIdentity(first) == LinkUtils.contentIdentity(second))
+        assertEquals(LinkUtils.contentIdentity(first), LinkUtils.contentIdentity("$first#display-fragment"))
+    }
+
     private fun assertBoundedVideoFormat(format: String, height: Int) {
         assertTrue("No empty quality selector", format.isNotBlank())
         // Every fallback remains capped; a trailing '/b' used to override the user's choice.

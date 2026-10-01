@@ -1,11 +1,45 @@
 {
   "siteUrl": "https://ratatoskr.hivenest.ir",
   "repository": "sajjadka21/ratatoskr",
-  "stage": "awaiting-public-release",
+  "stage": "published-release",
   "release": {
-    "version": "",
-    "publishedAt": "",
-    "notesUrl": "",
-    "downloads": []
+    "version": "1.0.2",
+    "publishedAt": "2026-10-01T02:29:16Z",
+    "notesUrl": "https://github.com/sajjadka21/ratatoskr/releases/tag/v1.0.2",
+    "checksumsUrl": "https://github.com/sajjadka21/ratatoskr/releases/download/v1.0.2/SHA256SUMS.txt",
+    "downloads": [
+      {
+        "platform": "windows",
+        "label": "Download for Windows",
+        "labelFa": "دریافت نصب‌کنندهٔ ویندوز",
+        "url": "https://github.com/sajjadka21/ratatoskr/releases/download/v1.0.2/Ratatoskr_1.0.2_x64-setup.exe",
+        "bytes": 25957878,
+        "sha256": "b6deb7fabb7b052dc5598bcd0368b3bd1f4edc40195598a8923dabc41b538362"
+      },
+      {
+        "platform": "windows",
+        "label": "Portable version",
+        "labelFa": "نسخهٔ قابل‌حمل",
+        "url": "https://github.com/sajjadka21/ratatoskr/releases/download/v1.0.2/Ratatoskr-portable.zip",
+        "bytes": 29832187,
+        "sha256": "e5e9267f65499a1ab117141ac5cd88535b880a29d3adb5342ad26dbf0e4c082f"
+      },
+      {
+        "platform": "windows",
+        "label": "MSI installer",
+        "labelFa": "نصب‌کنندهٔ MSI",
+        "url": "https://github.com/sajjadka21/ratatoskr/releases/download/v1.0.2/Ratatoskr_1.0.2_x64_en-US.msi",
+        "bytes": 29908992,
+        "sha256": "72015b1db0d69bfc35c1fcdc574f018acdd8a9e959779c569133e61b0d8bf094"
+      },
+      {
+        "platform": "android",
+        "label": "Download Android APK",
+        "labelFa": "دریافت نسخهٔ اندروید",
+        "url": "https://github.com/sajjadka21/ratatoskr/releases/download/v1.0.2/Ratatoskr-android.apk",
+        "bytes": 162603583,
+        "sha256": "149f1e9f24fb0c5c417e303d86bfcf0f85cc453290aad37a8cc2f377c42e3a8b"
+      }
+    ]
   }
 }

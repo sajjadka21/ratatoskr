@@ -99,29 +99,3 @@ selectTheme(Object.hasOwn(themes,storedTheme)?storedTheme:'ember-forge');
 document.querySelectorAll('[data-preview-theme]').forEach(button=>button.addEventListener('click',()=>selectTheme(button.dataset.previewTheme)));
 document.querySelector('#year').textContent=new Date().getFullYear();
 
-const words=isFa?{ready:'نسخهٔ انتشار آماده است',download:'دریافت',date:'تاریخ انتشار',version:'نسخه',unavailable:'هنوز فایل دانلودی برای این سیستم منتشر نشده است.',pending:'در انتظار انتشار',preview:'نسخهٔ پیش‌انتشار',summary:'فایل مناسب سیستم خود را انتخاب کنید. جزئیات هر نسخه را در یادداشت‌های انتشار بخوانید.'}:{ready:'A release is ready',download:'Download',date:'Released',version:'Version',unavailable:'No download file has been published for this platform yet.',pending:'Awaiting a build',preview:'Pre-release',summary:'Choose the file for your system. Read the release notes for the details of this build.'};
-function safeUrl(value){try{const url=new URL(value);return url.protocol==='https:'?url.href:null;}catch{return null;}}
-function configureLink(id,url){const target=document.getElementById(id);const safe=safeUrl(url);if(!safe)return;target.href=safe;target.hidden=false;target.rel='noopener noreferrer';}
-function applyRelease(config){
-  if(typeof config.repository==='string'&&/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(config.repository))configureLink('project-link','https://github.com/'+config.repository);
-  const release=config.release;if(!release||!Array.isArray(release.downloads))return;
-  configureLink('release-notes',release.notesUrl);
-  const downloads=release.downloads.filter(item=>['windows','android'].includes(item.platform)&&safeUrl(item.url));
-  if(!downloads.length)return;
-  document.querySelector('#hero-status').textContent=words.ready;
-  document.querySelector('#hero-status').parentElement.setAttribute('aria-label',words.ready);
-  const status=document.querySelector('#release-state');status.replaceChildren();status.append(document.createElement('span'),document.createTextNode(words.ready+(release.version?' · '+release.version:'')));
-  document.querySelector('#release-summary').textContent=words.summary;
-  const panels=document.querySelectorAll('#release-downloads article');
-  for(const [i,platform] of ['windows','android'].entries()){
-    const panel=document.querySelector('#release-downloads [data-platform="'+platform+'"]'),available=downloads.filter(item=>item.platform===platform);
-    const description=panel.querySelector('p');description.textContent=available.length?(release.version?words.version+' '+release.version:words.ready):words.unavailable;
-    const status=panel.querySelector('.availability');status.remove();
-    if(!available.length){const pending=document.createElement('span');pending.className='availability';pending.textContent=words.pending;panel.append(pending);continue;}
-    for(const item of available){const link=document.createElement('a');link.className='button button-gold';link.href=safeUrl(item.url);link.rel='noopener noreferrer';link.textContent=item.label||words.download+' '+({windows:'Windows',android:'Android'}[platform]);panel.append(link);}
-  }
-  const date=new Date(release.publishedAt);
-  document.querySelector('#release-date').textContent=release.publishedAt&&!Number.isNaN(date.getTime())?words.date+' '+new Intl.DateTimeFormat(isFa?'fa-IR':'en',{dateStyle:'medium',timeZone:'UTC'}).format(date):(release.version?words.version+' '+release.version:words.ready);
-  document.querySelector('.hero-note').textContent=isFa?'برای امکانات قطعی و سازگاری سیستم، یادداشت‌های انتشار را بخوانید.':'Read the release notes for confirmed features and system compatibility.';
-}
-fetch('/site-config.json',{cache:'no-cache'}).then(response=>{if(!response.ok)throw new Error('Release configuration unavailable');return response.json();}).then(applyRelease).catch(()=>{/* Keep the truthful server-rendered development state available. */});

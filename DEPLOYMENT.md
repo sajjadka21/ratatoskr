@@ -1,24 +1,17 @@
 # Deployment record
 
-Published: 2026-09-30
+Updated: 2026-10-01
 
 - Production: https://ratatoskr.hivenest.ir/
 - Persian: https://ratatoskr.hivenest.ir/fa/
-- Cloudflare Worker: `ratatoskr-site`
-- Latest deployment ID: `0fa238c7be1b4c99bce7cc62fe7eac61`
-- Static assets only; no user Worker module.
-- Existing custom domain and TLS preserved; unrelated DNS and Workers unchanged.
+- Cloudflare Worker: ratatoskr-site
+- Deployment: 55509ee7-ef73-47ad-9ef4-76911957f883
+- Version: 40794533-5c76-4e9d-8670-d4de712cd3a0, 100% of traffic
+- Static assets only; existing domain and HTTPS retained.
+- Release: https://github.com/sajjadka21/ratatoskr/releases/tag/v1.0.2
 
-## Latest validation
+The public site was checked after deployment: all four download links point to the published 1.0.2 assets; checksum and release-note links are correct. Both languages display the release status and date. Persian licence wording distinguishes Android GPL-3.0 from desktop PolyForm Noncommercial.
 
-- Warm light and charcoal-green dark appearance checked in a real browser.
-- Actual project icon, wordmark, four theme screenshots, settings screenshot and tokens included.
-- English and Persian content, language switching, RTL and linked repository verified.
-- Layout checked at 375px, 768px, 1024px and 1440px without horizontal overflow.
-- Menu open/close, Escape dismissal and focus restoration checked.
-- Hero and gallery theme selection synchronized; theme arrow keys checked.
-- Build and JavaScript syntax checks passed.
-- Production Persian page checked after deployment: both platform sections present, actual image loads, no broken loaded images or console warnings/errors.
-- Public download links remain pending because GitHub has no published release. Windows and Android build success is differentiated from publication and installation testing.
+Warm light rgb(231,225,213) and dark appearance work. At a 390px viewport, download buttons remain within the page width. No console errors/warnings were observed during production-page checks. Earlier header/gallery/menu checks and screenshot provenance remain recorded in APP_REFERENCE.json and prior source history.
 
-The release audit and proposed publishing-workflow correction are in `docs/`. They were not applied to the app repository. Screenshot capture provenance is recorded in `APP_REFERENCE.json`.
+The app publication pipeline was repaired and applied to GitHub; all release jobs succeeded. The final downloaded APK/Windows files were independently checked. See docs/RELEASE_AUDIT.md for device-test and Authenticode limits. No unrelated DNS, Parsyar Worker or IRNIC changes were needed.

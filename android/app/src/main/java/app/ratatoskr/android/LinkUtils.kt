@@ -2,12 +2,12 @@ package app.ratatoskr.android
 
 import java.net.InetAddress
 import java.net.URI
+import java.net.URLDecoder
 
 /** Pure helpers with no Android classes, so they run as plain unit tests. */
 object LinkUtils {
     private val urlRegex = Regex("""https?://[^\s<>"']+""", RegexOption.IGNORE_CASE)
     private const val TRAILING = ".,;:!?)]}»"
-    private val standardHeights = listOf(2160, 1440, 1080, 720, 480, 360, 240)
 
     /** The first web address in shared text, without trailing punctuation. */
     fun extractUrl(text: String?): String? =
@@ -17,6 +17,10 @@ object LinkUtils {
     fun isPublicHttpUrl(url: String): Boolean {
         val uri = try { URI(url) } catch (e: Exception) { return false }
         if (uri.scheme?.lowercase() !in listOf("http", "https")) return false
+        if (uri.userInfo != null) return false
+        val keys = try { uri.rawQuery.orEmpty().split('&').map { URLDecoder.decode(it.substringBefore('='), "UTF-8").lowercase() } }
+        catch (e: IllegalArgumentException) { return false }
+        if (keys.any { it in setOf("access_token", "authorization", "password", "sessionid", "cookie") }) return false
         val host = uri.host?.lowercase()?.trimEnd('.') ?: return false
         if (host == "localhost" || listOf(".local", ".internal", ".localhost", ".lan").any { host.endsWith(it) }) {
             return false
@@ -32,14 +36,27 @@ object LinkUtils {
         return '.' in host
     }
 
-    /** Heights to offer, from what the video has: each rounded down to a standard height, top four. */
+    /** Label the actual source heights; never advertise 480p for a 540p source. */
     fun offeredHeights(available: List<Int?>): List<Int> =
         available.filterNotNull().filter { it > 0 }
-            .map { h -> standardHeights.firstOrNull { it <= h } ?: h }
             .distinct().sortedDescending().take(4)
 
     fun videoFormat(height: Int?): String =
-        if (height == null || height <= 0) "bv*+ba/b" else "bv*[height<=$height]+ba/b[height<=$height]/b"
+        if (height == null || height <= 0) "bv*+ba/b" else "bv*[height<=$height]+ba/b[height<=$height]"
+
+    fun extractUrls(text: String?): List<String> = urlRegex.findAll(text.orEmpty())
+        .map { it.value.trimEnd { c -> c in TRAILING } }.distinct().take(50).toList()
+
+    fun canonicalUrl(url: String): String {
+        require(isPublicHttpUrl(url)) { "bad_link" }
+        val uri = URI(url)
+        val host = uri.host.lowercase().trimEnd('.')
+        if (host in setOf("instagram.com", "www.instagram.com", "m.instagram.com")) {
+            val match = Regex("(?:^|/)(p|reel|reels|tv)/([A-Za-z0-9_-]+)/?").find(uri.path)
+            if (match != null) return "https://www.instagram.com/${if (match.groupValues[1] == "reels") "reel" else match.groupValues[1]}/${match.groupValues[2]}/"
+        }
+        return uri.toASCIIString().substringBefore('#')
+    }
 
     fun safeFileName(name: String, fallback: String = "file"): String =
         name.replace(Regex("""[\\/:*?"<>|\u0000-\u001f]"""), "_").trim(' ', '.').take(120).ifEmpty { fallback }

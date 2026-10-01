@@ -28,6 +28,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 /** Exercise real lifecycle, scheduling, SQLite and notifications, while the
  * injected transfer/network seams keep native extractors and sockets unused. */
@@ -43,7 +44,10 @@ class DownloadServiceTest {
     private lateinit var service: DownloadService
     private lateinit var partial: File
     private var destroyed = false
-    private val executor = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "test-transfer") }
+    private val workerThread = AtomicReference<Thread>()
+    private val executor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "test-transfer").also { workerThread.set(it) }
+    }
     private val io = executor.asCoroutineDispatcher()
     private val started = CountDownLatch(1)
     private val releaseRunner = CountDownLatch(1)
@@ -70,7 +74,9 @@ class DownloadServiceTest {
         service.taskStoreProvider = { store }
         service.networkSnapshotProvider = {
             val captured = network
-            if (Thread.currentThread().name == "test-transfer" && blockNextWorkerCheck.compareAndSet(true, false)) {
+            // Coroutine debugging appends its identifier to the thread name
+            // under Gradle's assertions-enabled JVM; object identity is stable.
+            if (Thread.currentThread() === workerThread.get() && blockNextWorkerCheck.compareAndSet(true, false)) {
                 checkEntered.countDown()
                 assertTrue("release blocked policy check", releaseCheck.await(5, TimeUnit.SECONDS))
             }
@@ -185,6 +191,20 @@ class DownloadServiceTest {
         assertEquals("", store.get(task.id)!!.error)
         assertTrue(cancellations.get() > 0)
         assertEquals(1, discards.get())
+    }
+
+    @Test fun immediateResumeIsNotLostToThePreviousPausedWorkersFailure() {
+        afterRelease = { control, _, _ -> control.check() }
+        val task = start()
+        command(task.id, DownloadService.ACTION_PAUSE)
+        command(task.id, DownloadService.ACTION_RESUME)
+
+        finish()
+
+        assertEquals(2, launches.get())
+        assertEquals(TaskState.COMPLETED, store.get(task.id)!!.state)
+        assertEquals("", store.get(task.id)!!.error)
+        assertEquals(0, discards.get())
     }
 
     @Test fun wifiOnlyTransferWaitsAfterSwitchingToCellularAndDoesNotRestartThere() {

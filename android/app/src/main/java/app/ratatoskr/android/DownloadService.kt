@@ -27,6 +27,7 @@ class DownloadService : Service() {
     private var shuttingDown = false
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val jobs = mutableMapOf<String, Pair<Job, TransferControl>>()
+    private val pendingResume = mutableSetOf<String>()
     private lateinit var store: TaskStore
     private lateinit var prefs: MobilePreferences
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
@@ -48,7 +49,9 @@ class DownloadService : Service() {
         if (id != null) when (intent.action) {
             ACTION_PAUSE -> halt(id, TaskState.PAUSED)
             ACTION_CANCEL -> halt(id, TaskState.CANCELLED)
-            ACTION_RESUME -> if (store.get(id)?.state in setOf(TaskState.PAUSED, TaskState.FAILED, TaskState.WAITING_NETWORK)) store.state(id, TaskState.QUEUED)
+            ACTION_RESUME -> if (store.get(id)?.state in setOf(TaskState.PAUSED, TaskState.FAILED, TaskState.WAITING_NETWORK)) {
+                if (id in jobs) pendingResume.add(id) else store.state(id, TaskState.QUEUED)
+            }
         }
         schedule()
         return START_NOT_STICKY
@@ -57,6 +60,7 @@ class DownloadService : Service() {
     private fun halt(id: String, state: TaskState) {
         val task = store.get(id) ?: return
         if (task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED)) return
+        pendingResume.remove(id)
         jobs[id]?.second?.stop()
         store.state(id, state)
         cancelTransfer(id)
@@ -64,7 +68,8 @@ class DownloadService : Service() {
         getSystemService(NotificationManager::class.java).notify(task.notificationId, notification(store.get(id)))
     }
     internal fun networkChanged() {
-        if (!allowed()) jobs.keys.toList().forEach { halt(it, TaskState.WAITING_NETWORK) }
+        if (shuttingDown) return
+        if (!allowed()) jobs.keys.toList().filter { store.get(it)?.state in TaskPolicy.inFlight }.forEach { halt(it, TaskState.WAITING_NETWORK) }
         schedule()
     }
     private fun schedule() {
@@ -94,6 +99,7 @@ class DownloadService : Service() {
                     }
                 } finally {
                     jobs.remove(task.id)
+                    if (pendingResume.remove(task.id) && !shuttingDown && store.get(task.id)?.state in setOf(TaskState.PAUSED, TaskState.FAILED, TaskState.WAITING_NETWORK)) store.state(task.id, TaskState.QUEUED)
                     if (store.get(task.id)?.state == TaskState.CANCELLED) withContext(NonCancellable + ioDispatcher) { discardTransfer(this@DownloadService, task.id) }
                     getSystemService(NotificationManager::class.java).notify(task.notificationId, notification(store.get(task.id)))
                     schedule()

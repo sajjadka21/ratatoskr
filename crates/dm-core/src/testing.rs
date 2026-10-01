@@ -16,8 +16,44 @@ use std::{
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
+    sync::{Semaphore, watch},
     task::JoinHandle,
 };
+
+/// Holds real response bodies until a test has observed their overlap.
+/// HEAD requests and single-byte capability probes never enter the gate.
+#[derive(Debug)]
+pub struct BodyGate {
+    started: Semaphore,
+    released: watch::Sender<bool>,
+}
+
+impl Default for BodyGate {
+    fn default() -> Self {
+        Self {
+            started: Semaphore::new(0),
+            released: watch::channel(false).0,
+        }
+    }
+}
+
+impl BodyGate {
+    /// Wait for one new body to enter. Each entry is observed exactly once.
+    pub async fn wait_for_body(&self) {
+        self.started.acquire().await.unwrap().forget();
+    }
+
+    /// Release all present and future bodies without a lost-notification race.
+    pub fn release(&self) {
+        self.released.send_replace(true);
+    }
+
+    async fn enter(&self) {
+        let mut released = self.released.subscribe();
+        self.started.add_permits(1);
+        released.wait_for(|released| *released).await.unwrap();
+    }
+}
 
 /// How the server should answer the next request.
 #[derive(Debug, Clone)]
@@ -35,6 +71,8 @@ pub struct ServerBehaviour {
     /// to pause or cancel it.
     pub chunk_delay: Option<Duration>,
     pub chunk_size: usize,
+    /// Optional explicit synchronization after body headers and before bytes.
+    pub body_gate: Option<Arc<BodyGate>>,
     /// Stop after this many body bytes and close the connection, simulating a
     /// transfer that is cut off.
     pub truncate_after: Option<usize>,
@@ -74,6 +112,7 @@ impl Default for ServerBehaviour {
             status: None,
             chunk_delay: None,
             chunk_size: 8,
+            body_gate: None,
             truncate_after: None,
             required_header: None,
             redirect_to: None,
@@ -366,6 +405,10 @@ async fn serve(
     };
     let stalls = body_number < behaviour.stall_first_bodies;
     let drops = !stalls && body_number < behaviour.drop_first_bodies;
+
+    if counts_as_body && let Some(gate) = &behaviour.body_gate {
+        gate.enter().await;
+    }
 
     // The delay goes before each chunk but the first, so a finished body is
     // never still counted as active while the next transfer starts.

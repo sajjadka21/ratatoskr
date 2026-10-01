@@ -723,7 +723,12 @@ mod tests {
 
     #[tokio::test]
     async fn a_running_queue_fills_free_slots_with_newly_added_work() {
-        let server = TestServer::start(slow_server()).await;
+        let body_gate = Arc::new(crate::testing::BodyGate::default());
+        let server = TestServer::start(ServerBehaviour {
+            body_gate: Some(Arc::clone(&body_gate)),
+            ..ServerBehaviour::default()
+        })
+        .await;
         let harness = harness();
         let queue = harness
             .queues
@@ -750,6 +755,9 @@ mod tests {
         });
 
         await_status(&harness.storage, &first.id, DownloadStatus::Downloading).await;
+        tokio::time::timeout(Duration::from_secs(10), body_gate.wait_for_body())
+            .await
+            .expect("the first download never began its response body");
 
         let second = harness
             .downloads
@@ -763,6 +771,9 @@ mod tests {
         // The runner must pick the new task up while the first one is still
         // being transferred, not after it finishes.
         await_started(&harness.storage, &second.id).await;
+        tokio::time::timeout(Duration::from_secs(10), body_gate.wait_for_body())
+            .await
+            .expect("the queue did not refill its free slot while the first body was held");
 
         assert_ne!(
             harness
@@ -775,9 +786,18 @@ mod tests {
             "the second task must start while the first is still transferring"
         );
 
-        assert_eq!(runner.await.unwrap().state, QueueState::Stopped);
-
+        // Both actual bodies are held here, so task finalization and CI load
+        // cannot shorten the overlap window before this assertion.
         assert_eq!(server.peak_concurrent_bodies(), 2);
+        body_gate.release();
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(10), runner)
+                .await
+                .expect("the queue did not finish after both bodies were released")
+                .unwrap()
+                .state,
+            QueueState::Stopped
+        );
         assert!(
             harness
                 .storage

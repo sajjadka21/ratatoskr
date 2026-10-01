@@ -8,6 +8,7 @@
 pub mod autostart;
 pub mod browser_health;
 pub mod browser_hosts;
+pub mod clipboard;
 pub mod disk;
 pub mod locate;
 pub mod session_channel;

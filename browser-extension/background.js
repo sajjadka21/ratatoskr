@@ -60,12 +60,28 @@ function extensionExcluded(filename, url, value) {
 // application's database, so the browser's copy is cancelled only then.
 async function handoff(message) {
   try {
+    if (message.type === "ping") {
+      // Store a browser family only, never its user-agent or browsing history.
+      const agent = navigator.userAgent;
+      message = { ...message, browser: /Firefox\//.test(agent) ? "firefox" : /Edg\//.test(agent) ? "edge" : navigator.brave ? "brave" : "chrome" };
+    }
     const response = await chrome.runtime.sendNativeMessage(NATIVE_HOST, message);
     return response ?? { accepted: false, error: "no response" };
   } catch (error) {
     return { accepted: false, error: String(error?.message ?? error) };
   }
 }
+
+const HEARTBEAT = "ratatoskr-native-heartbeat";
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name === HEARTBEAT) void handoff({ type: "ping" });
+});
+async function ensureHeartbeat() {
+  if (!await chrome.alarms.get(HEARTBEAT)) await chrome.alarms.create(HEARTBEAT, { periodInMinutes: 1 });
+  await handoff({ type: "ping" });
+}
+chrome.runtime.onStartup.addListener(() => void ensureHeartbeat());
+void ensureHeartbeat().catch(() => {});
 
 async function sendLink(url, referrer) {
   return handoff({

@@ -80,7 +80,7 @@ class DownloadService : Service() {
         if (!allowed()) candidates.forEach { store.state(it.id, TaskState.WAITING_NETWORK) }
         else for (task in candidates.take((prefs.concurrency - jobs.size).coerceAtLeast(0))) {
             val control = TransferControl { allowed() }
-            if (!MobileRuntime.claim(task.id, control)) continue
+            if (!MobileRuntime.claim(task.id, control, prefs.concurrency)) continue
             if (!store.begin(task.id)) { MobileRuntime.release(task.id); continue }
             val job = scope.launch(start = CoroutineStart.LAZY) {
                 try {

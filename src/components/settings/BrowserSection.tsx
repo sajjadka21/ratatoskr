@@ -8,6 +8,7 @@ import { useI18n } from "../../i18n/I18n";
 type BrowserConnection = {
   hostFound: boolean;
   registered: string[];
+  connected?: string[];
   extensionFolder: string | null;
   chromiumExtensionId: string;
   firefoxPackage: boolean;
@@ -38,13 +39,16 @@ export function BrowserSection({ onError }: { onError: (message: string) => void
 
   useEffect(() => {
     let cancelled = false;
-    invoke<BrowserConnection>("get_browser_connection")
+    const refresh = () => invoke<BrowserConnection>("get_browser_connection")
       .then((value) => {
         if (!cancelled) setConnection(value);
       })
       .catch(() => {});
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 5000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, []);
 
@@ -61,7 +65,8 @@ export function BrowserSection({ onError }: { onError: (message: string) => void
     }
   }
 
-  const registered = connection.registered.map((name) => NAMES[name] ?? name).join(fmt.language === "fa" ? "، " : ", ");
+  const connected = connection.connected ?? [];
+  const registered = connected.map((name) => NAMES[name] ?? name).join(fmt.language === "fa" ? "، " : ", ");
 
   return (
     <div className="settings-page__section">
@@ -77,12 +82,12 @@ export function BrowserSection({ onError }: { onError: (message: string) => void
             <span>{t("browser.connectionHint")}</span>
           </div>
           <div className="settings-page__row-control settings-page__row-control--stack">
-            <span className={`settings-page__ffmpeg ${connection.registered.length ? "settings-page__ffmpeg--found" : ""}`}>
-              {connection.registered.length ? <CheckCircle2 size={14} aria-hidden="true" /> : <Plug size={14} aria-hidden="true" />}
+            <span className={`settings-page__ffmpeg ${connected.length ? "settings-page__ffmpeg--found" : ""}`}>
+              {connected.length ? <CheckCircle2 size={14} aria-hidden="true" /> : <Plug size={14} aria-hidden="true" />}
               <span>
                 {!connection.hostFound
                   ? t("browser.hostMissing")
-                  : connection.registered.length
+                  : connected.length
                     ? t("browser.ready", { browsers: registered })
                     : t("browser.notRegistered")}
               </span>

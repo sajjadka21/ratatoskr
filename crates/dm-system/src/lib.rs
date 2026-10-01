@@ -6,6 +6,7 @@
 //! actions report `Unsupported` and keep-awake does nothing.
 
 pub mod autostart;
+pub mod browser_health;
 pub mod browser_hosts;
 pub mod disk;
 pub mod locate;

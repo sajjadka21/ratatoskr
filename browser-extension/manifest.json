@@ -15,20 +15,14 @@
     "downloads",
     "storage",
     "contextMenus",
-    "nativeMessaging"
+    "nativeMessaging",
+    "alarms"
   ],
-  "optional_permissions": [
-    "cookies",
-    "scripting"
-  ],
-  "optional_host_permissions": [
-    "<all_urls>"
-  ],
+  "optional_permissions": ["cookies", "scripting"],
+  "optional_host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js",
-    "scripts": [
-      "background.js"
-    ]
+    "scripts": ["background.js"]
   },
   "action": {
     "default_title": "__MSG_name__",
@@ -65,9 +59,7 @@
         "*://*.reddit.com/*",
         "*://*.bilibili.com/*"
       ],
-      "js": [
-        "video.js"
-      ],
+      "js": ["video.js"],
       "run_at": "document_idle"
     }
   ]

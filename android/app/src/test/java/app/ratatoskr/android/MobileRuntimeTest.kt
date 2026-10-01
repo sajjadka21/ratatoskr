@@ -119,4 +119,39 @@ class MobileRuntimeTest {
         MobileRuntime.initialize(store)
         assertEquals(TaskState.PROBING, store.get(task.id)!!.state)
     }
+
+    @Test fun foregroundAndScheduledOwnersShareTheSameSingleTransferLimit() {
+        val foregroundId = newId()
+        val scheduledId = newId()
+        assertTrue(MobileRuntime.claim(foregroundId, TransferControl { true }, limit = 1))
+        assertFalse(MobileRuntime.claim(scheduledId, TransferControl { true }, limit = 1))
+        assertTrue(MobileRuntime.busy(foregroundId))
+        assertFalse(MobileRuntime.busy(scheduledId))
+        MobileRuntime.release(foregroundId)
+        assertTrue(MobileRuntime.claim(scheduledId, TransferControl { true }, limit = 1))
+        assertFalse(MobileRuntime.claim(foregroundId, TransferControl { true }, limit = 1))
+    }
+
+    @Test fun thirdOwnerFillsSharedLimitAndReleaseReopensExactlyOneSlot() {
+        val ids = List(4) { newId() }
+        ids.take(3).forEach { assertTrue(MobileRuntime.claim(it, TransferControl { true }, limit = 3)) }
+        assertFalse(MobileRuntime.claim(ids[3], TransferControl { true }, limit = 3))
+        // A duplicate claim must neither replace the owner nor consume a slot.
+        assertFalse(MobileRuntime.claim(ids[0], TransferControl { true }, limit = 3))
+        MobileRuntime.release(ids[1])
+        assertTrue(MobileRuntime.claim(ids[3], TransferControl { true }, limit = 3))
+        assertFalse(MobileRuntime.claim(ids[1], TransferControl { true }, limit = 3))
+    }
+
+    @Test fun reducingConcurrencyDoesNotPermitNewWritersUntilExistingOwnersDrain() {
+        val ids = List(4) { newId() }
+        ids.take(3).forEach { assertTrue(MobileRuntime.claim(it, TransferControl { true }, limit = 3)) }
+        assertFalse(MobileRuntime.claim(ids[3], TransferControl { true }, limit = 1))
+        MobileRuntime.release(ids[0])
+        MobileRuntime.release(ids[1])
+        assertFalse(MobileRuntime.claim(ids[3], TransferControl { true }, limit = 1))
+        assertTrue(MobileRuntime.busy(ids[2]))
+        MobileRuntime.release(ids[2])
+        assertTrue(MobileRuntime.claim(ids[3], TransferControl { true }, limit = 1))
+    }
 }

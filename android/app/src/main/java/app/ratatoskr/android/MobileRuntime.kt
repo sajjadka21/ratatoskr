@@ -9,8 +9,8 @@ object MobileRuntime {
     @Synchronized fun initialize(store: TaskStore) {
         if (initialized.add(store.databaseName)) store.recover()
     }
-    @Synchronized fun claim(id: String, control: TransferControl): Boolean {
-        if (id in owners) return false
+    @Synchronized fun claim(id: String, control: TransferControl, limit: Int = 3): Boolean {
+        if (id in owners || owners.size >= limit.coerceIn(1, 3)) return false
         owners[id] = control; return true
     }
     @Synchronized fun busy(id: String) = id in owners

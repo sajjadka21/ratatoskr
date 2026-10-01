@@ -53,7 +53,7 @@ class NetworkJobService : JobService() {
             for (task in jobs) {
                 if (stopped || run != generation || !allowed() || android.os.SystemClock.elapsedRealtime() >= deadline) break
                 val control = TransferControl { allowed() && !stopped && run == generation }
-                if (!MobileRuntime.claim(task.id, control)) continue
+                if (!MobileRuntime.claim(task.id, control, prefs.concurrency)) continue
                 if (!store.begin(task.id)) { MobileRuntime.release(task.id); continue }
                 active[task.id] = control
                 notifyTask(store.get(task.id)!!)

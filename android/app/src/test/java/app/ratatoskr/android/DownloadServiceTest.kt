@@ -273,6 +273,21 @@ class DownloadServiceTest {
         assertEquals(0, discards.get())
     }
 
+    @Test fun returningToWifiResumesTheWaitingJobWithoutFailingItsFirstStateChange() {
+        MobilePreferences(context).networkPolicy = NetworkPolicy.WIFI_ONLY
+        afterRelease = { control, _, _ -> control.check() }
+        val task = start()
+        network = NetworkSnapshot(true, false, true)
+        service.networkChanged()
+        finish()
+        assertEquals(TaskState.WAITING_NETWORK, store.get(task.id)!!.state)
+        network = NetworkSnapshot(true, true, false)
+        service.networkChanged()
+        awaitMain("network recovery completes the second run") { store.get(task.id)!!.state == TaskState.COMPLETED }
+        assertEquals(2, launches.get())
+        assertEquals("", store.get(task.id)!!.error)
+    }
+
     @Test fun coroutineCancellationLeavesRecoverablePauseRatherThanFailedHistory() {
         afterRelease = { _, _, _ -> throw CancellationException("fixture cancellation") }
         val task = start()

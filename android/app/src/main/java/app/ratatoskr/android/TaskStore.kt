@@ -88,7 +88,7 @@ class TaskStore internal constructor(context: Context, databaseName: String = "d
         writableDatabase.beginTransaction()
         try {
             for (task in list()) {
-                val recovered = TaskPolicy.recover(task.state)
+                val recovered = if (task.state == TaskState.PAUSED && task.error == "chunk_restart") TaskState.QUEUED else TaskPolicy.recover(task.state)
                 if (recovered != task.state) state(task.id, recovered, "interrupted")
             }
             writableDatabase.setTransactionSuccessful()

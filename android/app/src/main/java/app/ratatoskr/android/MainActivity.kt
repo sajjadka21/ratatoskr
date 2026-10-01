@@ -21,7 +21,8 @@ class MainActivity : MobileActivity() {
         super.onCreate(savedInstanceState)
         history = savedInstanceState?.getBoolean("history") ?: false
         query = savedInstanceState?.getString("query").orEmpty()
-        if (!DownloadService.running) TaskStore.get(this).recover()
+        MobileRuntime.initialize(TaskStore.get(this))
+        NetworkJobs.schedule(this)
         val box = column().apply { setBackgroundColor(paper) }
         insets(box)
         box.addView(label("Ratatoskr", 28f))

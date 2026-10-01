@@ -37,7 +37,7 @@ class DownloadService : Service() {
     }
     override fun onCreate() {
         super.onCreate(); running = true
-        store = taskStoreProvider(this); prefs = MobilePreferences(this); store.recover()
+        store = taskStoreProvider(this); prefs = MobilePreferences(this); MobileRuntime.initialize(store)
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL, getString(R.string.notification_channel), NotificationManager.IMPORTANCE_LOW))
         getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)
@@ -50,7 +50,9 @@ class DownloadService : Service() {
             ACTION_PAUSE -> halt(id, TaskState.PAUSED)
             ACTION_CANCEL -> halt(id, TaskState.CANCELLED)
             ACTION_RESUME -> if (store.get(id)?.state in setOf(TaskState.PAUSED, TaskState.FAILED, TaskState.WAITING_NETWORK)) {
-                if (id in jobs) pendingResume.add(id) else store.state(id, TaskState.QUEUED)
+                if (id in jobs) pendingResume.add(id)
+                else if (MobileRuntime.busy(id)) MobileRuntime.requestResume(id)
+                else store.state(id, TaskState.QUEUED)
             }
         }
         schedule()
@@ -61,10 +63,10 @@ class DownloadService : Service() {
         val task = store.get(id) ?: return
         if (task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED)) return
         pendingResume.remove(id)
-        jobs[id]?.second?.stop()
+        MobileRuntime.clearResume(id); MobileRuntime.stop(id)
         store.state(id, state)
         cancelTransfer(id)
-        if (id !in jobs && state == TaskState.CANCELLED) discardTransfer(this, id)
+        if (!MobileRuntime.busy(id) && state == TaskState.CANCELLED) discardTransfer(this, id)
         getSystemService(NotificationManager::class.java).notify(task.notificationId, notification(store.get(id)))
     }
     internal fun networkChanged() {
@@ -74,10 +76,11 @@ class DownloadService : Service() {
     }
     private fun schedule() {
         if (shuttingDown) return
-        val candidates = store.list().filter { it.state in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) && it.id !in jobs }
+        val candidates = store.list().filter { it.state in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) && !MobileRuntime.busy(it.id) }
         if (!allowed()) candidates.forEach { store.state(it.id, TaskState.WAITING_NETWORK) }
         else for (task in candidates.take((prefs.concurrency - jobs.size).coerceAtLeast(0))) {
             val control = TransferControl { allowed() }
+            if (!MobileRuntime.claim(task.id, control)) continue
             val job = scope.launch(start = CoroutineStart.LAZY) {
                 try {
                     withContext(ioDispatcher) {
@@ -99,6 +102,7 @@ class DownloadService : Service() {
                     }
                 } finally {
                     jobs.remove(task.id)
+                    MobileRuntime.release(task.id)
                     if (pendingResume.remove(task.id) && !shuttingDown && store.get(task.id)?.state in setOf(TaskState.PAUSED, TaskState.FAILED, TaskState.WAITING_NETWORK)) store.state(task.id, TaskState.QUEUED)
                     if (store.get(task.id)?.state == TaskState.CANCELLED) withContext(NonCancellable + ioDispatcher) { discardTransfer(this@DownloadService, task.id) }
                     getSystemService(NotificationManager::class.java).notify(task.notificationId, notification(store.get(task.id)))
@@ -108,7 +112,10 @@ class DownloadService : Service() {
             jobs[task.id] = job to control; job.start()
         }
         val pending = store.list().any { it.state in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) }
-        if (jobs.isEmpty() && !pending) { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf() }
+        if (jobs.isEmpty()) {
+            if (pending) NetworkJobs.schedule(this, store)
+            stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
+        }
         else getSystemService(NotificationManager::class.java).notify(SUMMARY_ID, notification(null))
     }
     private fun notification(task: MobileTask?): Notification {
@@ -163,6 +170,7 @@ class DownloadService : Service() {
         const val ACTION_RESUME = "app.ratatoskr.android.RESUME"
         const val EXTRA_PROCESS = "process"
         fun start(context: Context, url: String, height: Int?, audio: Boolean, title: String, kind: String = "media", items: String = "") {
+            MobileRuntime.initialize(TaskStore.get(context))
             TaskStore.get(context).enqueue(url, height, audio, title, kind, items)
             wake(context)
         }
@@ -170,7 +178,7 @@ class DownloadService : Service() {
         fun command(context: Context, id: String, action: String) {
             context.startForegroundService(Intent(context, DownloadService::class.java).setAction(action).putExtra(EXTRA_PROCESS, id))
         }
-        private fun errorCode(error: Exception): String {
+        internal fun errorCode(error: Exception): String {
             if (error is TransferFailure) return error.code
             val message = error.message.orEmpty().lowercase()
             return when {

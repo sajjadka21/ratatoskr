@@ -1,7 +1,5 @@
 package app.ratatoskr.android
 
-import com.sun.net.httpserver.HttpExchange
-import com.sun.net.httpserver.HttpServer
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -16,7 +14,6 @@ import org.robolectric.annotation.Config
 import java.io.File
 import java.io.InputStream
 import java.net.HttpURLConnection
-import java.net.InetSocketAddress
 import java.net.URL
 import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicInteger
@@ -25,7 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
 class SegmentedDownloadTest {
-    private lateinit var server: HttpServer
+    private lateinit var server: TestHttpServer
     private lateinit var directory: File
     private val payload = ByteArray(5 * 1024 * 1024 + 123) { (it * 31 + it / 7).toByte() }
     private val etag = "\"v1\""
@@ -35,40 +32,36 @@ class SegmentedDownloadTest {
     @Volatile private var failFirstRange = false
     private val failed = AtomicInteger()
     @Volatile private var slowFirstPart = false
-    private val base get() = "http://127.0.0.1:${server.address.port}/big.bin"
+    private val base get() = "http://127.0.0.1:${server.port}/big.bin"
     private val control = TransferControl { true }
 
     @Before fun start() {
         directory = Files.createTempDirectory("seg").toFile()
-        server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        server.createContext("/") { ex -> serve(ex) }
+        server = TestHttpServer { request -> serve(request) }
         server.start()
     }
-    @After fun stop() { server.stop(0); directory.deleteRecursively() }
+    @After fun stop() { server.stop(); directory.deleteRecursively() }
 
-    private fun serve(ex: HttpExchange) {
-        val range = ex.requestHeaders.getFirst("Range")
-        if (sendEtag) ex.responseHeaders.add("ETag", etag)
-        ex.responseHeaders.add("Content-Type", "application/octet-stream")
+    private fun serve(request: TestHttpServer.Request) {
+        val range = request.headers["range"]
+        val common = mutableMapOf("Content-Type" to "application/octet-stream")
+        if (sendEtag) common["ETag"] = etag
         val match = Regex("bytes=(\\d+)-(\\d*)").matchEntire(range.orEmpty())
         if (!supportRanges || match == null) {
-            ex.sendResponseHeaders(200, payload.size.toLong())
-            ex.responseBody.use { it.write(payload) }; return
+            request.respond(200, common, payload.size.toLong())
+            request.out.write(payload); return
         }
         rangeRequests.incrementAndGet()
         val from = match.groupValues[1].toInt()
         val to = match.groupValues[2].toIntOrNull()?.coerceAtMost(payload.size - 1) ?: (payload.size - 1)
-        ex.responseHeaders.add("Content-Range", "bytes $from-$to/${payload.size}")
-        ex.sendResponseHeaders(206, (to - from + 1).toLong())
-        ex.responseBody.use { out ->
-            if (failFirstRange && from > 0 && failed.getAndIncrement() == 0) {
-                out.write(payload, from, 1000); out.flush(); ex.close(); return
-            }
-            if (slowFirstPart && from == 0 && to > 0) {
-                var at = from
-                while (at <= to) { val n = minOf(32 * 1024, to - at + 1); out.write(payload, at, n); out.flush(); at += n; Thread.sleep(8) }
-            } else out.write(payload, from, to - from + 1)
+        request.respond(206, common + ("Content-Range" to "bytes $from-$to/${payload.size}"), (to - from + 1).toLong())
+        if (failFirstRange && from > 0 && failed.getAndIncrement() == 0) {
+            request.out.write(payload, from, 1000); request.out.flush(); request.abort(); return
         }
+        if (slowFirstPart && from == 0 && to > 0) {
+            var at = from
+            while (at <= to) { val n = minOf(32 * 1024, to - at + 1); request.out.write(payload, at, n); request.out.flush(); at += n; Thread.sleep(8) }
+        } else request.out.write(payload, from, to - from + 1)
     }
 
     private class Conn(private val c: HttpURLConnection) : HttpConnection {

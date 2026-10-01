@@ -1,6 +1,5 @@
 package app.ratatoskr.android
 
-import com.sun.net.httpserver.HttpServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -12,7 +11,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.InputStream
 import java.net.HttpURLConnection
-import java.net.InetSocketAddress
 import java.net.URL
 import java.security.MessageDigest
 
@@ -63,10 +61,9 @@ class AppUpdateTest {
     }
 
     private fun serve(body: ByteArray, test: (String) -> Unit) {
-        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        server.createContext("/") { ex -> ex.sendResponseHeaders(200, body.size.toLong()); ex.responseBody.use { it.write(body) } }
+        val server = TestHttpServer { request -> request.respond(200, emptyMap(), body.size.toLong()); request.out.write(body) }
         server.start()
-        try { test("http://127.0.0.1:${server.address.port}/app.apk") } finally { server.stop(0) }
+        try { test("http://127.0.0.1:${server.port}/app.apk") } finally { server.stop() }
     }
     private val open: (String, Map<String, String>, () -> Unit) -> HttpConnection = { url, _, _ -> Conn(URL(url).openConnection() as HttpURLConnection) }
 

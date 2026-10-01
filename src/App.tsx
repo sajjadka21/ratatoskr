@@ -11,7 +11,6 @@ import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { readText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { AddDownloadModal, type AddDownloadAction } from "./components/downloads/AddDownloadModal";
 import { Welcome } from "./components/onboarding/Welcome";
@@ -971,7 +970,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     setAddError(null);
     if (inputMode === "clipboard") {
       try {
-        setUrl(extractHttpUrls((await readText()) ?? "").join("\n"));
+        setUrl((await invoke<string[]>("read_clipboard_links")).join("\n"));
       } catch {
         setUrl("");
       }

@@ -811,6 +811,13 @@ fn get_clipboard_watch(state: State<'_, AppState>) -> bool {
     clipboard_watch::enabled(&state.storage)
 }
 
+#[tauri::command]
+async fn read_clipboard_links(app: AppHandle) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || clipboard_watch::links(&app))
+        .await
+        .map_err(|_| "Could not read clipboard".to_owned())?
+}
+
 /// Whether the app starts (in the tray) when the user signs in to Windows.
 /// `None` where the app cannot start itself (outside Windows), so the
 /// setting is not offered.
@@ -3312,6 +3319,7 @@ pub fn run() {
             get_app_info,
             get_download_speed_limit,
             get_clipboard_watch,
+            read_clipboard_links,
             get_start_with_windows,
             get_finish_sound,
             get_keep_server_time,

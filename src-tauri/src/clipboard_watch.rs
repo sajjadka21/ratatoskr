@@ -1,9 +1,9 @@
 //! Watches the clipboard for download links while the app runs.
 //!
 //! Copying a link to a file (or a video page yt-dlp can read) opens the
-//! small download window with it (or the main window's Add dialog). The copied text
+//! small download window with it (or the main window's Add dialog). The copied text and HTML
 //! is only read and compared in memory: it is never stored or logged, and
-//! only a hash of the last text is kept to notice a change.
+//! only a hash of the last snapshot is kept to notice a change.
 
 use crate::tray::show_main_window;
 use dm_storage::Storage;
@@ -14,6 +14,7 @@ use std::{
     time::Duration,
 };
 use tauri::{AppHandle, Emitter};
+#[cfg(not(windows))]
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 pub const SETTING_CLIPBOARD_WATCH: &str = "clipboard_watch";
@@ -30,10 +31,33 @@ pub fn enabled(storage: &Storage) -> bool {
         != Some("false")
 }
 
-fn fingerprint(text: &str) -> u64 {
+fn fingerprint(snapshot: &dm_system::clipboard::Snapshot) -> u64 {
     let mut hasher = DefaultHasher::new();
-    text.hash(&mut hasher);
+    snapshot.hash(&mut hasher);
     hasher.finish()
+}
+
+fn snapshot(app: &AppHandle) -> Result<dm_system::clipboard::Snapshot, String> {
+    #[cfg(windows)]
+    {
+        let _ = app;
+        dm_system::clipboard::read().map_err(|_| "Could not read clipboard".to_owned())
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(dm_system::clipboard::Snapshot {
+            text: app.clipboard().read_text().ok(),
+            html: None,
+        })
+    }
+}
+
+pub fn links(app: &AppHandle) -> Result<Vec<String>, String> {
+    let snapshot = snapshot(app)?;
+    Ok(dm_core::clipboard_links::extract(
+        snapshot.text.as_deref(),
+        snapshot.html.as_deref(),
+    ))
 }
 
 /// Links that are not in the download list yet: copying the link of a
@@ -65,15 +89,20 @@ pub async fn run(app: AppHandle, storage: Arc<Storage>) {
             last = None;
             continue;
         }
-        let Ok(text) = app.clipboard().read_text() else {
+        let Ok(snapshot) = snapshot(&app) else {
             continue;
         };
-        let current = fingerprint(&text);
+        let current = fingerprint(&snapshot);
         let previous = last.replace(current);
         if previous.is_none() || previous == Some(current) {
             continue;
         }
-        let links = new_links(&storage, dm_core::linkgrabber::downloadable_links(&text));
+        let extracted =
+            dm_core::clipboard_links::extract(snapshot.text.as_deref(), snapshot.html.as_deref());
+        let links = new_links(
+            &storage,
+            dm_core::linkgrabber::downloadable_links(&extracted.join("\n")),
+        );
         if links.is_empty() {
             continue;
         }

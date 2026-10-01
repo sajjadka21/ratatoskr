@@ -1,5 +1,6 @@
 pub mod adaptive;
 pub mod browser;
+pub mod clipboard_links;
 pub mod control;
 pub mod dash;
 pub mod diagnostics;

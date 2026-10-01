@@ -55,19 +55,19 @@
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --bg-app: #eef2f1;
-  --bg-sidebar: #e6ecea;
-  --bg-surface: #f7f9f8;
-  --bg-surface-hover: #ecf1ef;
-  --bg-elevated: #fafbfb;
-  --bg-sunken: #e3e9e7;
+  --bg-app: #e8e3d9;
+  --bg-sidebar: #e1dace;
+  --bg-surface: #f1ece2;
+  --bg-surface-hover: #e9e2d6;
+  --bg-elevated: #f5f0e7;
+  --bg-sunken: #ded7ca;
 
-  --border-subtle: #d6dfdc;
-  --border-strong: #bfcac7;
+  --border-subtle: #cec6b9;
+  --border-strong: #b9af9e;
 
-  --text-primary: #152024;
-  --text-secondary: #44545a;
-  --text-muted: #62727a;
+  --text-primary: #282b2c;
+  --text-secondary: #4c5153;
+  --text-muted: #66645f;
 
   --accent: #0f8074;
   --accent-hover: #0c6e64;

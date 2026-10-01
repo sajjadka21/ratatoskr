@@ -8,6 +8,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      promote_stable:
+        description: "Promote after device acceptance (otherwise publish a preview)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -64,7 +69,7 @@ jobs:
           Compress-Archive -Force -Path $out -DestinationPath target/portable/Ratatoskr-portable.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: windows
+          name: release-windows
           if-no-files-found: error
           path: |
             target/release/bundle/nsis/*-setup.exe
@@ -116,8 +121,8 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$EXPECTED_CERTIFICATE"
-          apk=android/app/build/outputs/apk/release/app-release.apk
           tools="$ANDROID_HOME/build-tools/35.0.0"
+          for apk in android/app/build/outputs/apk/release/*.apk; do
           "$tools/apksigner" verify --verbose --print-certs "$apk" | tee apk-verification.txt
           actual=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' apk-verification.txt)
           test "$actual" = "$EXPECTED_CERTIFICATE"
@@ -126,25 +131,61 @@ jobs:
           code=$(sed -n 's/.*versionCode = \([0-9]*\).*/\1/p' android/app/build.gradle.kts)
           grep -F "package: name='app.ratatoskr.android' versionCode='$code' versionName='$version'" apk-identity.txt
           if grep -q application-debuggable apk-identity.txt; then echo "::error::Release APK is debuggable"; exit 1; fi
+          done
       - name: Verify all native payloads in the APK
-        run: python3 scripts/verify_android_native.py android/app/build/outputs/apk/release/app-release.apk
+        run: |
+          for apk in android/app/build/outputs/apk/release/*.apk; do
+            python3 scripts/verify_android_native.py "$apk"
+          done
       - name: Remove the signing key from the runner
         if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
       - name: Package Android source for this release
         run: python3 scripts/package-android-source.py Ratatoskr-android-source.zip
-      - run: mv android/app/build/outputs/apk/release/*.apk Ratatoskr-android.apk
+      - name: Name the universal and architecture packages
+        run: |
+          cp android/app/build/outputs/apk/release/app-universal-release.apk Ratatoskr-android.apk
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            cp "android/app/build/outputs/apk/release/app-$abi-release.apk" "Ratatoskr-android-$abi.apk"
+          done
       - uses: actions/upload-artifact@v4
         with:
-          name: android
+          name: release-android
           if-no-files-found: error
           path: |
             Ratatoskr-android.apk
+            Ratatoskr-android-arm64-v8a.apk
+            Ratatoskr-android-armeabi-v7a.apk
+            Ratatoskr-android-x86_64.apk
             Ratatoskr-android-source.zip
+
+  extensions:
+    name: Browser extension packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build separate store submission packages
+        run: |
+          node scripts/package-extension.mjs
+          version=$(node -p "JSON.parse(require('fs').readFileSync('browser-extension/manifest.json')).version")
+          for browser in chrome edge firefox; do
+            cp "target/extension/ratatoskr-extension-$browser-$version.zip" "Ratatoskr-extension-$browser.zip"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-extensions
+          if-no-files-found: error
+          path: Ratatoskr-extension-*.zip
 
   publish:
     name: Publish the release
-    needs: [checks, windows, android]
+    needs: [checks, windows, android, extensions]
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -157,6 +198,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: dist-release
+          pattern: release-*
           merge-multiple: true
       - name: Verify, flatten and checksum release assets
         run: |
@@ -170,4 +212,8 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "Ratatoskr ${{ github.ref_name }}" \
             --notes-file "docs/releases/${GITHUB_REF_NAME#v}.md" --verify-tag --draft
-          gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --draft=false --latest
+          if [ "${{ inputs.promote_stable || false }}" = "true" ]; then
+            gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --draft=false --prerelease=false --latest
+          else
+            gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --draft=false --prerelease --latest=false
+          fi

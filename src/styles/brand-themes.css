@@ -5,6 +5,32 @@
  * colours come from the kit's contrast-checked pairs (4.5:1 or better).
  */
 
+:root {
+  --brand-pattern: url("/brand/pattern-ember-forge.webp");
+  --brand-pattern-subtle: url("/brand/pattern-subtle-ember-forge.webp");
+  --brand-squirrel: url("/brand/squirrel-ember-forge.webp");
+}
+:root[data-brand-theme="midnight-arcane"] {
+  --brand-pattern: url("/brand/pattern-midnight-arcane.webp");
+  --brand-pattern-subtle: url("/brand/pattern-subtle-midnight-arcane.webp");
+  --brand-squirrel: url("/brand/squirrel-midnight-arcane.webp");
+}
+:root[data-brand-theme="forest-rune"] {
+  --brand-pattern: url("/brand/pattern-forest-rune.webp");
+  --brand-pattern-subtle: url("/brand/pattern-subtle-forest-rune.webp");
+  --brand-squirrel: url("/brand/squirrel-forest-rune.webp");
+}
+:root[data-brand-theme="frost-byte"] {
+  --brand-pattern: url("/brand/pattern-frost-byte.webp");
+  --brand-pattern-subtle: url("/brand/pattern-subtle-frost-byte.webp");
+  --brand-squirrel: url("/brand/squirrel-frost-byte.webp");
+}
+:root[data-theme="light"] { --brand-primary: var(--accent); --brand-background: var(--bg-app); --brand-progress: var(--accent); }
+:root[data-theme="light"][data-brand-theme="midnight-arcane"] { --accent: #673e9d; --accent-hover: #563282; --accent-text: #673e9d; --accent-soft: #673e9d18; }
+:root[data-theme="light"][data-brand-theme="ember-forge"] { --accent: #955311; --accent-hover: #7c440e; --accent-text: #955311; --accent-soft: #95531118; }
+:root[data-theme="light"][data-brand-theme="forest-rune"] { --accent: #526b1c; --accent-hover: #425817; --accent-text: #526b1c; --accent-soft: #526b1c18; }
+:root[data-theme="light"][data-brand-theme="frost-byte"] { --accent: #14628d; --accent-hover: #0f5278; --accent-text: #14628d; --accent-soft: #14628d18; }
+
 :root[data-theme="midnight-arcane"] {
   color-scheme: dark;
 

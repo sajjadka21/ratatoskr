@@ -1,9 +1,10 @@
 {
+  "checkConnection": { "message": "Check desktop connection" },
   "name": {
     "message": "Ratatoskr"
   },
   "description": {
-    "message": "Send downloads from your browser to Ratatoskr on this computer. Nothing leaves your computer."
+    "message": "Send selected links and downloads to Ratatoskr on this computer, without a cloud relay."
   },
   "menuLink": {
     "message": "Download with Ratatoskr"

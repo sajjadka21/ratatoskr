@@ -43,3 +43,4 @@ __pycache__/
 /android/**/build/
 /android/.gradle/
 /android/local.properties
+.test-tmp/

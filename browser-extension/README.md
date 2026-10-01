@@ -1,7 +1,7 @@
-# Ratatosk browser extension
+# Ratatoskr browser extension
 
 One extension for Chrome, Edge, Brave (Manifest V3, service worker) and
-Firefox 121+ (the same manifest; Firefox uses `background.scripts`). Its IDs
+Firefox 140+ (Firefox uses `background.scripts`). Its development IDs
 are fixed: `ocefplbhcgfmihahfkaknodbdidflhle` in Chromium browsers (from the
 `key` in the manifest) and `browser@ratatosk.app` in Firefox.
 
@@ -51,6 +51,27 @@ that one download URL and passes it to Ratatosk.
   browser keeps its own download.
 
 ## On video sites
+
+Instagram and other yt-dlp media paths currently support publicly accessible
+media. The optional direct-file cookie handover does not sign yt-dlp into an
+Instagram account. Private/account-only posts and DRM are not advertised as supported.
+
+## Store packages and connection checks
+
+Run `node scripts/package-extension.mjs` from the repository root to create
+separate Chrome, Edge and Firefox ZIPs under `target/extension`. These packages
+are ready for submission; they are not approved or signed store downloads.
+Store-assigned Chromium IDs must be allowed by the native host before publication.
+
+The extension sends a passive one-minute connection check and never launches the
+desktop app for that check. Settings marks a browser as recently contacted only
+for 150 seconds after an identified native message. Missing or failed responses
+remove the previous green state.
+
+Firefox asks separately for optional technical data consent when the user presses
+“Check desktop connection”. This sends only the browser family to the local app;
+denial keeps anonymous native status checks available. Link/website-content
+handover is declared in the Firefox manifest. Cookies remain optional and off by default.
 
 On the sites Ratatosk downloads with yt-dlp (YouTube, Aparat, Vimeo and
 others listed in `manifest.json`), a "Download with Ratatosk" button appears

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "__MSG_name__",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "__MSG_description__",
   "default_locale": "en",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuU1qaYM82wkWvZUbK6dwMqD4hyoLbW6gvlOHQSseuAHpcZ9dF8+gMLDi1bOW8HXuI8IbhYqfxSwPYTM5Aqb0VDZxjTvuXVtnBk+tlUkYj9vLLp45bsoJu/1ZH6WuclGg7/gF1Go59vRyAadgXAywZ8E+EkjQ8iEzWSV7qRnP4f2loY6M01kT2m6JCSXxrOQSNcCndcalKjXM3opRe8qsM55H3Q1tMhSOIDp7O2WhC83QmwotB4eLPd5AQBls6gcuUx3IkZ9Px7rDQ093Iwc5MKtQcZaNNfDgCj61EjucqbWN2Z3RpoNMwLQIlrZgJkiHJUOsAH7BTRl6CmcLDM2AaQIDAQAB",
@@ -15,20 +15,14 @@
     "downloads",
     "storage",
     "contextMenus",
-    "nativeMessaging"
+    "nativeMessaging",
+    "alarms"
   ],
-  "optional_permissions": [
-    "cookies",
-    "scripting"
-  ],
-  "optional_host_permissions": [
-    "<all_urls>"
-  ],
+  "optional_permissions": ["cookies", "scripting"],
+  "optional_host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js",
-    "scripts": [
-      "background.js"
-    ]
+    "scripts": ["background.js"]
   },
   "action": {
     "default_title": "__MSG_name__",
@@ -45,7 +39,11 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "browser@ratatosk.app",
-      "strict_min_version": "121.0"
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": ["browsingActivity", "websiteContent"],
+        "optional": ["technicalAndInteraction"]
+      }
     }
   },
   "content_scripts": [
@@ -65,9 +63,7 @@
         "*://*.reddit.com/*",
         "*://*.bilibili.com/*"
       ],
-      "js": [
-        "video.js"
-      ],
+      "js": ["video.js"],
       "run_at": "document_idle"
     }
   ]

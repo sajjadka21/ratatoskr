@@ -34,6 +34,19 @@ artifact is flattened into one staging folder, checked for duplicate names,
 signed updater metadata is verified, and SHA-256 checksums are generated.
 Assets are attached to a draft first, then the complete release is published.
 
+Tag-triggered releases publish as previews by default and do not replace the
+stable automatic-update target. After recording the applicable checks in
+`docs/mobile-acceptance.md`, dispatch the workflow on the existing tag with
+`promote_stable=true` only when deliberately promoting a fully reviewed release.
+For an already published preview, promote its verified assets with GitHub's
+release edit action rather than rebuilding/replacing binaries under the same
+version. A new version is required if the binaries change.
+
+Android now publishes a universal APK and three architecture APKs. The three
+browser ZIPs are separate submission packages; marketplace approval and actual
+assigned extension IDs remain separate work. CI debug APKs are excluded from
+release asset collection.
+
 One-time setup, in the repository's Settings → Secrets and variables → Actions:
 
 | Secret | What |

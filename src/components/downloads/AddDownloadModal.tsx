@@ -73,6 +73,7 @@ export function AddDownloadModal({
     useRef<HTMLTextAreaElement>(null);
   const actionRef =
     useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
   const [actionMenuOpen, setActionMenuOpen] =
     useState(false);
   const [newQueueName, setNewQueueName] = useState("");
@@ -123,6 +124,48 @@ export function AddDownloadModal({
   useEffect(() => {
     if (!open) return;
 
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const inertSiblings: Array<[HTMLElement, boolean]> = [];
+    for (let node: HTMLElement | null = dialog.parentElement; node?.parentElement; node = node.parentElement) {
+      for (const sibling of Array.from(node.parentElement.children)) {
+        if (sibling instanceof HTMLElement && sibling !== node && !["SCRIPT", "STYLE"].includes(sibling.tagName)) {
+          inertSiblings.push([sibling, sibling.inert]);
+          sibling.inert = true;
+        }
+      }
+    }
+    function controls() {
+      return Array.from(dialog!.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])',
+      )).filter((element) => {
+        const style = getComputedStyle(element);
+        return element.tabIndex >= 0 && !element.closest('[hidden], [inert]') && style.display !== "none" && style.visibility !== "hidden";
+      });
+    }
+    function containFocus(event: FocusEvent) {
+      if (event.target instanceof Node && !dialog!.contains(event.target)) (controls()[0] ?? dialog!).focus();
+    }
+    function cycleFocus(event: KeyboardEvent) {
+      if (event.key !== "Tab") return;
+      const items = controls();
+      const current = document.activeElement;
+      if (!items.length) {
+        event.preventDefault();
+        dialog!.focus();
+      } else if (event.shiftKey && (current === items[0] || !items.includes(current as HTMLElement))) {
+        event.preventDefault();
+        items[items.length - 1].focus();
+      } else if (!event.shiftKey && (current === items[items.length - 1] || !items.includes(current as HTMLElement))) {
+        event.preventDefault();
+        items[0].focus();
+      }
+    }
+    document.addEventListener("focusin", containFocus);
+    document.addEventListener("keydown", cycleFocus, true);
+    (inputRef.current && !inputRef.current.disabled ? inputRef.current : controls()[0] ?? dialog).focus();
+
     const timer = window.setTimeout(() => {
       inputRef.current?.focus();
 
@@ -135,7 +178,13 @@ export function AddDownloadModal({
       );
     }, 60);
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("focusin", containFocus);
+      document.removeEventListener("keydown", cycleFocus, true);
+      for (const [element, wasInert] of inertSiblings) element.inert = wasInert;
+      if (opener?.isConnected) opener.focus();
+    };
   }, [open]);
 
   useEffect(() => {
@@ -198,6 +247,8 @@ export function AddDownloadModal({
       }}
     >
       <section
+        ref={dialogRef}
+        tabIndex={-1}
         className="add-download-modal"
         role="dialog"
         aria-modal="true"

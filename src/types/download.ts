@@ -170,6 +170,7 @@ export type DownloadRule = {
 export type UiPreferences = {
   language: "fa" | "en";
   theme: "dark" | "light" | "system" | BrandTheme;
+  appearanceMode?: "dark" | "light" | "system" | null;
   closeToTray: boolean;
 };
 

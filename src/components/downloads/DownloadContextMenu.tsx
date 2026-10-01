@@ -8,6 +8,7 @@ import {
   FolderOpen,
   Layers3,
   Link2,
+  QrCode,
   ListX,
   Pause,
   Play,
@@ -68,6 +69,7 @@ type DownloadContextMenuProps = {
   /** Makes a new queue with this name and puts the download in it. */
   onCreateQueue?: (item: DownloadListItem, name: string) => void;
   onError?: (message: string) => void;
+  onSendToPhone?: (item: DownloadListItem) => void;
 };
 
 const ACTION_ICONS = {
@@ -100,9 +102,10 @@ export function DownloadContextMenu({
   onRefreshSource,
   onCreateQueue,
   onError,
+  onSendToPhone,
 }: DownloadContextMenuProps) {
   const [newQueue, setNewQueue] = useState("");
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const menuRef = useRef<HTMLDivElement>(null);
 
   const [position, setPosition] = useState({
@@ -274,6 +277,9 @@ export function DownloadContextMenu({
       }}
       role="menu"
     >
+      {onSendToPhone ? <button type="button" role="menuitem" onClick={() => { onSendToPhone(item); onClose(); }}>
+        <QrCode size={15} /><span>{language === "fa" ? "ارسال لینک به گوشی" : "Send link to phone"}</span>
+      </button> : null}
       {actions.length > 0 ? (
         <>
           {actions.map((action) => {

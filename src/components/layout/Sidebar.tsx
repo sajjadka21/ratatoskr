@@ -90,7 +90,7 @@ export function Sidebar({
         </div>
       </div>
 
-      <button type="button" className="sidebar__add" onClick={onAddDownload}>
+      <button type="button" className="sidebar__add" aria-label={t("nav.addLink")} title={t("nav.addLink")} onClick={onAddDownload}>
         <Plus size={17} strokeWidth={2.4} />
         <span>{t("nav.addLink")}</span>
         <kbd className="ltr">Ctrl+N</kbd>
@@ -106,6 +106,8 @@ export function Sidebar({
               type="button"
               className={`sidebar__item sidebar__item--tone-${tone} ${active ? "sidebar__item--active" : ""}`}
               aria-current={active ? "page" : undefined}
+              aria-label={t(label)}
+              title={t(label)}
               onClick={() => onSection(id)}
             >
               <Icon size={17} strokeWidth={1.9} />
@@ -124,6 +126,8 @@ export function Sidebar({
             type="button"
             className={`sidebar__item ${page === id ? "sidebar__item--active" : ""}`}
             aria-current={page === id ? "page" : undefined}
+            aria-label={t(label)}
+            title={t(label)}
             onClick={() => onPage(id)}
           >
             <Icon size={17} strokeWidth={1.9} />
@@ -145,6 +149,8 @@ export function Sidebar({
           type="button"
           className={`sidebar__item ${page === "settings" ? "sidebar__item--active" : ""}`}
           aria-current={page === "settings" ? "page" : undefined}
+          aria-label={t("nav.settings")}
+          title={t("nav.settings")}
           onClick={() => onPage("settings")}
         >
           <Settings size={17} strokeWidth={1.9} />

@@ -1,17 +1,9 @@
 
-const THEME_CYCLE: UiPreferences["theme"][] = [
-  "ember-forge",
-  "midnight-arcane",
-  "forest-rune",
-  "frost-byte",
-  "dark",
-  "light",
-  "system",
-];
+import { changeAppearance, resolveAppearance, type AppearanceMode } from "./utils/appearance";
 
-/** The theme after this one, for the command palette's "change theme". */
-function nextTheme(current: UiPreferences["theme"]): UiPreferences["theme"] {
-  return THEME_CYCLE[(THEME_CYCLE.indexOf(current) + 1) % THEME_CYCLE.length];
+function nextAppearance(preferences: UiPreferences): UiPreferences {
+  const cycle: AppearanceMode[] = ["dark", "light", "system"];
+  return changeAppearance(preferences, cycle[(cycle.indexOf(resolveAppearance(preferences, true).mode) + 1) % cycle.length]);
 }
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
@@ -26,6 +18,7 @@ import { Welcome } from "./components/onboarding/Welcome";
 import { SHOW_WELCOME_EVENT } from "./utils/appEvents";
 import { BulkActionBar, type BulkAction } from "./components/downloads/BulkActionBar";
 import { DownloadContextMenu } from "./components/downloads/DownloadContextMenu";
+import { MobileHandoffDialog } from "./components/downloads/MobileHandoffDialog";
 import { DownloadDetailsPanel, type ActivityEntry } from "./components/downloads/DownloadDetailsPanel";
 import { DownloadTable, type SortKey, type SortState } from "./components/downloads/DownloadTable";
 import { RefreshLinkDialog } from "./components/downloads/RefreshLinkDialog";
@@ -207,6 +200,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   const lastEventAt = useRef(new Map<string, number>());
 
   const [contextMenu, setContextMenu] = useState<{ item: DownloadListItem; x: number; y: number } | null>(null);
+  const [phoneSource, setPhoneSource] = useState<string | null>(null);
   const [removeCandidates, setRemoveCandidates] = useState<DownloadListItem[]>([]);
   const [removingHistory, setRemovingHistory] = useState(false);
   const [removeHistoryError, setRemoveHistoryError] = useState<string | null>(null);
@@ -1083,7 +1077,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
         run: () =>
           onPreferencesChange({
             ...preferences,
-            theme: nextTheme(preferences.theme),
+            ...nextAppearance(preferences),
           }),
       },
       { id: "go-downloads", group: "go", label: t("nav.all"), keywords: "downloads list دانلودها", run: () => goToSection("all") },
@@ -1120,6 +1114,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     paletteOpen ||
     welcomeOpen ||
     Boolean(contextMenu) ||
+    phoneSource !== null ||
     removeCandidates.length > 0 ||
     Boolean(refreshCandidate);
   const keyboard = useRef<(event: KeyboardEvent) => void>(() => {});
@@ -1130,6 +1125,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     const code = event.code;
     if (control && (code === "KeyK" || (event.shiftKey && code === "KeyP"))) {
       event.preventDefault();
+      if (phoneSource !== null) return;
       setPaletteOpen((open) => !open);
       return;
     }
@@ -1428,6 +1424,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
       </AppShell>
 
       <DownloadContextMenu
+        onSendToPhone={(item) => setPhoneSource(item.sourceUrl)}
         item={contextMenu?.item ?? null}
         queues={queues}
         x={contextMenu?.x ?? 0}
@@ -1457,6 +1454,8 @@ function App({ preferences, onPreferencesChange }: AppProps) {
         }}
         onError={reportError}
       />
+
+      {phoneSource !== null ? <MobileHandoffDialog source={phoneSource} onClose={() => setPhoneSource(null)} /> : null}
 
       <RemoveHistoryDialog
         items={removeCandidates}

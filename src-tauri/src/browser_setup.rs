@@ -16,6 +16,7 @@ pub struct BrowserConnection {
     /// Browsers that can now reach the app: `chrome`, `edge`, `brave`,
     /// `chromium`, `firefox`.
     pub registered: Vec<String>,
+    pub connected: Vec<String>,
     /// The extension folder shipped with the app, for loading it by hand.
     pub extension_folder: Option<String>,
     pub chromium_extension_id: String,
@@ -62,7 +63,24 @@ pub fn register_quietly<R: Runtime>(app: &AppHandle<R>) {
 }
 
 pub fn connection<R: Runtime>(app: &AppHandle<R>) -> BrowserConnection {
+    let storage = &app.state::<crate::AppState>().storage;
+    let records: Vec<_> = dm_system::browser_health::BROWSERS
+        .iter()
+        .filter_map(|browser| {
+            let key = format!("browser_ping_{browser}");
+            storage
+                .get_setting(&key)
+                .ok()
+                .flatten()
+                .map(|value| (key, value))
+        })
+        .collect();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|value| value.as_secs())
+        .unwrap_or(0);
     BrowserConnection {
+        connected: dm_system::browser_health::connected_browsers(&records, now),
         host_found: host_program().is_some(),
         registered: browser_hosts::registered()
             .into_iter()

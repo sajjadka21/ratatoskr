@@ -46,6 +46,7 @@ const ARG_GRAB_LINKS: &str = "--grab-links";
 struct NativeRequest {
     #[serde(rename = "type")]
     message_type: String,
+    browser: Option<String>,
     url: Option<String>,
     text: Option<String>,
     filename_hint: Option<String>,
@@ -128,11 +129,30 @@ fn handle_message(payload: &[u8], environment: &Environment) -> NativeResponse {
     };
 
     match request.message_type.as_str() {
-        "ping" => NativeResponse {
-            accepted: true,
-            app_found: Some(environment.application.is_some()),
-            ..NativeResponse::default()
-        },
+        "ping" => {
+            if environment.application.is_some() {
+                if let (Some(path), Some(browser)) =
+                    (&environment.database_path, request.browser.as_deref())
+                {
+                    if dm_system::browser_health::BROWSERS.contains(&browser) {
+                        if let (Ok(storage), Ok(now)) = (
+                            Storage::open(path),
+                            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH),
+                        ) {
+                            let _ = storage.set_setting(
+                                &format!("browser_ping_{browser}"),
+                                &now.as_secs().to_string(),
+                            );
+                        }
+                    }
+                }
+            }
+            NativeResponse {
+                accepted: true,
+                app_found: Some(environment.application.is_some()),
+                ..NativeResponse::default()
+            }
+        }
         "download" => handle_download(request, environment),
         "inspect" => handle_inspect(request, environment),
         _ => rejected("unsupported native message"),
@@ -581,6 +601,108 @@ mod tests {
         );
         assert!(response.accepted);
         assert_eq!(response.link_count, Some(2));
+    }
+
+    #[test]
+    fn identified_ping_records_a_recent_browser_heartbeat_only_with_an_application() {
+        let directory = tempdir().unwrap();
+        let database = directory.path().join("downloads.db");
+        let storage = Storage::open(&database).unwrap();
+        let before = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let response = handle_message(
+            br#"{"type":"ping","browser":"chrome"}"#,
+            &environment(Some(database)),
+        );
+
+        let after = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert!(response.accepted);
+        assert_eq!(response.app_found, Some(true));
+        let heartbeat = storage
+            .get_setting("browser_ping_chrome")
+            .unwrap()
+            .expect("an actual identified ping must be recorded")
+            .parse::<u64>()
+            .expect("heartbeat must use Unix seconds");
+        assert!((before..=after).contains(&heartbeat));
+        assert!(storage.list_downloads().unwrap().is_empty());
+    }
+
+    #[test]
+    fn unidentified_legacy_ping_does_not_claim_any_browser_is_connected() {
+        let directory = tempdir().unwrap();
+        let database = directory.path().join("downloads.db");
+        let response = handle_message(br#"{"type":"ping"}"#, &environment(Some(database.clone())));
+        assert!(response.accepted);
+        assert_eq!(response.app_found, Some(true));
+        let storage = Storage::open(&database).unwrap();
+        for browser in ["chrome", "edge", "brave", "chromium", "firefox"] {
+            assert_eq!(
+                storage
+                    .get_setting(&format!("browser_ping_{browser}"))
+                    .unwrap(),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn ping_rejects_unknown_browser_names_without_creating_heartbeat_settings() {
+        for browser in ["unknown", "Chrome", "chrome_extra", ""] {
+            let directory = tempdir().unwrap();
+            let database = directory.path().join("downloads.db");
+            let payload =
+                serde_json::to_vec(&serde_json::json!({ "type": "ping", "browser": browser }))
+                    .unwrap();
+            let response = handle_message(&payload, &environment(Some(database.clone())));
+            assert!(
+                response.accepted,
+                "the native protocol still answers its ping"
+            );
+            let storage = Storage::open(&database).unwrap();
+            assert_eq!(
+                storage
+                    .get_setting(&format!("browser_ping_{browser}"))
+                    .unwrap(),
+                None
+            );
+            assert_eq!(storage.get_setting("browser_ping_chrome").unwrap(), None);
+        }
+    }
+
+    #[test]
+    fn identified_ping_without_an_application_cannot_record_a_connection() {
+        let directory = tempdir().unwrap();
+        let database = directory.path().join("downloads.db");
+        let fixture = Environment {
+            application: None,
+            ..environment(Some(database.clone()))
+        };
+
+        let response = handle_message(br#"{"type":"ping","browser":"chrome"}"#, &fixture);
+
+        assert!(response.accepted);
+        assert_eq!(response.app_found, Some(false));
+        assert_eq!(
+            Storage::open(&database)
+                .unwrap()
+                .get_setting("browser_ping_chrome")
+                .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn identified_ping_without_a_database_still_answers_without_falling_back_to_the_real_profile() {
+        let response = handle_message(br#"{"type":"ping","browser":"chrome"}"#, &environment(None));
+        assert!(response.accepted);
+        assert_eq!(response.app_found, Some(true));
     }
 
     #[test]

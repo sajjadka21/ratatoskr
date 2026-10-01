@@ -1,5 +1,13 @@
 /** Strings for the full pages: Settings, Queues, LinkGrabber, Categories. */
 export const pageEn = {
+  "settings.search": "Search settings",
+  "settings.groups": "Settings groups",
+  "settings.group.general": "General",
+  "settings.group.downloads": "Downloads",
+  "settings.group.network": "Network",
+  "settings.group.browser": "Browser",
+  "settings.group.system": "System",
+  "settings.noResults": "No settings match your search.",
   "settings.title": "Settings",
   "settings.loadFailed": "Could not load settings: {reason}",
   "settings.pickerFailed": "Could not open the folder picker: {reason}",
@@ -228,6 +236,14 @@ export const pageEn = {
 export type PageMessageKey = keyof typeof pageEn;
 
 export const pageFa: Record<PageMessageKey, string> = {
+  "settings.search": "جست‌وجوی تنظیمات",
+  "settings.groups": "بخش‌های تنظیمات",
+  "settings.group.general": "عمومی",
+  "settings.group.downloads": "دانلودها",
+  "settings.group.network": "شبکه",
+  "settings.group.browser": "مرورگر",
+  "settings.group.system": "سیستم",
+  "settings.noResults": "تنظیماتی با این عبارت پیدا نشد.",
   "settings.title": "تنظیمات",
   "settings.loadFailed": "تنظیمات بارگذاری نشد: {reason}",
   "settings.pickerFailed": "پنجره‌ی انتخاب پوشه باز نشد: {reason}",

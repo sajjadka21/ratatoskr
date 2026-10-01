@@ -111,8 +111,7 @@
   border-radius: 9px;
 }
 
-.settings-page__option--active
-.settings-page__option-icon {
+.settings-page__option--active .settings-page__option-icon {
   color: var(--accent);
   background: var(--accent-soft);
 }
@@ -153,13 +152,11 @@
   border-radius: 50%;
 }
 
-.settings-page__option--active
-.settings-page__radio {
+.settings-page__option--active .settings-page__radio {
   border-color: var(--accent);
 }
 
-.settings-page__option--active
-.settings-page__radio span {
+.settings-page__option--active .settings-page__radio span {
   width: 8px;
   height: 8px;
 
@@ -203,7 +200,7 @@
   font-size: 10.5px;
 }
 
- .settings-page__section {
+.settings-page__section {
   margin-bottom: 24px;
 }
 
@@ -473,7 +470,7 @@
   border-radius: var(--radius-sm);
   font: inherit;
   font-size: 12.5px;
-  }
+}
 
 .settings-page__inline-field input {
   width: 92px;
@@ -1103,15 +1100,88 @@
 }
 
 /* The brand theme picker: a swatch and a name for each theme. */
-.settings-page__themes { display: flex; flex-wrap: wrap; gap: 8px; }
+.settings-page__themes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .settings-page__theme {
-  display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 8px;
-  color: var(--text-secondary); background: var(--bg-surface); border: 1px solid var(--border-strong);
-  border-radius: 999px; font: inherit; font-size: 12px; cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 8px;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
 }
-.settings-page__theme:hover { background: var(--bg-surface-hover); }
-.settings-page__theme--active { color: var(--text-primary); border-color: var(--accent); background: var(--accent-soft); }
+.settings-page__theme:hover {
+  background: var(--bg-surface-hover);
+}
+.settings-page__theme--active {
+  color: var(--text-primary);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
 .settings-page__theme-swatch {
-  display: grid; place-items: center; width: 22px; height: 22px; border: 2px solid; border-radius: 50%;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid;
+  border-radius: 50%;
 }
-.settings-page__theme-swatch i { width: 9px; height: 9px; border-radius: 50%; }
+.settings-page__theme-swatch i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.settings-page [hidden] {
+  display: none !important;
+}
+.settings-page__search {
+  display: grid;
+  gap: 8px;
+  color: var(--text-muted);
+}
+.settings-page__search input {
+  min-height: 44px;
+  padding: 10px 14px;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  font: inherit;
+}
+.settings-page__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.settings-page__tabs button {
+  min-height: 42px;
+  padding: 9px 18px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.settings-page__tabs button[aria-selected="true"] {
+  color: var(--accent);
+  background: var(--bg-surface);
+  border-color: var(--border-subtle);
+}
+.settings-page__tabs button:focus-visible,
+.settings-page__search input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.settings-page [role="tabpanel"] {
+  display: grid;
+  gap: 24px;
+}

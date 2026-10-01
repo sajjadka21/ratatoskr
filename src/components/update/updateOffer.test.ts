@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { shouldAsk, skipVersion, skippedVersion } from "./updatePrompt";
+import { shouldAsk, skipVersion, skippedVersion } from "./updateOffer";
 
 function memory() {
   const data = new Map<string, string>();

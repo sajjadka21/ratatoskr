@@ -4,7 +4,7 @@ import { Download } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { useI18n } from "../../i18n/I18n";
-import { shouldAsk, skipVersion, skippedVersion, type OfferedUpdate } from "./updatePrompt";
+import { shouldAsk, skipVersion, skippedVersion, type OfferedUpdate } from "./updateOffer";
 
 import "./UpdatePrompt.css";
 

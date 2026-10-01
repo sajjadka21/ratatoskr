@@ -62,7 +62,7 @@
     <string name="default_audio">Audio by default in quick mode</string>
     <string name="default_quality">Default maximum quality</string>
     <string name="parallel_setting">Simultaneous downloads (1–3)</string>
-    <string name="speed_setting">Speed limit per download, KiB/s (0 = unlimited)</string>
+    <string name="speed_setting">Speed limit per download</string>
     <string name="appearance">Appearance</string>
     <string name="theme_system">Follow system</string>
     <string name="theme_light">Soft light</string>
@@ -120,4 +120,36 @@
     <string name="plugin_invalid">That file is not a valid plugin.</string>
     <string name="plugin_remove">Remove</string>
     <string name="error_storage">Saving to the Downloads folder needs storage permission. Allow it in Android settings, then resume.</string>
+    <string name="menu">Menu</string>
+    <string name="tab_count">%1$s (%2$d)</string>
+    <string name="summary_line">%1$d active · %2$d in history</string>
+    <string name="scheduled_for">⏰ %1$s</string>
+    <string name="outside_window">Outside allowed hours</string>
+    <string name="schedule">Schedule</string>
+    <string name="schedule_set">Scheduled.</string>
+    <string name="schedule_clear">Clear schedule</string>
+    <string name="detail_status">Status</string>
+    <string name="detail_size">Size</string>
+    <string name="detail_source">Source</string>
+    <string name="detail_file">File name</string>
+    <string name="detail_added">Added</string>
+    <string name="detail_starts">Scheduled start</string>
+    <string name="detail_problem">Problem</string>
+    <string name="copy_link">Copy link</string>
+    <string name="link_copied">Link copied.</string>
+    <string name="section_network">Network and time</string>
+    <string name="section_downloads">Downloads</string>
+    <string name="section_intake">Adding links</string>
+    <string name="section_appearance">Appearance and language</string>
+    <string name="section_updates">Updates and plugins</string>
+    <string name="window_setting">Only download during set hours</string>
+    <string name="window_from">From</string>
+    <string name="window_to">Until</string>
+    <string name="window_hint">The window may pass midnight (for example 23:00 to 06:00). Outside it, downloads wait and continue by themselves when it opens.</string>
+    <string name="connections_value">Connections per file: %1$d</string>
+    <string name="parallel_value">Simultaneous downloads: %1$d</string>
+    <string name="speed_unlimited">Unlimited</string>
+    <string name="open_plugins">Manage plugins</string>
+    <string name="version_line">Version %1$s</string>
+    <string name="language">Language</string>
 </resources>

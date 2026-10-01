@@ -30,6 +30,8 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".SettingsActivity" android:exported="false" android:parentActivityName=".MainActivity" />
+
         <!-- The share sheet: share a link from YouTube, Instagram, a browser... to Ratatosk. -->
         <activity
             android:name=".ShareActivity"

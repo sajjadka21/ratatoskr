@@ -2,7 +2,10 @@ package app.ratatoskr.android
 
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.util.TypedValue
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -31,6 +34,25 @@ abstract class MobileActivity : AppCompatActivity() {
         if (prefs.language.isNotEmpty() && AppCompatDelegate.getApplicationLocales().toLanguageTags() != prefs.language)
             AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(prefs.language))
         super.onCreate(savedInstanceState)
+    }
+    val muted get() = (ink and 0x00FFFFFF) or 0x99000000.toInt()
+    val success get() = Color.parseColor(if (dark) "#6CCB8F" else "#1F7A45")
+    val danger get() = Color.parseColor(if (dark) "#F08A7A" else "#B3392A")
+    /** A rounded rectangle, optionally with a thin outline. */
+    fun rounded(fill: Int, radius: Int = 16, stroke: Int? = null) = GradientDrawable().apply {
+        setColor(fill); cornerRadius = dp(radius).toFloat(); if (stroke != null) setStroke(dp(1), stroke)
+    }
+    /** A small coloured label such as a status. */
+    fun chip(value: String, color: Int) = TextView(this).apply {
+        text = value; textSize = 12f; setTextColor(color); setPadding(dp(10), dp(3), dp(10), dp(3))
+        background = rounded((color and 0x00FFFFFF) or 0x2A000000, 20)
+    }
+    /** A round icon button with a ripple, tinted with the brand colour. */
+    fun icon(res: Int, description: String, tint: Int = accent, size: Int = 40, action: () -> Unit) = ImageButton(this).apply {
+        setImageResource(res); contentDescription = description; setColorFilter(tint)
+        val ripple = TypedValue(); theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true)
+        setBackgroundResource(ripple.resourceId)
+        layoutParams = LinearLayout.LayoutParams(dp(size), dp(size)); setOnClickListener { action() }
     }
     fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
     fun label(value: String, size: Float = 16f) = TextView(this).apply { text = value; textSize = size; setTextColor(ink); setPadding(0, dp(8), 0, dp(8)) }

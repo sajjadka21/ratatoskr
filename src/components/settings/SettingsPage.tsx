@@ -31,6 +31,7 @@ import {
 } from "../../utils/settingsFormat";
 
 import { Switch } from "./Switch";
+import { changeAppearance, changeBrand, resolveAppearance, type AppearanceMode } from "../../utils/appearance";
 import { BRAND_THEMES, BRAND_THEME_SWATCHES } from "../../types/download";
 import { SHOW_WELCOME_EVENT } from "../../utils/appEvents";
 import { UpdateSection } from "./UpdateSection";
@@ -269,7 +270,8 @@ function AppearanceSection({
   onError: (message: string) => void;
 }) {
   const { t } = useI18n();
-  const themes: Array<{ value: UiPreferences["theme"]; label: MessageKey }> = [
+  const appearance = resolveAppearance(preferences, true);
+  const themes: Array<{ value: AppearanceMode; label: MessageKey }> = [
     { value: "dark", label: "settings.themeDark" },
     { value: "light", label: "settings.themeLight" },
     { value: "system", label: "settings.themeSystem" },
@@ -320,13 +322,13 @@ function AppearanceSection({
                 <button
                   key={theme.value}
                   type="button"
-                  aria-pressed={preferences.theme === theme.value}
+                  aria-pressed={appearance.mode === theme.value}
                   className={
-                    preferences.theme === theme.value
+                    appearance.mode === theme.value
                       ? "settings-page__segment settings-page__segment--active"
                       : "settings-page__segment"
                   }
-                  onClick={() => onChange({ ...preferences, theme: theme.value })}
+                  onClick={() => onChange(changeAppearance(preferences, theme.value))}
                 >
                   {t(theme.label)}
                 </button>
@@ -346,13 +348,13 @@ function AppearanceSection({
                 <button
                   key={theme}
                   type="button"
-                  aria-pressed={preferences.theme === theme}
+                  aria-pressed={appearance.brand === theme}
                   className={
-                    preferences.theme === theme
+                    appearance.brand === theme
                       ? "settings-page__theme settings-page__theme--active"
                       : "settings-page__theme"
                   }
-                  onClick={() => onChange({ ...preferences, theme })}
+                  onClick={() => onChange(changeBrand(preferences, theme))}
                 >
                   <span
                     className="settings-page__theme-swatch"

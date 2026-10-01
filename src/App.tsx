@@ -1,17 +1,9 @@
 
-const THEME_CYCLE: UiPreferences["theme"][] = [
-  "ember-forge",
-  "midnight-arcane",
-  "forest-rune",
-  "frost-byte",
-  "dark",
-  "light",
-  "system",
-];
+import { changeAppearance, resolveAppearance, type AppearanceMode } from "./utils/appearance";
 
-/** The theme after this one, for the command palette's "change theme". */
-function nextTheme(current: UiPreferences["theme"]): UiPreferences["theme"] {
-  return THEME_CYCLE[(THEME_CYCLE.indexOf(current) + 1) % THEME_CYCLE.length];
+function nextAppearance(preferences: UiPreferences): UiPreferences {
+  const cycle: AppearanceMode[] = ["dark", "light", "system"];
+  return changeAppearance(preferences, cycle[(cycle.indexOf(resolveAppearance(preferences, true).mode) + 1) % cycle.length]);
 }
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
@@ -1083,7 +1075,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
         run: () =>
           onPreferencesChange({
             ...preferences,
-            theme: nextTheme(preferences.theme),
+            ...nextAppearance(preferences),
           }),
       },
       { id: "go-downloads", group: "go", label: t("nav.all"), keywords: "downloads list دانلودها", run: () => goToSection("all") },

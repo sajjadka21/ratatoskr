@@ -361,8 +361,10 @@ pub struct QueueScheduleResponse {
 pub struct UiPreferencesResponse {
     /// `fa` or `en`.
     pub language: String,
-    /// `dark`, `light` or `system`.
+    /// A brand theme; older clients may send `dark`, `light` or `system`.
     pub theme: String,
+    #[serde(default)]
+    pub appearance_mode: Option<String>,
     pub close_to_tray: bool,
 }
 

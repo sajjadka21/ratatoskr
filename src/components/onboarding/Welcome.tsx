@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { changeAppearance, resolveAppearance } from "../../utils/appearance";
 import {
   ArrowLeft,
   ArrowRight,
@@ -201,13 +202,13 @@ function HelloStep({
                 <button
                   key={theme.value}
                   type="button"
-                  aria-pressed={preferences.theme === theme.value}
+                  aria-pressed={resolveAppearance(preferences, true).mode === theme.value}
                   className={
-                    preferences.theme === theme.value
+                    resolveAppearance(preferences, true).mode === theme.value
                       ? "settings-page__segment settings-page__segment--active"
                       : "settings-page__segment"
                   }
-                  onClick={() => onPreferencesChange({ ...preferences, theme: theme.value })}
+                  onClick={() => onPreferencesChange(changeAppearance(preferences, theme.value))}
                 >
                   {theme.label}
                 </button>

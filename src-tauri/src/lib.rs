@@ -2173,6 +2173,19 @@ fn pause_all_downloads(state: State<'_, AppState>) -> usize {
 
 pub(crate) const SETTING_UI_LANGUAGE: &str = "ui_language";
 const SETTING_UI_THEME: &str = "ui_theme";
+const SETTING_UI_APPEARANCE: &str = "ui_appearance_mode";
+
+fn appearance_mode(theme: &str, explicit: Option<&str>) -> Result<String, String> {
+    let mode = explicit.unwrap_or(if matches!(theme, "dark" | "light" | "system") {
+        theme
+    } else {
+        "dark"
+    });
+    if !matches!(mode, "dark" | "light" | "system") {
+        return Err("unsupported appearance mode".to_owned());
+    }
+    Ok(mode.to_owned())
+}
 
 /// The plain themes and the four brand themes.
 fn is_known_theme(value: &str) -> bool {
@@ -2201,9 +2214,18 @@ fn ui_preferences(state: &AppState) -> Result<UiPreferencesResponse, String> {
     let theme = setting(SETTING_UI_THEME)?
         .filter(|value| is_known_theme(value))
         .unwrap_or_else(|| "ember-forge".to_owned());
+    let mode = setting(SETTING_UI_APPEARANCE)?
+        .filter(|value| matches!(value.as_str(), "dark" | "light" | "system"));
+    let mode = appearance_mode(&theme, mode.as_deref())?;
+    let brand = if matches!(theme.as_str(), "dark" | "light" | "system") {
+        "ember-forge".to_owned()
+    } else {
+        theme
+    };
     Ok(UiPreferencesResponse {
         language,
-        theme,
+        theme: brand,
+        appearance_mode: Some(mode),
         close_to_tray: tray::close_to_tray_enabled(state),
     })
 }
@@ -2224,6 +2246,7 @@ fn set_ui_preferences(
     if !is_known_theme(&preferences.theme) {
         return Err("unsupported theme".to_owned());
     }
+    let mode = appearance_mode(&preferences.theme, preferences.appearance_mode.as_deref())?;
     let save = |key: &str, value: &str| {
         state
             .storage
@@ -2232,6 +2255,7 @@ fn set_ui_preferences(
     };
     save(SETTING_UI_LANGUAGE, &preferences.language)?;
     save(SETTING_UI_THEME, &preferences.theme)?;
+    save(SETTING_UI_APPEARANCE, &mode)?;
     save(
         tray::SETTING_CLOSE_TO_TRAY,
         if preferences.close_to_tray {

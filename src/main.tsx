@@ -7,26 +7,30 @@ import App from "./App";
 import { MiniWindow } from "./mini/MiniWindow";
 import { I18nProvider } from "./i18n/I18n";
 import type { UiPreferences } from "./types/download";
+import { resolveAppearance } from "./utils/appearance";
 
 import "./styles/global.css";
 
 /** The small download windows load the same page with `?view=mini`. */
 const IS_MINI = new URLSearchParams(window.location.search).get("view") === "mini";
 
-const DEFAULT_PREFERENCES: UiPreferences = { language: "fa", theme: "ember-forge", closeToTray: true };
+const DEFAULT_PREFERENCES: UiPreferences = { language: "fa", theme: "ember-forge", appearanceMode: "dark", closeToTray: true };
 
 /** Applies language, direction and theme to the whole document. */
 function applyToDocument(preferences: UiPreferences) {
   const root = document.documentElement;
   root.lang = preferences.language;
   root.dir = preferences.language === "fa" ? "rtl" : "ltr";
-  root.dataset.theme = preferences.theme;
+  const appearance = resolveAppearance(preferences, window.matchMedia("(prefers-color-scheme: dark)").matches);
+  root.dataset.theme = appearance.theme;
+  root.dataset.brandTheme = appearance.brand;
+  root.dataset.appearanceMode = appearance.mode;
   if (!IS_MINI) document.title = preferences.language === "fa" ? "راتاتوسک" : "Ratatoskr";
   // The Windows title bar follows the chosen theme too.
   try {
     void getCurrentWindow()
       .setTheme(
-        preferences.theme === "system" ? null : preferences.theme === "light" ? "light" : "dark",
+        appearance.mode === "system" ? null : appearance.dark ? "dark" : "light",
       )
       .catch(() => {});
   } catch {
@@ -36,6 +40,13 @@ function applyToDocument(preferences: UiPreferences) {
 
 function Root() {
   const [preferences, setPreferences] = useState<UiPreferences | null>(null);
+  useEffect(() => {
+    if (!preferences) return;
+    const apply = () => applyToDocument(preferences);
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    apply(); media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, [preferences]);
 
   useEffect(() => {
     void invoke<UiPreferences>("get_ui_preferences")

@@ -10,7 +10,8 @@ import java.net.URI
 /** Single-stream HTTP with identity-checked resume; never append an ignored Range. */
 object DirectDownload {
     fun fetch(context: Context, task: MobileTask, url: String, control: TransferControl,
-              progress: (Float) -> Unit, directory: File = Engine.work(context, task.id)): File {
+              progress: (Float) -> Unit, directory: File = Engine.work(context, task.id),
+              openConnection: (String, Map<String, String>, () -> Unit) -> HttpConnection = SafeHttp::open): File {
         directory.mkdirs()
         val partial = File(directory, "transfer.part")
         val journal = File(directory, "transfer.json")
@@ -22,7 +23,7 @@ object DirectDownload {
         var offset = if (saved?.optString("source") == url) partial.length() else 0L
         var validators = HttpValidators(saved?.optString("etag")?.takeIf { it.isNotEmpty() }, saved?.optString("modified")?.takeIf { it.isNotEmpty() })
         if (HttpResumePolicy.ifRange(validators) == null) offset = 0
-        var connection = SafeHttp.open(url, if (offset > 0) mapOf("Range" to "bytes=$offset-", "If-Range" to HttpResumePolicy.ifRange(validators)!!) else emptyMap(), control::check)
+        var connection = openConnection(url, if (offset > 0) mapOf("Range" to "bytes=$offset-", "If-Range" to HttpResumePolicy.ifRange(validators)!!) else emptyMap(), control::check)
         fun metadata() = HttpResponseMetadata(connection.responseCode, connection.getHeaderField("Content-Range"),
             connection.contentLengthLong.takeIf { it >= 0 }, HttpValidators(connection.getHeaderField("ETag"), connection.getHeaderField("Last-Modified")))
         try {
@@ -30,7 +31,7 @@ object DirectDownload {
             val request = ResumeRequest(offset, saved?.optLong("total", -1)?.takeIf { it >= 0 }, validators)
             var decision = HttpResumePolicy.evaluate(request, response)
             if (decision == ResumeDecision.RESTART && response.status != 200) {
-                connection.disconnect(); connection = SafeHttp.open(url, check = control::check); response = metadata()
+                connection.disconnect(); connection = openConnection(url, emptyMap(), control::check); response = metadata()
                 decision = HttpResumePolicy.evaluate(ResumeRequest(0), response)
             }
             if (decision == ResumeDecision.COMPLETE) {

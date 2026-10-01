@@ -56,6 +56,7 @@ val prepareNative by tasks.registering(Exec::class) {
     commandLine(python, "scripts/build_android_native.py", "--sdk", sdk, "--output", nativeAar.get().asFile.absolutePath)
 }
 dependencies {
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")

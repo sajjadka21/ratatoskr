@@ -53,7 +53,15 @@ class NetworkJobService : JobService() {
             for (task in jobs) {
                 if (stopped || run != generation || !allowed() || android.os.SystemClock.elapsedRealtime() >= deadline) break
                 val control = TransferControl { allowed() && !stopped && run == generation }
-                if (!MobileRuntime.claim(task.id, control, prefs.concurrency)) continue
+                var claimed = MobileRuntime.claim(task.id, control, prefs.concurrency)
+                // An OS restart can overlap the old writer's bounded cleanup.
+                // Give it time to release its slot without starting a duplicate.
+                val waitUntil = minOf(deadline, android.os.SystemClock.elapsedRealtime() + 2000)
+                while (!claimed && !stopped && run == generation && allowed() && android.os.SystemClock.elapsedRealtime() < waitUntil) {
+                    delay(50)
+                    claimed = MobileRuntime.claim(task.id, control, prefs.concurrency)
+                }
+                if (!claimed) continue
                 if (!store.begin(task.id)) { MobileRuntime.release(task.id); continue }
                 active[task.id] = control
                 notifyTask(store.get(task.id)!!)

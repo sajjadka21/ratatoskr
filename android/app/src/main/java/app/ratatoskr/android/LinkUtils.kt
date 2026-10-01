@@ -74,14 +74,14 @@ object LinkUtils {
     fun videoFormat(height: Int?): String =
         if (height == null || height <= 0) "bv*+ba/b" else "bv*[height<=$height]+ba/b[height<=$height]"
 
-    fun extractUrls(text: String?): List<String> = urlRegex.findAll(text.orEmpty())
+    fun extractUrls(text: String?, limit: Int = 50): List<String> = urlRegex.findAll(text.orEmpty())
         .map { match ->
             var value = if ('?' in match.value) match.value else match.value.trimEnd { c -> c in TRAILING }
             for ((closing, opening) in listOf(')' to '(', ']' to '[', '}' to '{')) {
                 while (value.endsWith(closing) && value.count { it == closing } > value.count { it == opening }) value = value.dropLast(1)
             }
             value
-        }.distinct().take(200).toList()
+        }.distinct().take(limit).toList()
 
     fun contentIdentity(url: String): String {
         val canonical = canonicalUrl(url)

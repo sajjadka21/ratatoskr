@@ -100,7 +100,7 @@ class NetworkJobService : JobService() {
                 val now = System.currentTimeMillis()
                 finishJob(params, store.list().any { it.state in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) && Schedule.isDue(it.startAt, now) && Schedule.now(prefs.window) })
                 NetworkJobs.schedule(this@NetworkJobService, store)
-            } else if (!stopped) finishJob(params, false)   // a newer run took over; this one is done
+            }
         }
         return true
     }

@@ -33,7 +33,7 @@ object LinkPlan {
     }
 
     /** Every link in the text, with `[1-10]` / `[01-10]` ranges in an address expanded. */
-    fun parse(text: String?): List<String> = LinkUtils.extractUrls(expand(text.orEmpty())).filterNot { range.containsMatchIn(it) }.take(MAX_LINKS)
+    fun parse(text: String?): List<String> = LinkUtils.extractUrls(expand(text.orEmpty()), MAX_LINKS).filterNot { range.containsMatchIn(it) }.take(MAX_LINKS)
 
     private val range = Regex("\\[(\\d{1,6})-(\\d{1,6})]")
 

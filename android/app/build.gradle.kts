@@ -11,8 +11,8 @@ android {
         applicationId = "app.ratatoskr.android"
         minSdk = 26          // Android 8; from Android 10 saving to Downloads needs no storage permission
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.2.1"
+        versionCode = 8
+        versionName = "1.2.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         resourceConfigurations += listOf("en", "fa")   // library strings in other languages are dead weight
         // The CPUs shipped are chosen by the per-ABI splits below; abiFilters cannot be combined with them.
@@ -84,7 +84,7 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.14.1")
     // Real-screen smoke and accessibility tests, run on an emulator by .github/workflows/android-ui.yml
     androidTestImplementation("androidx.test:runner:1.6.2")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.2")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     androidTestImplementation("androidx.test.espresso:espresso-contrib:3.6.1")
     androidTestImplementation("androidx.test.espresso:espresso-accessibility:3.6.1")

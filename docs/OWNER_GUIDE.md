@@ -27,9 +27,9 @@ keytool -genkeypair -v -keystore ratatoskr-release.jks -alias ratatoskr \
    - `ANDROID_KEYSTORE_PASSWORD`
    - `ANDROID_KEY_ALIAS` (یعنی `ratatoskr`)
    - `ANDROID_KEY_PASSWORD`
-4. اثر انگشت گواهی را بگیر و به‌صورت **Variable** (نه Secret) ثبت کن:
-   `keytool -list -v -keystore ratatoskr-release.jks -alias ratatoskr` ← مقدار `SHA256:` را بدون دونقطه یا با
-   دونقطه، همان‌طور که `release.yml` انتظار دارد، در `ANDROID_SIGNING_CERT_SHA256` بگذار.
+4. اثر انگشت گواهی را به‌صورت **Variable** (نه Secret) ثبت کن، با نام `ANDROID_SIGNING_CERT_SHA256`. قالبش باید
+   **حروف کوچک و بدون دونقطه** باشد (همان‌طور که `apksigner` چاپ می‌کند)، مثلاً `ab12cd...`. اسکریپت
+   `scripts\make-android-keystore.ps1` این مقدار را درست آماده می‌کند.
 5. کلید به‌روزرسانی ویندوز هم برای ریلیز لازم است: `TAURI_SIGNING_PRIVATE_KEY` و
    `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (توضیح در `RELEASING.md`).
 

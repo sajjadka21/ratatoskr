@@ -41,7 +41,8 @@ $b64File = Join-Path $Folder "ANDROID_KEYSTORE_BASE64.txt"
 Set-Content -Path $b64File -Value $b64 -NoNewline
 
 $listing = & $keytool -list -v -keystore $store -alias $alias -storepass $password
-$sha = ($listing | Select-String "SHA256:").ToString().Split(":",2)[1].Trim()
+# The release check compares with apksigner's form: lower-case hex, no colons.
+$sha = (($listing | Select-String "SHA256:").ToString().Split(":",2)[1].Trim() -replace ":","").ToLower()
 
 Write-Host ""
 Write-Host "Done. Your key file: $store" -ForegroundColor Green

@@ -79,6 +79,9 @@ abstract class MobileActivity : AppCompatActivity() {
         setOnClickListener { action() }
     }
     fun insets(view: android.view.View) {
+        // Older decor-fitting windows may consume the insets before this view.
+        // Ordinary spacing must not depend on receiving an inset callback.
+        view.setPadding(dp(20), dp(12), dp(20), dp(16))
         ViewCompat.setOnApplyWindowInsetsListener(view) { target, inset ->
             val bars = inset.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
             target.setPadding(dp(20) + bars.left, dp(12) + bars.top, dp(20) + bars.right, dp(16) + bars.bottom)

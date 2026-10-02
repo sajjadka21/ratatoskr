@@ -64,6 +64,7 @@ class MainActivity : MobileActivity(), TaskActions {
         selection.addAll(savedInstanceState?.getStringArrayList("selection").orEmpty())
         onBackPressedDispatcher.addCallback(this, leaveSelection)
         setContentView(ComposeView(this).apply {
+            contentDescription = getString(R.string.app_name)
             setContent {
                 RatatoskrTheme(this@MainActivity) {
                     androidx.compose.material3.Surface(modifier = androidx.compose.ui.Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {

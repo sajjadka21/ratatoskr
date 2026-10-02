@@ -44,14 +44,13 @@ class SettingsActivity : MobileActivity() {
         val viewport = FrameLayout(this).apply { setBackgroundColor(paper) }
         val root = ScrollView(this).also { settingsScroll = it }
         viewport.addView(root, FrameLayout.LayoutParams(-1, -1))
-        val page = column()
+        val page = column().apply { setPadding(dp(16), dp(8), dp(16), dp(24)) }
         root.addView(page)
         ViewCompat.setOnApplyWindowInsetsListener(viewport) { _, inset ->
             val bars = inset.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
             // Shrink the actual scroll viewport; scrolling and focus requests must
             // measure the same visible area, outside the system bars.
             viewport.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-            page.setPadding(dp(16), dp(8), dp(16), dp(24))
             inset
         }
         val top = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }

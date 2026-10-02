@@ -59,7 +59,7 @@ class MainActivity : MobileActivity(), TaskActions {
         NetworkJobs.schedule(this)
 
         val root = FrameLayout(this).apply { setBackgroundColor(paper) }
-        val content = column()
+        val content = column().apply { setPadding(dp(16), dp(8), dp(16), 0) }
         // header: icon, title, summary, menu
         header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(4), 0, dp(8)) }
         header.addView(ImageView(this).apply { setImageResource(R.mipmap.ic_launcher); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO; layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(12) } })
@@ -93,7 +93,11 @@ class MainActivity : MobileActivity(), TaskActions {
 
         val group = MaterialButtonToggleGroup(this).apply { isSingleSelection = true; isSelectionRequired = true }
         fun tab() = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-            id = View.generateViewId(); setTextColor(accent); layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f)
+            id = View.generateViewId(); layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f)
+            val states = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
+            backgroundTintList = android.content.res.ColorStateList(states, intArrayOf(accent, surface))
+            setTextColor(android.content.res.ColorStateList(states, intArrayOf(paper, accent)))
+            strokeColor = android.content.res.ColorStateList.valueOf(accent)
         }
         activeTab = tab(); historyTab = tab()
         group.addView(activeTab); group.addView(historyTab)
@@ -130,7 +134,7 @@ class MainActivity : MobileActivity(), TaskActions {
             backgroundTintList = android.content.res.ColorStateList.valueOf(accent); setTextColor(paper); iconTint = android.content.res.ColorStateList.valueOf(paper)
             setOnClickListener { addLinks() }
         }
-        val fabParams = FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END)
+        val fabParams = FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(dp(16), dp(16), dp(16), dp(16)) }
         root.addView(fab, fabParams)
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, inset ->
             val bars = inset.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())

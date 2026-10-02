@@ -74,14 +74,18 @@ class MainActivity : MobileActivity(), TaskActions {
         header.addView(more)
         content.addView(header)
         // shown instead of the header while downloads are selected
-        selectionBar = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(4), 0, dp(8)); visibility = View.GONE }
-        selectionBar.addView(icon(R.drawable.ic_close, getString(R.string.cancel)) { selection.clear(); render() })
+        selectionBar = column().apply { setPadding(0, dp(4), 0, dp(8)); visibility = View.GONE }
+        val selectionHeader = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        selectionHeader.addView(icon(R.drawable.ic_close, getString(R.string.cancel)) { selection.clear(); render() })
         selectionTitle = TextView(this).apply { textSize = 17f; setTextColor(ink); layoutParams = LinearLayout.LayoutParams(0, -2, 1f); setPadding(dp(8), 0, 0, 0) }
-        selectionBar.addView(selectionTitle)
-        selectionBar.addView(button(getString(R.string.select_all)) { selection.addAll(adapter.currentList.map { it.task.id }); render() })
-        selectionBar.addView(icon(R.drawable.ic_pause, getString(R.string.pause)) { applyToSelection(DownloadService.ACTION_PAUSE) })
-        selectionBar.addView(icon(R.drawable.ic_retry, getString(R.string.resume)) { applyToSelection(DownloadService.ACTION_RESUME) })
-        selectionBar.addView(icon(R.drawable.ic_delete, getString(R.string.remove), danger) { removeSelection() })
+        selectionHeader.addView(selectionTitle)
+        selectionHeader.addView(icon(R.drawable.ic_delete, getString(R.string.remove), danger) { removeSelection() })
+        selectionBar.addView(selectionHeader)
+        val selectionActions = LinearLayout(this)
+        selectionActions.addView(button(getString(R.string.select_all)) { selection.addAll(adapter.currentList.map { it.task.id }); render() }, LinearLayout.LayoutParams(0, -2, 1f))
+        selectionActions.addView(button(getString(R.string.pause)) { applyToSelection(DownloadService.ACTION_PAUSE) }, LinearLayout.LayoutParams(0, -2, 1f))
+        selectionActions.addView(button(getString(R.string.resume)) { applyToSelection(DownloadService.ACTION_RESUME) }, LinearLayout.LayoutParams(0, -2, 1f))
+        selectionBar.addView(selectionActions)
         content.addView(selectionBar)
         onBackPressedDispatcher.addCallback(this, leaveSelection)
         banner = column().apply { visibility = View.GONE }
@@ -181,7 +185,7 @@ class MainActivity : MobileActivity(), TaskActions {
         val store = TaskStore.get(this)
         val all = store.list()
         val now = System.currentTimeMillis()
-        val finished = setOf(TaskState.COMPLETED, TaskState.CANCELLED, TaskState.FAILED)
+        val finished = setOf(TaskState.COMPLETED, TaskState.CANCELLED)
         val activeCount = all.count { it.state !in finished }
         activeTab.text = getString(R.string.tab_count, getString(R.string.active_jobs), activeCount)
         historyTab.text = getString(R.string.tab_count, getString(R.string.history), all.size - activeCount)
@@ -244,8 +248,8 @@ class MainActivity : MobileActivity(), TaskActions {
         filters.removeAllViews()
         fun add(label: String, value: String?) {
             val on = category == value
-            filters.addView(TextView(this).apply {
-                text = label; textSize = 13f; setPadding(dp(14), dp(7), dp(14), dp(7)); minimumHeight = dp(48); gravity = Gravity.CENTER
+            filters.addView(MaterialButton(this).apply {
+                text = label; textSize = 13f; isAllCaps = false; minHeight = dp(48); minimumWidth = dp(48); isCheckable = true; isChecked = on; setPadding(dp(14), dp(7), dp(14), dp(7)); minimumHeight = dp(48); gravity = Gravity.CENTER
                 setTextColor(if (on) paper else accent)
                 background = if (on) rounded(accent, 20) else rounded(android.graphics.Color.TRANSPARENT, 20, accent and 0x66FFFFFF)
                 setOnClickListener { category = value; render() }
@@ -390,15 +394,15 @@ class MainActivity : MobileActivity(), TaskActions {
         val input = EditText(this).apply { hint = getString(R.string.links_hint); minLines = 4; maxLines = 8; setText(prefill)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE }
         val summary = label("", 13f)
-        val audio = CheckBox(this).apply { text = getString(R.string.audio_only_all); isChecked = prefs.defaultAudio; setTextColor(ink) }
-        form.addView(input); form.addView(summary); form.addView(audio); form.addView(label(getString(R.string.pattern_hint), 12f))
+        val audio = CheckBox(this).apply { minimumHeight = dp(48); text = getString(R.string.audio_only_all); isChecked = prefs.defaultAudio; setTextColor(ink) }
+        form.addView(input); form.addView(label(getString(R.string.add_link_help), 12f)); form.addView(summary); form.addView(audio); form.addView(label(getString(R.string.pattern_hint), 12f))
         form.addView(button(getString(R.string.paste_clipboard)) {
             val clip = (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).primaryClip
             val text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
             if (text.isNotBlank()) input.setText(if (input.text.isBlank()) text else input.text.toString() + "\n" + text)
         })
         val dialog = AlertDialog.Builder(this).setTitle(R.string.add_links).setView(ScrollView(this).apply { addView(form) })
-            .setPositiveButton(R.string.download_now, null).setNeutralButton(R.string.file_download, null).setNegativeButton(R.string.cancel, null).create()
+            .setPositiveButton(R.string.automatic_download, null).setNeutralButton(R.string.file_download, null).setNegativeButton(R.string.cancel, null).create()
         fun links() = LinkPlan.parse(input.text.toString())
         input.doAfterTextChanged {
             val urls = links(); val counts = LinkPlan.summarize(urls)
@@ -409,7 +413,7 @@ class MainActivity : MobileActivity(), TaskActions {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val urls = links()
                 if (urls.isEmpty() || urls.any { !LinkUtils.isPublicHttpUrl(it) }) { input.error = getString(R.string.bad_link); return@setOnClickListener }
-                if (urls.size == 1 && LinkPlan.classify(urls.first()) == LinkKind.MEDIA && !Spotify.isTrackUrl(urls.first()))
+                if (urls.size == 1 && LinkPlan.classify(urls.first()) == LinkKind.MEDIA && !Spotify.isTrackUrl(urls.first()) && !audio.isChecked && !prefs.quickDownload)
                     startActivity(Intent(this, ShareActivity::class.java).putExtra(Intent.EXTRA_TEXT, urls.first()))   // one video: choose quality
                 else DownloadService.startMany(this, urls, prefs.defaultHeight, audio.isChecked)
                 dialog.dismiss()
@@ -418,6 +422,9 @@ class MainActivity : MobileActivity(), TaskActions {
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
                 val urls = links()
                 if (urls.isEmpty() || urls.any { !LinkUtils.isPublicHttpUrl(it) }) { input.error = getString(R.string.bad_link); return@setOnClickListener }
+                if (urls.any { LinkPlan.isMediaHost(it) && LinkPlan.extension(it) !in setOf("mp4", "mp3", "m4a", "webm", "jpg", "png") }) {
+                    input.error = getString(R.string.direct_link_help); return@setOnClickListener
+                }
                 urls.forEach { DownloadService.start(this, it, null, false, "", "file") }
                 dialog.dismiss()
             }

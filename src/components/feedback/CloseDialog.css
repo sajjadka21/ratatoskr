@@ -1,12 +1,6 @@
-.close-dialog__backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: grid;
-  place-items: center;
-  background: rgba(0, 0, 0, 0.5);
-}
-
+.close-dialog::backdrop { background: rgba(12, 16, 20, 0.58); }
+.close-dialog:not([open]) { display: none; }
+.close-dialog { max-block-size: calc(100dvh - 32px); overflow: auto; }
 .close-dialog {
   inline-size: min(440px, calc(100vw - 32px));
   padding: 20px;
@@ -48,7 +42,7 @@
 }
 
 .close-dialog__actions .close-dialog__primary {
-  color: var(--bg-base, #101518);
+  color: var(--bg-app);
   background: var(--accent);
   border-color: var(--accent);
 }

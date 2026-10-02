@@ -30,10 +30,21 @@ abstract class MobileActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val prefs = MobilePreferences(this)
         val mode = when (prefs.mode) { "dark" -> AppCompatDelegate.MODE_NIGHT_YES; "light" -> AppCompatDelegate.MODE_NIGHT_NO; else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM }
-        if (AppCompatDelegate.getDefaultNightMode() != mode) AppCompatDelegate.setDefaultNightMode(mode)
-        if (prefs.language.isNotEmpty() && AppCompatDelegate.getApplicationLocales().toLanguageTags() != prefs.language)
+        // Scope configuration to this activity; changing a global default during
+        // another activity's recreation can request overlapping recreations.
+        delegate.localNightMode = mode
+        if (AppCompatDelegate.getApplicationLocales().toLanguageTags() != prefs.language)
             AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(prefs.language))
+        appliedAppearance = listOf(prefs.mode, prefs.brand, prefs.language)
         super.onCreate(savedInstanceState)
+    }
+    private var appliedAppearance = emptyList<String>()
+    override fun onResume() {
+        super.onResume()
+        val prefs = MobilePreferences(this)
+        if (appliedAppearance != listOf(prefs.mode, prefs.brand, prefs.language)) {
+            window.decorView.post { if (!isFinishing && !isDestroyed) recreate() }
+        }
     }
     val muted get() = (ink and 0x00FFFFFF) or 0xC0000000.toInt()
     val success get() = Color.parseColor(if (dark) "#6CCB8F" else "#1F7A45")

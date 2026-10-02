@@ -193,6 +193,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
 
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const lastSelectedIndex = useRef<number | null>(null);
@@ -1128,6 +1129,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   // ---- keyboard -----------------------------------------------------------
 
   const overlayOpen =
+    closeDialogOpen ||
     modalOpen ||
     paletteOpen ||
     welcomeOpen ||
@@ -1522,7 +1524,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
 
       <Toasts toasts={toasts} onDismiss={dismissToast} />
       <UpdatePrompt />
-      <CloseDialog />
+      <CloseDialog onOpenChange={setCloseDialogOpen} />
 
       {completionAction ? (
         <CompletionBanner

@@ -2,6 +2,7 @@ package app.ratatoskr.android
 
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -30,7 +31,7 @@ class TaskAdapter(private val activity: MobileActivity, private val actions: Tas
         override fun areContentsTheSame(a: TaskRow, b: TaskRow) = a == b
     }
 
-    class Holder(val card: LinearLayout, val badge: TextView, val title: TextView, val subtitle: TextView, val status: LinearLayout,
+    class Holder(val card: LinearLayout, val badge: ImageView, val title: TextView, val subtitle: TextView, val status: LinearLayout,
                  val progress: ProgressBar, val stats: TextView, val error: TextView, val buttons: LinearLayout) : RecyclerView.ViewHolder(card)
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
@@ -41,8 +42,9 @@ class TaskAdapter(private val activity: MobileActivity, private val actions: Tas
             layoutParams = RecyclerView.LayoutParams(-1, -2).apply { bottomMargin = a.dp(10) }
         }
         val top = LinearLayout(a).apply { gravity = android.view.Gravity.CENTER_VERTICAL }
-        val badge = TextView(a).apply {
-            textSize = 20f; gravity = android.view.Gravity.CENTER; background = a.rounded(a.paper, 12)
+        val badge = ImageView(a).apply {
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            setPadding(a.dp(10), a.dp(10), a.dp(10), a.dp(10)); setColorFilter(a.accent); background = a.rounded(a.paper, 12)
             layoutParams = LinearLayout.LayoutParams(a.dp(44), a.dp(44)).apply { marginEnd = a.dp(12) }
         }
         val texts = a.column().apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f) }
@@ -69,7 +71,7 @@ class TaskAdapter(private val activity: MobileActivity, private val actions: Tas
         h.card.setOnClickListener { if (actions.selecting) actions.toggle(task) else actions.details(task) }
         h.card.setOnLongClickListener { actions.toggle(task); true }
         h.card.background = a.rounded(a.surface, 18, if (row.selected) a.accent else a.accent and 0x44FFFFFF).also { if (row.selected) (it as android.graphics.drawable.GradientDrawable).setStroke(a.dp(2), a.accent) }
-        h.badge.text = if (row.selected) "✓" else badgeFor(task)
+        h.badge.setImageResource(if (row.selected) R.drawable.ic_kind_check else badgeFor(task))
         h.title.text = task.title.ifEmpty { task.fileName.ifEmpty { LinkPlan.host(task.url).ifEmpty { a.getString(R.string.app_name) } } }
         h.subtitle.text = LinkPlan.host(task.url)
         val color = when (task.state) {
@@ -110,6 +112,11 @@ class TaskAdapter(private val activity: MobileActivity, private val actions: Tas
     }
 
     private fun badgeFor(task: MobileTask) = when (TaskFilter.categoryOf(task)) {
-        "Video" -> "🎬"; "Music" -> "🎵"; "Archives" -> "🗜"; "Programs" -> "📦"; "Documents" -> "📄"; "Images" -> "🖼"; else -> "📁"
+        "Video" -> R.drawable.ic_kind_video
+        "Music" -> R.drawable.ic_kind_music
+        "Archives" -> R.drawable.ic_kind_archive
+        "Programs" -> R.drawable.ic_kind_program
+        "Images" -> R.drawable.ic_kind_image
+        else -> R.drawable.ic_kind_file
     }
 }

@@ -99,6 +99,12 @@ object Engine {
                  onState: (TaskState) -> Unit, onProgress: (Float) -> Unit): List<SavedMedia> {
         val store = TaskStore.get(context)
         if (task.kind == "file") {
+            control.check()
+            val previous = store.outputAt(task.id, 1)
+            if (previous != null && runCatching { context.contentResolver.openFileDescriptor(android.net.Uri.parse(previous.uri), "r")?.use { true } ?: false }.getOrDefault(false)) {
+                discard(context, task.id)
+                return listOf(previous)
+            }
             onState(TaskState.DOWNLOADING)
             val prefs = MobilePreferences(context)
             val directory = work(context, task.id)

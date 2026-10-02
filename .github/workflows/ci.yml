@@ -67,6 +67,14 @@ jobs:
           gradle-version: 8.9
       - working-directory: android
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-unit-reports
+          path: |
+            android/app/build/reports/tests/
+            android/app/build/test-results/
+          if-no-files-found: ignore
       - name: Verify all native payloads in the APK
         run: |
           for apk in android/app/build/outputs/apk/debug/*.apk; do

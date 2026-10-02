@@ -63,9 +63,9 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
     val colors = MaterialTheme.colorScheme
     val rows = if (active && !state.history) state.rows.filter { it.task.state !in setOf(TaskState.COMPLETED, TaskState.CANCELLED) } else state.rows
     Column(Modifier.fillMaxSize().background(colors.background)) {
-        BoxWithConstraints(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 12.dp)) {
-            val brandWidth = (maxWidth - 152.dp).coerceAtLeast(120.dp)
-            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            BoxWithConstraints(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 12.dp)) {
+                val brandWidth = (maxWidth - 152.dp).coerceAtLeast(120.dp)
                 Row(Modifier.align(Alignment.CenterEnd).widthIn(max = brandWidth), verticalAlignment = Alignment.CenterVertically) {
                     Image(painterResource(R.drawable.brand_squirrel), null, Modifier.size(34.dp), colorFilter=androidx.compose.ui.graphics.ColorFilter.tint(colors.primary))
                     Text("Ratatoskr", Modifier.padding(start = 8.dp), color = colors.primary, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines=1, overflow=TextOverflow.Ellipsis)
@@ -93,7 +93,7 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
             UiIcon(R.drawable.ui_pause, R.string.pause) { onSelection(R.string.pause) }
             UiIcon(R.drawable.ui_play, R.string.resume) { onSelection(R.string.resume) }
             UiIcon(R.drawable.ic_delete, R.string.remove) { onSelection(R.string.remove) }
-        } else if (!search) Text(stringResource(R.string.nav_downloads), Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 20.dp), fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+        } else if (!search) Text(stringResource(R.string.nav_downloads), Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 20.dp), fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Right)
         if (search) {
             BackHandler { search = false; onQuery("") }
             val focus = remember { FocusRequester() }
@@ -130,7 +130,7 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
                 val groups = listOf(rows.filter { it.task.state in TaskPolicy.inFlight }, rows.filter { it.task.state !in TaskPolicy.inFlight && it.task.state !in setOf(TaskState.COMPLETED, TaskState.CANCELLED) }, rows.filter { it.task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED) })
                 groups.forEachIndexed { index, group ->
                     if (group.isNotEmpty()) {
-                        item(key = "section-$index") { Text(stringResource(when(index) { 0 -> R.string.group_transferring; 2 -> R.string.group_completed; else -> R.string.pending_downloads }) + " (${group.size})", Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 8.dp), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.End) }
+                        item(key = "section-$index") { Text(stringResource(when(index) { 0 -> R.string.group_transferring; 2 -> R.string.group_completed; else -> R.string.pending_downloads }) + " (${group.size})", Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 8.dp), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Right) }
                         items(group, key = { it.task.id }) { row -> if (index == 0) ActiveTransfer(row, state.selecting, actions) else FileRow(row, state.selecting, actions) }
                         if (index == 0) item(key = "network") { NetworkStatus() }
                     }

@@ -92,7 +92,7 @@ fun AbSettingsPage(scroll: android.widget.ScrollView, title: String, onBack: () 
     Surface(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         PageUi(header = {
             Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                AbIconButton(ABDMIcons.Back, stringResource(R.string.cancel), onBack)
+                IconButton(onClick=onBack,modifier=Modifier.size(48.dp)) { Icon(painterResource(ABDMIcons.Back),stringResource(R.string.cancel),Modifier.size(24.dp)) }
                 Text(title, Modifier.padding(start = 16.dp), fontWeight = FontWeight.Bold, fontSize = 20.sp)
             }
         }, footer = {}) { padding ->

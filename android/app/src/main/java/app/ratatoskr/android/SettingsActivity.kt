@@ -41,12 +41,17 @@ class SettingsActivity : MobileActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = MobilePreferences(this)
-        val root = ScrollView(this).also { settingsScroll = it }.apply { setBackgroundColor(paper); clipToPadding = false }
+        val viewport = FrameLayout(this).apply { setBackgroundColor(paper) }
+        val root = ScrollView(this).also { settingsScroll = it }
+        viewport.addView(root, FrameLayout.LayoutParams(-1, -1))
         val page = column()
         root.addView(page)
-        ViewCompat.setOnApplyWindowInsetsListener(root) { _, inset ->
+        ViewCompat.setOnApplyWindowInsetsListener(viewport) { _, inset ->
             val bars = inset.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
-            page.setPadding(dp(16) + bars.left, dp(8) + bars.top, dp(16) + bars.right, dp(24) + bars.bottom)
+            // Shrink the actual scroll viewport; scrolling and focus requests must
+            // measure the same visible area, outside the system bars.
+            viewport.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            page.setPadding(dp(16), dp(8), dp(16), dp(24))
             inset
         }
         val top = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
@@ -123,7 +128,7 @@ class SettingsActivity : MobileActivity() {
             addView(button(getString(R.string.app_release)) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AppUpdate.RELEASES_PAGE))) })
         })
         page.addView(label(getString(R.string.about_details), 12f).apply { setTextColor(muted) })
-        setContentView(root)
+        setContentView(viewport)
         root.post { root.scrollTo(0, savedInstanceState?.getInt("settings-scroll") ?: 0) }
         if (intent.getBooleanExtra(EXTRA_PLUGINS, false)) plugins()
     }

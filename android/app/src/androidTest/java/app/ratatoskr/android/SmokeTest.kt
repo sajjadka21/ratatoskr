@@ -175,6 +175,7 @@ class SmokeTest {
             prefs.mode = "light"; prefs.language = "fa"
             ActivityScenario.launch(MainActivity::class.java).use {
                 compose.onNodeWithText("Ratatoskr Desktop.zip").assertIsDisplayed()
+                compose.waitUntil(10000) { runCatching { compose.onAllNodesWithText("فعال").fetchSemanticsNodes().isNotEmpty() }.getOrDefault(false) }
                 compose.onNodeWithText("فعال").assertIsDisplayed()
                 it.onActivity { activity -> assertEquals(View.LAYOUT_DIRECTION_RTL, activity.findViewById<View>(android.R.id.content).layoutDirection) }
                 screenshot("ab-home-downloads-light-fa")

@@ -41,12 +41,20 @@ class FaithfulDesignTest {
         InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("screencap -p /sdcard/Download/ratatoskr-ui-review/$name.png").use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).use { s->s.readBytes() } }
     }
     @Test fun approvedDesignDarkLightAndIntake() {
+        val permission=when {
+            android.os.Build.VERSION.SDK_INT>=33 -> android.Manifest.permission.POST_NOTIFICATIONS
+            android.os.Build.VERSION.SDK_INT<29 -> android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+            else -> null
+        }
+        if(permission!=null)InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("pm grant ${context.packageName} $permission").use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).use { stream->stream.readBytes() } }
         val prefs=MobilePreferences(context)
         prefs.onboarded=true;prefs.watchClipboard=false;prefs.autoUpdateCheck=false;prefs.language="fa";prefs.brand="ember-forge"
         try {
             for(mode in listOf("dark","light")) {
                 prefs.mode=mode
                 ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                    compose.onNodeWithText("Ratatoskr").assertIsDisplayed()
+                    compose.waitForIdle()
                     scenario.onActivity { activity ->
                         val rows=sample()
                         activity.setContentView(ComposeView(activity).apply {
@@ -59,6 +67,7 @@ class FaithfulDesignTest {
                             } }
                         },android.view.ViewGroup.LayoutParams(-1,-1))
                     }
+                    compose.waitUntil(10000) { runCatching { compose.onAllNodesWithText("Design course.mp4").fetchSemanticsNodes().isNotEmpty() }.getOrDefault(false) }
                     compose.onNodeWithText("Design course.mp4").assertIsDisplayed()
                     compose.onNodeWithText("Portfolio.pdf").assertIsDisplayed()
                     compose.waitUntil(5000) { compose.onAllNodesWithTag("download-preview").fetchSemanticsNodes().isNotEmpty() }

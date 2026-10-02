@@ -63,7 +63,7 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
     val colors = MaterialTheme.colorScheme
     val rows = if (active && !state.history) state.rows.filter { it.task.state !in setOf(TaskState.COMPLETED, TaskState.CANCELLED) } else state.rows
     Column(Modifier.fillMaxSize().background(colors.background)) {
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        if (!search) CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             BoxWithConstraints(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 12.dp)) {
                 val brandWidth = (maxWidth - 152.dp).coerceAtLeast(120.dp)
                 Row(Modifier.align(Alignment.CenterEnd).widthIn(max = brandWidth), verticalAlignment = Alignment.CenterVertically) {
@@ -208,7 +208,7 @@ private fun kindIcon(task:MobileTask):Int {
                     val status=MobileText.state(LocalContext.current,t)
                     val size=if(t.state==TaskState.COMPLETED)Format.bytes(t.totalBytes.takeIf { it>0 }?:t.bytesDone) else row.stats
                     Text(listOf(status,size).filter { it.isNotBlank() }.joinToString(" · "),fontSize=12.sp,lineHeight=18.sp,color=if(t.state==TaskState.FAILED)c.error else c.onSurfaceVariant,maxLines=2,overflow=TextOverflow.Ellipsis,style=MaterialTheme.typography.bodySmall.copy(textDirection=TextDirection.Content))
-                    if(t.error.isNotEmpty())Text(MobileText.error(LocalContext.current,t.error),color=c.error,fontSize=12.sp)
+                    if(t.error.isNotEmpty())Text(MobileText.error(LocalContext.current,t.error),color=c.error,fontSize=12.sp,maxLines=2,overflow=TextOverflow.Ellipsis)
                     if(row.schedule.isNotEmpty())Text(row.schedule,color=c.primary,fontSize=12.sp)
                 }
                 Box {
@@ -290,14 +290,14 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
     var more by rememberSaveable { mutableStateOf(defaultAudio) };var invalid by rememberSaveable { mutableStateOf(false) }
     val urls=remember(text){LinkPlan.parse(text)};val counts=remember(urls){LinkPlan.summarize(urls)};val c=MaterialTheme.colorScheme
     val focus=remember { FocusRequester() }
-    ModalBottomSheet(onDismissRequest=onClose,containerColor=c.surface,shape=RoundedCornerShape(topStart=28.dp,topEnd=28.dp),dragHandle={BottomSheetDefaults.DragHandle()},contentWindowInsets={WindowInsets(0,0,0,0)}) {
+    ModalBottomSheet(sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),onDismissRequest=onClose,containerColor=c.surface,shape=RoundedCornerShape(topStart=28.dp,topEnd=28.dp),dragHandle={BottomSheetDefaults.DragHandle()},contentWindowInsets={WindowInsets(0,0,0,0)}) {
         LaunchedEffect(Unit){if(prefill.isEmpty())focus.requestFocus()}
         Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).padding(horizontal=16.dp).navigationBarsPadding().padding(bottom=20.dp)) {
             Row(Modifier.fillMaxWidth().padding(bottom=16.dp),verticalAlignment=Alignment.CenterVertically) {
                 Text(stringResource(R.string.new_download),Modifier.weight(1f),fontSize=24.sp,fontWeight=FontWeight.Bold)
                 UiIcon(R.drawable.ui_x,R.string.cancel,onClose)
             }
-            Text(stringResource(R.string.link_label),Modifier.fillMaxWidth().padding(bottom=6.dp),fontSize=14.sp,color=c.onSurfaceVariant,textAlign=TextAlign.End)
+            Text(stringResource(R.string.link_label),Modifier.fillMaxWidth().padding(bottom=6.dp),fontSize=14.sp,color=c.onSurfaceVariant,textAlign=TextAlign.Right)
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 OutlinedTextField(text,{text=it;invalid=false},Modifier.fillMaxWidth().focusRequester(focus),maxLines=3,singleLine=urls.size<=1,isError=invalid,shape=Round,
                     placeholder={Text("https://",fontSize=14.sp)},textStyle=MaterialTheme.typography.bodyLarge.copy(textDirection=TextDirection.Ltr),
@@ -335,7 +335,7 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
                 Row(Modifier.clickable{audio=!audio},verticalAlignment=Alignment.CenterVertically) { Checkbox(audio,{audio=it});Text(stringResource(R.string.audio_only_all),fontSize=14.sp) }
                 Text(stringResource(R.string.pattern_hint),fontSize=12.sp,color=c.onSurfaceVariant)
             } }
-            Text(stringResource(R.string.automatic_hint),Modifier.fillMaxWidth().padding(top=12.dp,bottom=20.dp),fontSize=12.sp,color=c.onSurfaceVariant,textAlign=TextAlign.End)
+            Text(stringResource(R.string.automatic_hint),Modifier.fillMaxWidth().padding(top=12.dp,bottom=20.dp),fontSize=12.sp,color=c.onSurfaceVariant,textAlign=TextAlign.Right)
             Button(onClick={invalid=!onDownload(text,audio)},enabled=text.isNotBlank(),modifier=Modifier.fillMaxWidth().heightIn(min=56.dp),shape=Round,
                 colors=ButtonDefaults.buttonColors(containerColor=Gold,contentColor=Ink)) { Icon(painterResource(R.drawable.ui_download),null,Modifier.size(24.dp));Spacer(Modifier.width(12.dp));Text(stringResource(R.string.download_action),fontSize=20.sp,fontWeight=FontWeight.SemiBold) }
         }

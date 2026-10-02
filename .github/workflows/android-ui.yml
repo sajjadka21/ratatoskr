@@ -45,6 +45,7 @@ jobs:
           api-level: ${{ matrix.api }}
           arch: x86_64
           target: google_apis
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -skin 1200x2562
           disable-animations: true
           working-directory: android
           script: bash ../.github/scripts/android-ui-tests.sh

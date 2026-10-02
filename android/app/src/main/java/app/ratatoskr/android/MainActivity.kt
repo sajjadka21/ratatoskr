@@ -160,10 +160,11 @@ class MainActivity : MobileActivity(), TaskActions {
 
     private fun menu(anchor: View) {
         val popup = PopupMenu(this, anchor)
-        val items = listOf(R.string.pause_all, R.string.resume_all, R.string.clear_finished, R.string.plugins, R.string.settings)
+        val items = listOf(R.string.browser, R.string.pause_all, R.string.resume_all, R.string.clear_finished, R.string.plugins, R.string.settings)
         items.forEachIndexed { index, title -> popup.menu.add(0, index, index, title) }
         popup.setOnMenuItemClickListener { item ->
             when (items[item.itemId]) {
+                R.string.browser -> startActivity(Intent(this, BrowserActivity::class.java))
                 R.string.pause_all -> forEach(TaskPolicy.inFlight + TaskState.QUEUED + TaskState.WAITING_NETWORK, DownloadService.ACTION_PAUSE)
                 R.string.resume_all -> forEach(setOf(TaskState.PAUSED, TaskState.FAILED, TaskState.WAITING_NETWORK), DownloadService.ACTION_RESUME)
                 R.string.clear_finished -> { TaskStore.get(this).clearFinished(); render() }
@@ -297,6 +298,19 @@ class MainActivity : MobileActivity(), TaskActions {
         }, now.get(Calendar.YEAR), now.get(Calendar.MONTH), now.get(Calendar.DAY_OF_MONTH)).show()
     }
 
+    /** For a link that expired: paste the fresh one and the download carries on from what is already saved. */
+    private fun changeLink(task: MobileTask) {
+        val input = EditText(this).apply { hint = getString(R.string.links_hint); setText(task.url); maxLines = 3 }
+        val box = column().apply { setPadding(dp(20), dp(8), dp(20), 0); addView(input) }
+        AlertDialog.Builder(this).setTitle(R.string.change_link).setView(box).setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val url = LinkPlan.parse(input.text.toString()).firstOrNull()
+                if (url != null && TaskStore.get(this).updateUrl(task.id, url)) { DownloadService.wake(this); Toast.makeText(this, R.string.link_changed, Toast.LENGTH_SHORT).show() }
+                else Toast.makeText(this, R.string.bad_link, Toast.LENGTH_LONG).show()
+                render()
+            }.show()
+    }
+
     /** Compares the saved file with a hash the user pasted from the download page. */
     private fun verifyChecksum(task: MobileTask) {
         val file = media(task).firstOrNull() ?: return
@@ -337,6 +351,7 @@ class MainActivity : MobileActivity(), TaskActions {
         }
         if (task.state == TaskState.COMPLETED && media(task).isNotEmpty()) act(R.string.verify_checksum) { verifyChecksum(task) }
         if (task.state !in setOf(TaskState.COMPLETED, TaskState.CANCELLED) && task.state !in TaskPolicy.inFlight) {
+            act(R.string.change_link) { changeLink(task) }
             act(R.string.schedule) { schedule(task) }
             if (task.startAt > 0) act(R.string.schedule_clear) { TaskStore.get(this).schedule(task.id, 0); DownloadService.wake(this); render() }
         }

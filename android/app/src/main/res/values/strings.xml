@@ -183,4 +183,14 @@
     <string name="welcome_title">به راتاتوسک خوش آمدید</string>
     <string name="welcome_body">لینک را از هر برنامه با «اشتراک‌گذاری» بفرستید، یا دکمه‌ی «افزودن لینک» را بزنید. اگر لینکی کپی کرده باشید، با باز کردن برنامه پیشنهاد دانلود می‌بینید.\n\nبرای اینکه دانلودهای طولانی با خاموش شدن صفحه قطع نشوند، راتاتوسک را از محدودیت باتری مستثنا کنید.</string>
     <string name="welcome_done">متوجه شدم</string>
+    <string name="change_link">تغییر لینک</string>
+    <string name="link_changed">لینک عوض شد؛ دانلود از ادامه‌ی قبلی پیش می‌رود.</string>
+    <string name="browser">مرورگر</string>
+    <string name="browser_address">آدرس یا جستجو</string>
+    <string name="found_media">رسانه‌ی پیداشده: %1$d</string>
+    <string name="found_title">رسانه‌های این صفحه</string>
+    <string name="nothing_found">هنوز رسانه‌ای در این صفحه دیده نشده. ویدیو را پخش کنید و دوباره بزنید.</string>
+    <string name="download_page">دانلود این صفحه</string>
+    <string name="download_file_q">%1$s دانلود شود؟</string>
+    <string name="browser_added">به دانلودها اضافه شد.</string>
 </resources>

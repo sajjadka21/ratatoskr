@@ -16,11 +16,11 @@ object DirectDownload {
         val partial = File(directory, "transfer.part")
         val journal = File(directory, "transfer.json")
         var saved = runCatching { JSONObject(journal.readText()) }.getOrNull()
-        if (saved?.optString("source") == url && saved.optBoolean("completed")) {
+        if (saved != null && LinkUtils.sameResource(saved.optString("source"), url) && saved.optBoolean("completed")) {
             val output = File(directory, LinkUtils.safeFileName(saved.optString("name")))
             if (output.isFile && output.length() == saved.optLong("completed_bytes", -1)) return output
         }
-        var offset = if (saved?.optString("source") == url) partial.length() else 0L
+        var offset = if (saved != null && LinkUtils.sameResource(saved.optString("source"), url)) partial.length() else 0L
         var validators = HttpValidators(saved?.optString("etag")?.takeIf { it.isNotEmpty() }, saved?.optString("modified")?.takeIf { it.isNotEmpty() })
         if (HttpResumePolicy.ifRange(validators) == null) offset = 0
         var connection = openConnection(url, if (offset > 0) mapOf("Range" to "bytes=$offset-", "If-Range" to HttpResumePolicy.ifRange(validators)!!) else emptyMap(), control::check)

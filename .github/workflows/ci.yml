@@ -78,6 +78,23 @@ jobs:
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
+  rust-arm:
+    name: Rust on Windows ARM (check)
+    runs-on: windows-11-arm
+    # Experimental: shows whether the app builds for Windows on ARM before a release is made for it.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: npm ci
+      - run: npm run build
+      - run: cargo check --workspace
+
   telegram-bot:
     name: Telegram bot (tests)
     runs-on: ubuntu-latest

@@ -83,6 +83,16 @@ object LinkUtils {
             value
         }.distinct().take(limit).toList()
 
+    /** Same site and same path, whatever the query: a refreshed signed link points at the same file. The
+     * resume check (ETag / Last-Modified) still decides whether the bytes already saved are usable. */
+    fun sameResource(a: String, b: String): Boolean {
+        if (a == b) return true
+        return try {
+            val x = URI(a); val y = URI(b)
+            x.host != null && x.host.equals(y.host, ignoreCase = true) && x.path == y.path
+        } catch (error: Exception) { false }
+    }
+
     fun contentIdentity(url: String): String {
         val canonical = canonicalUrl(url)
         val uri = URI(canonical)

@@ -182,4 +182,14 @@
     <string name="welcome_title">Welcome to Ratatoskr</string>
     <string name="welcome_body">Send a link from any app with Share, or tap Add links. If you copied a link, the app offers to download it when it opens.\n\nSo that long downloads are not stopped when the screen turns off, exclude Ratatoskr from battery limits.</string>
     <string name="welcome_done">Got it</string>
+    <string name="change_link">Change link</string>
+    <string name="link_changed">Link changed; the download carries on from what was saved.</string>
+    <string name="browser">Browser</string>
+    <string name="browser_address">Address or search</string>
+    <string name="found_media">Media found: %1$d</string>
+    <string name="found_title">Media on this page</string>
+    <string name="nothing_found">No media seen on this page yet. Play the video and try again.</string>
+    <string name="download_page">Download this page</string>
+    <string name="download_file_q">Download %1$s?</string>
+    <string name="browser_added">Added to downloads.</string>
 </resources>

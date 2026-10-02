@@ -229,7 +229,7 @@ object SegmentedDownload {
 
     private fun readJournal(file: File, url: String): Plan? {
         val json = runCatching { JSONObject(file.readText()) }.getOrNull() ?: return null
-        if (json.optString("source") != url) return null
+        if (!LinkUtils.sameResource(json.optString("source"), url)) return null
         val rows = json.optJSONArray("segments") ?: return null
         val segments = (0 until rows.length()).map {
             val row = rows.getJSONArray(it)

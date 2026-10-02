@@ -104,6 +104,15 @@ class TaskStore internal constructor(context: Context, databaseName: String = "d
         writableDatabase.delete("tasks", "id=?", arrayOf(id))
     }
     @Synchronized fun clearFinished() = list().filter { it.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED, TaskState.FAILED) }.forEach { remove(it.id) }
+    /** A new address for an unfinished task (an expired signed link), kept as the same task so what was downloaded is reused.
+     * Returns false for a finished or running task, or an address that is not a public web link. */
+    @Synchronized fun updateUrl(id: String, url: String): Boolean {
+        val task = get(id) ?: return false
+        if (task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED) || task.state in TaskPolicy.inFlight) return false
+        val canonical = runCatching { LinkUtils.canonicalUrl(url) }.getOrNull() ?: return false
+        update(id, ContentValues().apply { put("url", canonical); put("state", TaskState.QUEUED.name); put("error", "") })
+        return true
+    }
     /** Start the task at [startAt] (epoch millis; 0 clears it). A paused or failed task is queued again so the time can take effect. */
     @Synchronized fun schedule(id: String, startAt: Long) {
         val task = get(id) ?: return

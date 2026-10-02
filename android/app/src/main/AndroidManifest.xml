@@ -30,6 +30,7 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".BrowserActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
         <activity android:name=".SettingsActivity" android:exported="false" android:parentActivityName=".MainActivity" />
 
         <!-- The share sheet: share a link from YouTube, Instagram, a browser... to Ratatosk. -->

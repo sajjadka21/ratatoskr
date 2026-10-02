@@ -93,7 +93,11 @@ class MainActivity : MobileActivity(), TaskActions {
 
         val group = MaterialButtonToggleGroup(this).apply { isSingleSelection = true; isSelectionRequired = true }
         fun tab() = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-            id = View.generateViewId(); setTextColor(accent); layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f)
+            id = View.generateViewId(); layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f)
+            val states = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
+            backgroundTintList = android.content.res.ColorStateList(states, intArrayOf(accent, surface))
+            setTextColor(android.content.res.ColorStateList(states, intArrayOf(paper, accent)))
+            strokeColor = android.content.res.ColorStateList.valueOf(accent)
         }
         activeTab = tab(); historyTab = tab()
         group.addView(activeTab); group.addView(historyTab)

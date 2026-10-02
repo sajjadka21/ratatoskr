@@ -98,7 +98,7 @@ class MainActivity : MobileActivity(), TaskActions {
         content.addView(group, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
         content.addView(EditText(this).apply {
             hint = getString(R.string.search_history); setTextColor(ink); setHintTextColor(muted); setText(query); maxLines = 1; inputType = android.text.InputType.TYPE_CLASS_TEXT
-            background = rounded(surface, 14); setPadding(dp(14), dp(10), dp(14), dp(10)); minimumHeight = dp(48); contentDescription = getString(R.string.search_history)
+            background = rounded(surface, 14); setPadding(dp(14), dp(10), dp(14), dp(10)); minimumHeight = dp(48)   // the hint is the label; an editable field must not also carry a contentDescription
             doAfterTextChanged { query = it.toString(); render() }
         }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
 

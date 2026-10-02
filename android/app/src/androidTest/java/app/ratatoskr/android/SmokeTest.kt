@@ -47,7 +47,7 @@ class SmokeTest {
 
     @Before fun quietApp() {
         // No first-run dialog, no network look-ups and no clipboard banner while the test drives the screen.
-        MobilePreferences(context).apply { onboarded = true; autoUpdateCheck = false; watchClipboard = false }
+        MobilePreferences(context).apply { onboarded = true; autoUpdateCheck = false; watchClipboard = false; mode = "light"; brand = "ember-forge"; language = "" }
         val permission = when {
             android.os.Build.VERSION.SDK_INT >= 33 -> android.Manifest.permission.POST_NOTIFICATIONS
             android.os.Build.VERSION.SDK_INT < 29 -> android.Manifest.permission.WRITE_EXTERNAL_STORAGE
@@ -162,6 +162,8 @@ class SmokeTest {
             prefs.mode = "light"; prefs.language = "fa"
             ActivityScenario.launch(MainActivity::class.java).use {
                 compose.onNodeWithText("Ratatoskr Desktop.zip").assertIsDisplayed()
+                compose.onNodeWithText("فعال").assertIsDisplayed()
+                it.onActivity { activity -> assertEquals(View.LAYOUT_DIRECTION_RTL, activity.findViewById<View>(android.R.id.content).layoutDirection) }
                 screenshot("ab-home-downloads-light-fa")
             }
         } finally { store.remove(queued.id); store.remove(completed.id); prefs.language = "" }

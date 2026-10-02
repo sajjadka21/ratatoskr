@@ -16,6 +16,14 @@ import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.button.MaterialButton
 
 abstract class MobileActivity : AppCompatActivity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        // AppCompat applies its locale override while attaching the base context.
+        // Setting it only in onCreate can render a first frame in the old language.
+        val language = MobilePreferences(newBase).language
+        if (AppCompatDelegate.getApplicationLocales().toLanguageTags() != language)
+            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(language))
+        super.attachBaseContext(newBase)
+    }
     fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     val dark get() = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK == android.content.res.Configuration.UI_MODE_NIGHT_YES
     val ink get() = Color.parseColor(if (dark) "#EEE5D7" else "#302D28")

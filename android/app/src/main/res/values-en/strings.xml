@@ -198,7 +198,7 @@ Tap + to add a link.</string>
     <string name="add_link_help">Paste a file or media page link. Ratatoskr chooses how to download it.</string>
     <string name="direct_link_help">Direct file needs the actual file URL. For a media page, choose Automatic to find items and qualities.</string>
     <string name="checking_help">Finding downloadable items and available qualities. The download starts after you choose.</string>
-    <string name="error_not_file">This address returned a web page, not a file. Add it again with Automatic or use the actual file link.</string>
+    <string name="error_not_file">This address is a web page. Copy the file’s download link or share a supported public media page.</string>
     <string name="error_integrity">The file response was incomplete or changed. Retry; no incomplete file was published.</string>
     <string name="error_write">Cannot save the file. Check the save folder and free storage, then retry.</string>
     <string name="transfer_settings_hint">Connection count and speed changes apply when a download starts or resumes.</string>

@@ -33,6 +33,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,7 +50,13 @@ data class AbHomeState(
 @Composable
 fun RatatoskrTheme(activity: MobileActivity, content: @Composable () -> Unit) {
     val colors = if (activity.dark) darkColorScheme() else lightColorScheme()
-    MaterialTheme(colorScheme = colors.copy(
+    val typography = Typography(
+        bodyLarge = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.sp),
+        bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.sp),
+        bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 18.sp, letterSpacing = 0.sp),
+        labelLarge = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.sp, fontWeight = FontWeight.Medium),
+    )
+    MaterialTheme(typography = typography, colorScheme = colors.copy(
         primary = Color(activity.accent), onPrimary = Color(activity.paper),
         background = Color(activity.paper), onBackground = Color(activity.ink),
         surface = Color(activity.surface), onSurface = Color(activity.ink),
@@ -183,10 +191,9 @@ private fun BottomNavigation(
                         Spacer(Modifier.fillMaxHeight().width(1.dp).background(colors.onSurface.copy(alpha = 0.1f)))
                         Box(Modifier.weight(1f)) {
                             filterMenu()
-                            Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(onClick = onFilter).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                                Icon(if (history) ABDMIcons.FolderFinished else ABDMIcons.FolderUnfinished, null, Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text(category ?: stringResource(if (history) R.string.history else R.string.nav_downloads), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Column(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(onClick = onFilter).padding(horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                                Text(stringResource(if (history) R.string.history else R.string.active_jobs), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+                                category?.let { Text(it, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                             }
                             BottomNavigationSelectedIndicator(filterSelected)
                         }
@@ -325,6 +332,9 @@ fun AbEnterUrl(prefill: String, defaultAudio: Boolean, onClose: () -> Unit, onPa
     val urls = remember(text) { LinkPlan.parse(text) }
     val counts = remember(urls) { LinkPlan.summarize(urls) }
     ModalBottomSheet(onDismissRequest = onClose, containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp), dragHandle = null) {
+        // The sheet subcomposes its children; request focus in that composition,
+        // after the field has attached, rather than in the parent composition.
+        LaunchedEffect(Unit) { focus.requestFocus() }
         Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.add_links), Modifier.weight(1f), fontSize = 20.sp, fontWeight = FontWeight.Bold)
@@ -347,5 +357,4 @@ fun AbEnterUrl(prefill: String, defaultAudio: Boolean, onClose: () -> Unit, onPa
             }
         }
     }
-    LaunchedEffect(Unit) { focus.requestFocus() }
 }

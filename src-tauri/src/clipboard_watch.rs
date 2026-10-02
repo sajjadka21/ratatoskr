@@ -21,14 +21,15 @@ pub const SETTING_CLIPBOARD_WATCH: &str = "clipboard_watch";
 pub const CLIPBOARD_LINKS_EVENT: &str = "clipboard-links";
 const POLL_INTERVAL: Duration = Duration::from_millis(900);
 
-/// On unless the user turned it off.
+/// Off unless the user turned it on: a copied link should not pop a window up by itself. The browser
+/// extension's right-click "Download with Ratatoskr" (or Add download) is the deliberate way in.
 pub fn enabled(storage: &Storage) -> bool {
     storage
         .get_setting(SETTING_CLIPBOARD_WATCH)
         .ok()
         .flatten()
         .as_deref()
-        != Some("false")
+        == Some("true")
 }
 
 fn fingerprint(snapshot: &dm_system::clipboard::Snapshot) -> u64 {

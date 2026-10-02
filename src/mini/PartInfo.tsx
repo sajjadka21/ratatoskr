@@ -74,6 +74,7 @@ export function PartInfo({ id, live }: { id: string; live: boolean }) {
         {t("mini.partInfo")} · {parts.length}
       </button>
       {open ? (
+        <div className="parts__scroll">
         <table className="parts__table">
           <thead>
             <tr>
@@ -94,6 +95,7 @@ export function PartInfo({ id, live }: { id: string; live: boolean }) {
             ))}
           </tbody>
         </table>
+        </div>
       ) : null}
     </section>
   );

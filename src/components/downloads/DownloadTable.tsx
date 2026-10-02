@@ -270,6 +270,7 @@ const DownloadTableRow = memo(function DownloadTableRow({
         `download-table__row--${status}`,
         selected ? "download-table__row--selected" : "",
         focused ? "download-table__row--focused" : "",
+        index % 2 === 1 ? "download-table__row--odd" : "",
       ].join(" ")}
       style={{ transform: `translateY(${top}px)` }}
       role="row"

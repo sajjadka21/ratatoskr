@@ -66,3 +66,15 @@
   padding: 3px 6px;
   border-block-end: 1px solid var(--border-subtle, rgba(127, 127, 127, 0.18));
 }
+
+/* Many parts scroll inside their own box instead of making the window taller and taller. */
+.parts__scroll {
+  max-block-size: 150px;
+  overflow-y: auto;
+}
+
+.parts__table th {
+  position: sticky;
+  inset-block-start: 0;
+  background: var(--bg-elevated, var(--bg-surface));
+}

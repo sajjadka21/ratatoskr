@@ -133,7 +133,7 @@ export function SettingsPage({
         "settings.language",
         "settings.theme",
         "settings.brandTheme",
-        "settings.closeToTray",
+        "settings.closeAction",
         "settings.startWithWindows",
       ],
       content: (
@@ -588,22 +588,7 @@ function AppearanceSection({
           </div>
         </div>
 
-        <div className="settings-page__row">
-          <div className="settings-page__row-label">
-            <strong>{t("settings.closeToTray")}</strong>
-            <span>{t("settings.closeToTrayHint")}</span>
-          </div>
-          <div className="settings-page__row-control">
-            <Switch
-              id="close-to-tray"
-              checked={preferences.closeToTray}
-              label={t("settings.closeToTray")}
-              onChange={(closeToTray) =>
-                onChange({ ...preferences, closeToTray })
-              }
-            />
-          </div>
-        </div>
+        <CloseActionRow t={t} onError={onError} />
 
         <div className="settings-page__row settings-page__row--divided">
           <div className="settings-page__row-label">
@@ -1748,6 +1733,40 @@ export function BackendSwitchRow({
               });
           }}
         />
+      </div>
+    </div>
+  );
+}
+
+/** What the close button does: ask, keep going in the tray, or quit. Minimising is never affected. */
+function CloseActionRow({ t, onError }: { t: Translate; onError: (message: string) => void }) {
+  const [action, setAction] = useState<string>("ask");
+
+  useEffect(() => {
+    invoke<string>("get_close_action").then(setAction).catch((reason) => onError(String(reason)));
+  }, [onError]);
+
+  return (
+    <div className="settings-page__row">
+      <div className="settings-page__row-label">
+        <strong>{t("settings.closeAction")}</strong>
+        <span>{t("settings.closeActionHint")}</span>
+      </div>
+      <div className="settings-page__row-control">
+        <select
+          aria-label={t("settings.closeAction")}
+          value={action}
+          onChange={(event) => {
+            const next = event.target.value;
+            invoke<string>("set_close_action", { action: next })
+              .then(setAction)
+              .catch((reason) => onError(String(reason)));
+          }}
+        >
+          <option value="ask">{t("settings.close.ask")}</option>
+          <option value="tray">{t("settings.close.tray")}</option>
+          <option value="quit">{t("settings.close.quit")}</option>
+        </select>
       </div>
     </div>
   );

@@ -13,6 +13,9 @@ import android.widget.*
 import androidx.activity.OnBackPressedCallback
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -34,7 +37,7 @@ import java.text.DateFormat
 import java.util.Calendar
 import java.util.Date
 
-/** The home screen: a header, Active/History tabs, the list of downloads and a button to add links. */
+/** AB presentation adapted to Ratatoskr's persistent native download journal. */
 class MainActivity : MobileActivity(), TaskActions {
     private val selection = linkedSetOf<String>()
     private val leaveSelection = object : OnBackPressedCallback(false) { override fun handleOnBackPressed() { selection.clear(); render() } }
@@ -51,6 +54,8 @@ class MainActivity : MobileActivity(), TaskActions {
         super.onCreate(savedInstanceState)
         history = savedInstanceState?.getBoolean("history") ?: false
         query = savedInstanceState?.getString("query").orEmpty()
+        addPrefill = savedInstanceState?.getString("add-prefill")
+        dismissedLink = savedInstanceState?.getString("dismissed-link").orEmpty()
         MobileRuntime.initialize(TaskStore.get(this))
         NetworkJobs.schedule(this)
 
@@ -61,7 +66,7 @@ class MainActivity : MobileActivity(), TaskActions {
         setContentView(ComposeView(this).apply {
             setContent {
                 RatatoskrTheme(this@MainActivity) {
-                    androidx.compose.material3.Surface(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
+                    androidx.compose.material3.Surface(modifier = androidx.compose.ui.Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                         AbHome(homeState, this@MainActivity,
                             onAdd = { addLinks() }, onQuery = { query = it; render() },
                             onHistory = { history = it; render() }, onMenu = ::menuAction,
@@ -94,6 +99,7 @@ class MainActivity : MobileActivity(), TaskActions {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean("history", history); outState.putString("query", query)
         outState.putInt("sortOrder", sortOrder); outState.putString("category", category)
+        outState.putString("add-prefill", addPrefill); outState.putString("dismissed-link", dismissedLink)
         outState.putStringArrayList("selection", ArrayList(selection)); super.onSaveInstanceState(outState)
     }
 
@@ -143,7 +149,7 @@ class MainActivity : MobileActivity(), TaskActions {
                 else -> ""
             }
             TaskRow(task, stats(task), label, task.id in selection)
-        }, selecting = selection.isNotEmpty(), history = history, query = query, category = category,
+        }, selecting = selection.isNotEmpty(), selectionCount = selection.size, history = history, query = query, category = category,
             summary = getString(R.string.summary_line, activeCount, all.size - activeCount))
         leaveSelection.isEnabled = selection.isNotEmpty()
     }
@@ -191,7 +197,11 @@ class MainActivity : MobileActivity(), TaskActions {
     }
 
     // ---- list actions ------------------------------------------------------------------------------
-    override fun command(task: MobileTask, action: String) = DownloadService.command(this, task.id, action)
+    override fun command(task: MobileTask, action: String) {
+        runCatching { DownloadService.command(this, task.id, action) }
+            .onFailure { Toast.makeText(this, R.string.error_retry, Toast.LENGTH_LONG).show() }
+        render()
+    }
     private fun media(task: MobileTask): List<SavedMedia> =
         TaskStore.get(this).outputs(task.id).ifEmpty { if (task.uri.isNotEmpty()) listOf(SavedMedia(task.uri, task.fileName, task.mime)) else emptyList() }
     override fun open(task: MobileTask) {

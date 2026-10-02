@@ -8,6 +8,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.ComposeView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
@@ -53,11 +54,6 @@ class SettingsActivity : MobileActivity() {
             viewport.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             inset
         }
-        val top = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        top.addView(icon(R.drawable.ic_close, getString(R.string.cancel)) { finish() })
-        top.addView(TextView(this).apply { text = getString(R.string.settings); textSize = 22f; setTextColor(ink); typeface = android.graphics.Typeface.DEFAULT_BOLD; setPadding(dp(8), 0, 0, 0) })
-        page.addView(top)
-
         // --- network and time
         page.addView(section(R.string.section_network))
         page.addView(card {
@@ -127,7 +123,9 @@ class SettingsActivity : MobileActivity() {
             addView(button(getString(R.string.app_release)) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AppUpdate.RELEASES_PAGE))) })
         })
         page.addView(label(getString(R.string.about_details), 12f).apply { setTextColor(muted) })
-        setContentView(viewport)
+        setContentView(ComposeView(this).apply {
+            setContent { RatatoskrTheme(this@SettingsActivity) { AbSettingsPage(root, getString(R.string.settings)) { finish() } } }
+        }, android.view.ViewGroup.LayoutParams(-1, -1))
         root.post { root.scrollTo(0, savedInstanceState?.getInt("settings-scroll") ?: 0) }
         if (intent.getBooleanExtra(EXTRA_PLUGINS, false)) plugins()
     }
@@ -156,7 +154,7 @@ class SettingsActivity : MobileActivity() {
         setPadding(dp(4), dp(20), 0, dp(6))
     }
     private fun card(build: LinearLayout.() -> Unit) = column().apply {
-        setPadding(dp(14), dp(6), dp(14), dp(10)); background = rounded(surface, 16); build()
+        setPadding(dp(14), dp(6), dp(14), dp(10)); background = rounded(surface, 8); build()
     }
     private fun LinearLayout.toggle(text: Int, checked: Boolean, onChange: (Boolean) -> Unit) = addView(SwitchMaterial(this@SettingsActivity).apply {
         this.text = getString(text); isChecked = checked; setTextColor(ink); setPadding(0, dp(10), 0, dp(10))

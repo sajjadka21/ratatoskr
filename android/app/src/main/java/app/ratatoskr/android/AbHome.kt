@@ -36,10 +36,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import app.ratatoskr.android.abicons.*
 
 data class AbHomeState(
-    val rows: List<TaskRow> = emptyList(), val selecting: Boolean = false,
+    val rows: List<TaskRow> = emptyList(), val selecting: Boolean = false, val selectionCount: Int = 0,
     val history: Boolean = false, val query: String = "", val summary: String = "",
     val clipboard: String = "", val category: String? = null,
 )
@@ -73,6 +74,22 @@ private fun PageUi(header: @Composable () -> Unit, footer: @Composable () -> Uni
     }
 }
 
+/** AB SettingsPage/PageUi shell; existing native preference controls are adapters. */
+@Composable
+fun AbSettingsPage(scroll: android.widget.ScrollView, title: String, onBack: () -> Unit) {
+    Surface(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+        PageUi(header = {
+            Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                AbIconButton(ABDMIcons.Back, stringResource(R.string.cancel), onBack)
+                Text(title, Modifier.padding(start = 16.dp), fontWeight = FontWeight.Bold, fontSize = 20.sp)
+            }
+        }, footer = {}) { padding ->
+            AndroidView(factory = { scroll.apply { (parent as? android.view.ViewGroup)?.removeView(this); isVerticalScrollBarEnabled = false } },
+                modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()))
+        }
+    }
+}
+
 @Composable
 fun AbHome(
     state: AbHomeState, actions: TaskActions,
@@ -92,12 +109,12 @@ fun AbHome(
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (state.selecting) {
                         AbIconButton(ABDMIcons.Clear, stringResource(R.string.cancel)) { onSelection(R.string.cancel) }
-                        Text(stringResource(R.string.selected_count, state.rows.count { it.selected }), Modifier.weight(1f), fontSize = 18.sp)
+                        Text(stringResource(R.string.selected_count, state.selectionCount), Modifier.weight(1f), fontSize = 16.sp, maxLines = 2)
                         AbResourceButton(R.drawable.ic_pause, R.string.pause) { onSelection(R.string.pause) }
                         AbResourceButton(R.drawable.ic_retry, R.string.resume) { onSelection(R.string.resume) }
                         AbResourceButton(R.drawable.ic_delete, R.string.remove) { onSelection(R.string.remove) }
                     } else {
-                        Image(painterResource(R.mipmap.ic_launcher), null, Modifier.size(28.dp))
+                        AndroidView(factory = { android.widget.ImageView(it).apply { setImageResource(R.mipmap.ic_launcher); importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO } }, modifier = Modifier.size(28.dp))
                         Spacer(Modifier.width(12.dp))
                         Text("Ratatoskr", Modifier.weight(1f), fontSize = 20.sp, fontWeight = FontWeight.Bold)
                         Text(state.summary, color = colors.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.widthIn(max = 150.dp), maxLines = 2)
@@ -115,7 +132,7 @@ fun AbHome(
         footer = {
             Column(Modifier.background(Brush.verticalGradient(listOf(Color.Transparent, colors.background))).imePadding()) {
                 BottomNavigation(showingSearch, state.query, onQuery, { showingSearch = false }, { showingSearch = true }, onAdd,
-                    menu, { menu = !menu }, filter, { filter = !filter }, sort, { sort = !sort }, state.history, state.category,
+                    menu, { menu = !menu }, filter, { filter = !filter }, sort, { sort = !sort }, state.history, categories.firstOrNull { it.first == state.category }?.second,
                     mainMenu = {
                         DropdownMenu(menu, { menu = false }) {
                             listOf(R.string.browser, R.string.paste, R.string.pause_all, R.string.resume_all, R.string.clear_finished, R.string.select_all, R.string.plugins, R.string.settings).forEach { title ->
@@ -169,7 +186,7 @@ private fun BottomNavigation(
                             Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(onClick = onFilter).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                                 Icon(if (history) ABDMIcons.FolderFinished else ABDMIcons.FolderUnfinished, null, Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text(category?.let { stringResource(R.string.filter_category) } ?: stringResource(if (history) R.string.history else R.string.nav_downloads), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(category ?: stringResource(if (history) R.string.history else R.string.nav_downloads), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             BottomNavigationSelectedIndicator(filterSelected)
                         }

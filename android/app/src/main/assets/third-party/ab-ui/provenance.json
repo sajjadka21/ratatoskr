@@ -77,6 +77,10 @@
     {
       "path": "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/ui/theme/Sizing.kt",
       "blob": "6ca9b4235794f938a8c7d2188c5e93bed3892df3"
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/abdownloadmanager/android/pages/settings/SettingsPage.kt",
+      "blob": "af2d718d2cfcfd8a1ef43929098b1eefa09d39d7"
     }
   ],
   "icons": [
@@ -119,6 +123,11 @@
       "upstream": "shared/resources/src/commonMain/kotlin/com/abdownloadmanager/resources/icons/FolderUnfinished.kt",
       "blob": "72df96b6cfa9dba347041a29f5c7e58322664f10",
       "destination": "android\\app\\src\\main\\java\\app\\ratatoskr\\android\\abicons\\FolderUnfinished.kt"
+    },
+    {
+      "upstream": "shared/resources/src/commonMain/kotlin/com/abdownloadmanager/resources/icons/Back.kt",
+      "blob": "cfd13b477c017777806cf4d78bd137e82d584117",
+      "destination": "android\\app\\src\\main\\java\\app\\ratatoskr\\android\\abicons\\Back.kt"
     }
   ]
 }

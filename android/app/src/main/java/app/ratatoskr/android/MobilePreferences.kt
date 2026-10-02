@@ -51,6 +51,13 @@ class MobilePreferences(context: Context) {
     var window: DownloadWindow
         get() = DownloadWindow(prefs.getBoolean("window_on", false), prefs.getInt("window_start", 2 * 60).coerceIn(0, 1439), prefs.getInt("window_end", 7 * 60).coerceIn(0, 1439))
         set(value) { prefs.edit().putBoolean("window_on", value.enabled).putInt("window_start", value.startMinute).putInt("window_end", value.endMinute).apply() }
+    /** A folder the user picked (a persistable tree URI); empty means Downloads/Ratatoskr. */
+    var saveTree: String
+        get() = prefs.getString("save_tree", "")!!
+        set(value) { prefs.edit().putString("save_tree", value).apply() }
+    var onboarded: Boolean
+        get() = prefs.getBoolean("onboarded", false)
+        set(value) { prefs.edit().putBoolean("onboarded", value).apply() }
     var speedLimit: Long
         get() = prefs.getLong("speed", 0).coerceAtLeast(0)
         set(value) { prefs.edit().putLong("speed", value.coerceAtLeast(0)).apply() }

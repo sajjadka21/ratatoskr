@@ -177,6 +177,7 @@ object Engine {
     /** Journal the pending URI before copying so an interrupted save can be cleaned. */
     private fun publish(context: Context, id: String, index: Int, file: File, control: TransferControl): SavedMedia {
         if (file.length() == 0L) throw TransferFailure("invalid_output")
+        if (MobilePreferences(context).saveTree.isNotEmpty()) return publishToTree(context, id, index, file, control)
         if (android.os.Build.VERSION.SDK_INT < 29) return publishLegacy(context, id, index, file, control)
         ensureSpace(context.filesDir, file.length())
         val name = LinkUtils.safeFileName(Plugins.rename(PluginStore.active(context), file.name))
@@ -222,6 +223,47 @@ object Engine {
             throw error
         }
     }
+    /** Saves into the folder the user chose (Storage Access Framework), with the same category sub-folders. */
+    private fun publishToTree(context: Context, id: String, index: Int, file: File, control: TransferControl): SavedMedia {
+        val resolver = context.contentResolver
+        val tree = android.net.Uri.parse(MobilePreferences(context).saveTree)
+        val name = LinkUtils.safeFileName(Plugins.rename(PluginStore.active(context), file.name))
+        val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "application/octet-stream"
+        var target: android.net.Uri? = null
+        try {
+            var parent = android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, android.provider.DocumentsContract.getTreeDocumentId(tree))
+            val category = if (!MobilePreferences(context).categoryFolders) "" else FileCategory.folder(name, mime)
+            if (category.isNotEmpty()) parent = childFolder(context, tree, parent, category)
+            target = android.provider.DocumentsContract.createDocument(resolver, parent, mime, name) ?: throw TransferFailure("cannot_write")
+            resolver.openOutputStream(target)?.use { output -> file.inputStream().use { input ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) { control.check(); val count = input.read(buffer); if (count < 0) break; output.write(buffer, 0, count) }
+                output.flush()
+            } } ?: throw TransferFailure("cannot_write")
+            control.check()
+            val shown = resolver.query(target, arrayOf(android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { if (it.moveToFirst()) it.getString(0) else null } ?: name
+            val result = SavedMedia(target.toString(), shown, mime)
+            TaskStore.get(context).recordOutput(id, index, result)
+            return result
+        } catch (error: SecurityException) {
+            target?.let { runCatching { android.provider.DocumentsContract.deleteDocument(resolver, it) } }
+            throw TransferFailure("storage_permission")
+        } catch (error: Exception) {
+            target?.let { runCatching { android.provider.DocumentsContract.deleteDocument(resolver, it) } }
+            throw error
+        }
+    }
+    /** The sub-folder called [name] inside [parent], created when it does not exist yet. */
+    private fun childFolder(context: Context, tree: android.net.Uri, parent: android.net.Uri, name: String): android.net.Uri {
+        val resolver = context.contentResolver
+        val children = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(tree, android.provider.DocumentsContract.getDocumentId(parent))
+        resolver.query(children, arrayOf(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID, android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME, android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE), null, null, null)?.use {
+            while (it.moveToNext()) if (it.getString(1) == name && it.getString(2) == android.provider.DocumentsContract.Document.MIME_TYPE_DIR)
+                return android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, it.getString(0))
+        }
+        return android.provider.DocumentsContract.createDocument(resolver, parent, android.provider.DocumentsContract.Document.MIME_TYPE_DIR, name) ?: throw TransferFailure("cannot_write")
+    }
+
     /** Android 8 and 9 have no per-app Downloads access: write into the public Downloads folder (the user
      * allowed storage once) and register the file so other apps can open and share it. */
     private fun publishLegacy(context: Context, id: String, index: Int, file: File, control: TransferControl): SavedMedia {

@@ -162,4 +162,25 @@
     <string name="cat_documents">سند</string>
     <string name="cat_images">تصویر</string>
     <string name="cat_other">سایر</string>
+    <string name="selected_count">%1$d انتخاب شد</string>
+    <string name="select_all">همه</string>
+    <string name="remove_selected">%1$d مورد از فهرست حذف شود؟ فایل‌های ذخیره‌شده پاک نمی‌شوند و دانلودهای ناتمام لغو می‌شوند.</string>
+    <string name="verify_checksum">بررسی checksum</string>
+    <string name="checksum_hint">MD5، SHA-1 یا SHA-256 را بچسبانید</string>
+    <string name="checksum_bad">این مقدار یک checksum معتبر نیست (۳۲، ۴۰ یا ۶۴ نویسه‌ی هگز).</string>
+    <string name="checksum_checking">در حال بررسی فایل…</string>
+    <string name="checksum_match">فایل سالم است: %1$s مطابقت دارد ✓</string>
+    <string name="checksum_mismatch">%1$s مطابقت ندارد. فایل خراب یا تغییر کرده است؛ دوباره دانلود کنید.</string>
+    <string name="checksum_unreadable">فایل خوانده نشد.</string>
+    <string name="folder_setting">پوشه‌ی ذخیره</string>
+    <string name="folder_default">Downloads/Ratatoskr (پیش‌فرض)</string>
+    <string name="folder_choose">انتخاب پوشه…</string>
+    <string name="folder_reset">بازگشت به پیش‌فرض</string>
+    <string name="battery_setting">ادامه‌ی دانلود در پس‌زمینه</string>
+    <string name="battery_ok">برنامه از محدودیت باتری مستثنا است ✓</string>
+    <string name="battery_open">باز کردن تنظیم باتری</string>
+    <string name="share_info">ارسال اطلاعات برنامه برای گزارش مشکل</string>
+    <string name="welcome_title">به راتاتوسک خوش آمدید</string>
+    <string name="welcome_body">لینک را از هر برنامه با «اشتراک‌گذاری» بفرستید، یا دکمه‌ی «افزودن لینک» را بزنید. اگر لینکی کپی کرده باشید، با باز کردن برنامه پیشنهاد دانلود می‌بینید.\n\nبرای اینکه دانلودهای طولانی با خاموش شدن صفحه قطع نشوند، راتاتوسک را از محدودیت باتری مستثنا کنید.</string>
+    <string name="welcome_done">متوجه شدم</string>
 </resources>

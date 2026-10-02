@@ -39,6 +39,13 @@
     "resources": {
       "../browser-extension/": "browser-extension/",
       "extras/": "extras/"
+    },
+    "windows": {
+      "webviewInstallMode": { "type": "embedBootstrapper" },
+      "nsis": {
+        "languages": ["English", "Persian"],
+        "displayLanguageSelector": true
+      }
     }
   },
   "plugins": {

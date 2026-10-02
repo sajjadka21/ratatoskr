@@ -10,9 +10,12 @@ import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 
 /** One line of the list: the task plus the texts derived from it, so a change in either redraws the row. */
-data class TaskRow(val task: MobileTask, val stats: String, val schedule: String)
+data class TaskRow(val task: MobileTask, val stats: String, val schedule: String, val selected: Boolean = false)
 
 interface TaskActions {
+    /** True while some downloads are selected; a tap then selects instead of opening the details. */
+    val selecting: Boolean
+    fun toggle(task: MobileTask)
     fun details(task: MobileTask)
     fun command(task: MobileTask, action: String)
     fun open(task: MobileTask)
@@ -63,8 +66,10 @@ class TaskAdapter(private val activity: MobileActivity, private val actions: Tas
     override fun onBindViewHolder(h: Holder, position: Int) {
         val a = activity
         val row = getItem(position); val task = row.task
-        h.card.setOnClickListener { actions.details(task) }
-        h.badge.text = badgeFor(task)
+        h.card.setOnClickListener { if (actions.selecting) actions.toggle(task) else actions.details(task) }
+        h.card.setOnLongClickListener { actions.toggle(task); true }
+        h.card.background = a.rounded(a.surface, 18, if (row.selected) a.accent else a.accent and 0x44FFFFFF).also { if (row.selected) (it as android.graphics.drawable.GradientDrawable).setStroke(a.dp(2), a.accent) }
+        h.badge.text = if (row.selected) "✓" else badgeFor(task)
         h.title.text = task.title.ifEmpty { task.fileName.ifEmpty { LinkPlan.host(task.url).ifEmpty { a.getString(R.string.app_name) } } }
         h.subtitle.text = LinkPlan.host(task.url)
         val color = when (task.state) {

@@ -193,4 +193,5 @@
     <string name="download_page">دانلود این صفحه</string>
     <string name="download_file_q">%1$s دانلود شود؟</string>
     <string name="browser_added">به دانلودها اضافه شد.</string>
+    <string name="downloads_list">فهرست دانلودها</string>
 </resources>

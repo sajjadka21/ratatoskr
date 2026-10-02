@@ -192,4 +192,5 @@
     <string name="download_page">Download this page</string>
     <string name="download_file_q">Download %1$s?</string>
     <string name="browser_added">Added to downloads.</string>
+    <string name="downloads_list">Downloads list</string>
 </resources>

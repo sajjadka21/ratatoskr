@@ -109,7 +109,7 @@ class MainActivity : MobileActivity(), TaskActions {
         adapter = TaskAdapter(this, this)
         val list = RecyclerView(this).apply {
             layoutManager = LinearLayoutManager(this@MainActivity); adapter = this@MainActivity.adapter
-            itemAnimator = null; clipToPadding = false; setPadding(0, 0, 0, dp(96)); overScrollMode = View.OVER_SCROLL_NEVER
+            itemAnimator = null; contentDescription = getString(R.string.downloads_list); clipToPadding = false; setPadding(0, 0, 0, dp(96)); overScrollMode = View.OVER_SCROLL_NEVER
         }
         empty = column().apply {
             gravity = Gravity.CENTER; visibility = View.GONE

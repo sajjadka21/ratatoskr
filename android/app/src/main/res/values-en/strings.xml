@@ -204,4 +204,10 @@ Tap + to add a link.</string>
     <string name="transfer_settings_hint">Connection count and speed changes apply when a download starts or resumes.</string>
     <string name="download_action">Download</string>
     <string name="nav_downloads">Downloads</string>
+    <string name="sort_downloads">Sort downloads</string>
+    <string name="sort_newest">Newest first</string>
+    <string name="sort_oldest">Oldest first</string>
+    <string name="sort_name">File name</string>
+    <string name="sort_size">File size</string>
+    <string name="filter_category">Category</string>
 </resources>

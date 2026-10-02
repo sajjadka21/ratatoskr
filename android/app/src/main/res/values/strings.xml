@@ -205,4 +205,10 @@
     <string name="transfer_settings_hint">تعداد اتصال و سقف سرعت پس از شروع دانلود جدید یا ادامهٔ دانلود اعمال می‌شوند.</string>
     <string name="download_action">دانلود</string>
     <string name="nav_downloads">دانلودها</string>
+    <string name="sort_downloads">مرتب‌سازی دانلودها</string>
+    <string name="sort_newest">جدیدترین اول</string>
+    <string name="sort_oldest">قدیمی‌ترین اول</string>
+    <string name="sort_name">نام فایل</string>
+    <string name="sort_size">حجم فایل</string>
+    <string name="filter_category">دسته‌بندی</string>
 </resources>

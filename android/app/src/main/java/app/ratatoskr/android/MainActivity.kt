@@ -11,6 +11,11 @@ import android.view.Gravity
 import android.view.View
 import android.widget.*
 import androidx.activity.OnBackPressedCallback
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.appcompat.app.AlertDialog
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -31,23 +36,13 @@ import java.util.Date
 
 /** The home screen: a header, Active/History tabs, the list of downloads and a button to add links. */
 class MainActivity : MobileActivity(), TaskActions {
-    private lateinit var adapter: TaskAdapter
-    private lateinit var banner: LinearLayout
-    private lateinit var header: LinearLayout
-    private lateinit var selectionBar: LinearLayout
-    private lateinit var selectionTitle: TextView
     private val selection = linkedSetOf<String>()
     private val leaveSelection = object : OnBackPressedCallback(false) { override fun handleOnBackPressed() { selection.clear(); render() } }
-    private lateinit var empty: LinearLayout
-    private lateinit var summary: TextView
-    private lateinit var activeTab: MaterialButton
-    private lateinit var historyTab: MaterialButton
-    private lateinit var pageTitle: TextView
+    private var homeState by mutableStateOf(AbHomeState())
+    private var addPrefill by mutableStateOf<String?>(null)
     private var history = false
     private var category: String? = null
-    private var filterKey = ""
-    private lateinit var filters: LinearLayout
-    private lateinit var filterScroll: HorizontalScrollView
+    private var sortOrder = 0
     private var query = ""
     private var dismissedLink = ""
     private val meter = SpeedMeter()
@@ -59,116 +54,34 @@ class MainActivity : MobileActivity(), TaskActions {
         MobileRuntime.initialize(TaskStore.get(this))
         NetworkJobs.schedule(this)
 
-        val root = FrameLayout(this).apply { setBackgroundColor(paper) }
-        val content = column().apply { setPadding(dp(16), dp(8), dp(16), 0) }
-        // header: icon, title, summary, menu
-        header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(4), 0, dp(8)) }
-        header.addView(ImageView(this).apply { setImageResource(R.mipmap.ic_launcher); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO; layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(12) } })
-        val titles = column().apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f) }
-        titles.addView(TextView(this).apply { text = "Ratatoskr"; textSize = 22f; setTextColor(ink); typeface = android.graphics.Typeface.DEFAULT_BOLD })
-        summary = TextView(this).apply { textSize = 12f; setTextColor(muted) }
-        titles.addView(summary)
-        header.addView(titles)
-        header.addView(icon(R.drawable.ic_paste, getString(R.string.paste)) { startActivity(Intent(this, ShareActivity::class.java).putExtra(ShareActivity.EXTRA_FROM_CLIPBOARD, true)) })
-        lateinit var more: ImageButton
-        more = icon(R.drawable.ic_more, getString(R.string.menu)) { menu(more) }
-        header.addView(more)
-        content.addView(header)
-        // shown instead of the header while downloads are selected
-        selectionBar = column().apply { setPadding(0, dp(4), 0, dp(8)); visibility = View.GONE }
-        val selectionHeader = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        selectionHeader.addView(icon(R.drawable.ic_close, getString(R.string.cancel)) { selection.clear(); render() })
-        selectionTitle = TextView(this).apply { textSize = 17f; setTextColor(ink); layoutParams = LinearLayout.LayoutParams(0, -2, 1f); setPadding(dp(8), 0, 0, 0) }
-        selectionHeader.addView(selectionTitle)
-        selectionHeader.addView(icon(R.drawable.ic_delete, getString(R.string.remove), danger) { removeSelection() })
-        selectionBar.addView(selectionHeader)
-        val selectionActions = LinearLayout(this)
-        selectionActions.addView(button(getString(R.string.select_all)) { selection.addAll(adapter.currentList.map { it.task.id }); render() }, LinearLayout.LayoutParams(0, -2, 1f))
-        selectionActions.addView(button(getString(R.string.pause)) { applyToSelection(DownloadService.ACTION_PAUSE) }, LinearLayout.LayoutParams(0, -2, 1f))
-        selectionActions.addView(button(getString(R.string.resume)) { applyToSelection(DownloadService.ACTION_RESUME) }, LinearLayout.LayoutParams(0, -2, 1f))
-        selectionBar.addView(selectionActions)
-        content.addView(selectionBar)
+        sortOrder = savedInstanceState?.getInt("sortOrder") ?: 0
+        category = savedInstanceState?.getString("category")
+        selection.addAll(savedInstanceState?.getStringArrayList("selection").orEmpty())
         onBackPressedDispatcher.addCallback(this, leaveSelection)
-        banner = column().apply { visibility = View.GONE }
-        content.addView(banner)
-
-        pageTitle = label(getString(R.string.nav_downloads), 28f).apply {
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-            setPadding(0, dp(8), 0, dp(16))
-        }
-        content.addView(pageTitle)
-        content.addView(EditText(this).apply {
-            hint = getString(R.string.search_history); setTextColor(ink); setHintTextColor(muted); setText(query); maxLines = 1; inputType = android.text.InputType.TYPE_CLASS_TEXT
-            background = rounded(surface, 14); setPadding(dp(14), dp(10), dp(14), dp(10)); minimumHeight = dp(48)   // the hint is the label; an editable field must not also carry a contentDescription
-            doAfterTextChanged { query = it.toString(); render() }
-        }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
-
-        filters = LinearLayout(this)
-        filterScroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; visibility = View.GONE; addView(filters) }
-        content.addView(filterScroll, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
-
-        adapter = TaskAdapter(this, this)
-        val list = RecyclerView(this).apply {
-            layoutManager = LinearLayoutManager(this@MainActivity); adapter = this@MainActivity.adapter
-            itemAnimator = null; contentDescription = getString(R.string.downloads_list); clipToPadding = false; setPadding(0, 0, 0, dp(80)); overScrollMode = View.OVER_SCROLL_NEVER
-        }
-        empty = column().apply {
-            gravity = Gravity.CENTER; visibility = View.GONE
-            addView(ImageView(this@MainActivity).apply { setImageResource(R.drawable.ic_nav_downloads); setColorFilter(accent); background = rounded(surface, 24); setPadding(dp(20), dp(20), dp(20), dp(20)); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO; alpha = 0.9f; layoutParams = LinearLayout.LayoutParams(dp(80), dp(80)) })
-            addView(TextView(this@MainActivity).apply { text = getString(R.string.empty_jobs); textSize = 14f; gravity = Gravity.CENTER; setTextColor(muted); setPadding(dp(32), dp(12), dp(32), 0) })
-        }
-        val body = FrameLayout(this)
-        body.addView(list, FrameLayout.LayoutParams(-1, -1)); body.addView(empty, FrameLayout.LayoutParams(-1, -1))
-        content.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
-        root.addView(content, FrameLayout.LayoutParams(-1, -1))
-
-        // A persistent, labelled dock. Selection stays in the download list,
-        // while Browser and Settings open their existing screens.
-        val dock = LinearLayout(this).apply {
-            gravity = Gravity.CENTER_VERTICAL; setPadding(dp(8), dp(4), dp(8), dp(4))
-            background = rounded(surface, 24); elevation = dp(3).toFloat()
-        }
-        val dockParams = FrameLayout.LayoutParams(-1, dp(76), Gravity.BOTTOM).apply { setMargins(dp(16), 0, dp(16), dp(12)) }
-        fun destination(title: Int, drawable: Int, selected: Boolean = false, action: () -> Unit) = MaterialButton(this).apply {
-            text = getString(title); textSize = 12f; isAllCaps = false; isCheckable = selected
-            iconGravity = MaterialButton.ICON_GRAVITY_TOP; setIconResource(drawable); iconSize = dp(22); iconPadding = dp(4)
-            insetTop = 0; insetBottom = 0; minWidth = 0; minimumWidth = dp(48); minHeight = dp(56)
-            setPadding(dp(2), dp(4), dp(2), dp(4)); cornerRadius = dp(16)
-            val states = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
-            backgroundTintList = android.content.res.ColorStateList(states, intArrayOf((accent and 0x00FFFFFF) or 0x20000000, android.graphics.Color.TRANSPARENT))
-            val tint = android.content.res.ColorStateList(states, intArrayOf(accent, muted))
-            setTextColor(tint); iconTint = tint
-            setOnClickListener { action() }
-            layoutParams = LinearLayout.LayoutParams(0, -1, 1f)
-        }
-        fun showDownloads(showHistory: Boolean) {
-            history = showHistory; activeTab.isChecked = !history; historyTab.isChecked = history; render()
-        }
-        activeTab = destination(R.string.nav_downloads, R.drawable.ic_nav_downloads, true) { showDownloads(false) }
-        historyTab = destination(R.string.history, R.drawable.ic_nav_history, true) { showDownloads(true) }
-        dock.addView(activeTab); dock.addView(historyTab)
-        dock.addView(destination(R.string.browser, R.drawable.ic_nav_browser) { startActivity(Intent(this, BrowserActivity::class.java)) })
-        dock.addView(destination(R.string.settings, R.drawable.ic_nav_settings) { startActivity(Intent(this, SettingsActivity::class.java)) })
-        activeTab.isChecked = !history; historyTab.isChecked = history
-        root.addView(dock, dockParams)
-        val fab = FloatingActionButton(this).apply {
-            contentDescription = getString(R.string.add_links); setImageResource(R.drawable.ic_add)
-            backgroundTintList = android.content.res.ColorStateList.valueOf(accent)
-            imageTintList = android.content.res.ColorStateList.valueOf(paper)
-            shapeAppearanceModel = shapeAppearanceModel.toBuilder().setAllCornerSizes(dp(20).toFloat()).build()
-            setOnClickListener { addLinks() }
-        }
-        val fabParams = FrameLayout.LayoutParams(dp(56), dp(56), Gravity.BOTTOM or Gravity.END).apply { setMargins(dp(20), 0, dp(20), dp(104)) }
-        root.addView(fab, fabParams)
-        content.setPadding(dp(20), dp(8), dp(20), dp(96))
-        ViewCompat.setOnApplyWindowInsetsListener(root) { _, inset ->
-            val bars = inset.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
-            content.setPadding(dp(20) + bars.left, dp(8) + bars.top, dp(20) + bars.right, dp(96) + bars.bottom)
-            dockParams.setMargins(dp(16) + bars.left, 0, dp(16) + bars.right, dp(12) + bars.bottom); dock.layoutParams = dockParams
-            fabParams.setMargins(dp(20) + bars.left, 0, dp(20) + bars.right, dp(104) + bars.bottom); fab.layoutParams = fabParams
-            inset
-        }
-        setContentView(root, android.view.ViewGroup.LayoutParams(-1, -1))
+        setContentView(ComposeView(this).apply {
+            setContent {
+                RatatoskrTheme(this@MainActivity) {
+                    androidx.compose.material3.Surface(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
+                        AbHome(homeState, this@MainActivity,
+                            onAdd = { addLinks() }, onQuery = { query = it; render() },
+                            onHistory = { history = it; render() }, onMenu = ::menuAction,
+                            onCategory = { category = it; render() },
+                            categories = TaskFilter.present(TaskStore.get(this@MainActivity).list()).map { it to categoryName(it) },
+                            onSort = { sortOrder = it; render() },
+                            onClipboard = { download -> val text = homeState.clipboard; dismissedLink = text; homeState = homeState.copy(clipboard = ""); if (download) addLinks(text) },
+                            onSelection = { action -> when (action) {
+                                R.string.cancel -> { selection.clear(); render() }
+                                R.string.pause -> applyToSelection(DownloadService.ACTION_PAUSE)
+                                R.string.resume -> applyToSelection(DownloadService.ACTION_RESUME)
+                                R.string.remove -> removeSelection()
+                            } })
+                        addPrefill?.let { prefill -> AbEnterUrl(prefill, MobilePreferences(this@MainActivity).defaultAudio,
+                            onClose = { addPrefill = null }, onPaste = ::clipboardText, onDownload = ::downloadLinks) }
+                    }
+                }
+            }
+        }, android.view.ViewGroup.LayoutParams(-1, -1))
+        render()
         lifecycleScope.launch { repeatOnLifecycle(Lifecycle.State.STARTED) { while (isActive) { render(); delay(750) } } }
         UpdateFlow.check(this, manual = false)
         welcome()
@@ -179,7 +92,9 @@ class MainActivity : MobileActivity(), TaskActions {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        outState.putBoolean("history", history); outState.putString("query", query); super.onSaveInstanceState(outState)
+        outState.putBoolean("history", history); outState.putString("query", query)
+        outState.putInt("sortOrder", sortOrder); outState.putString("category", category)
+        outState.putStringArrayList("selection", ArrayList(selection)); super.onSaveInstanceState(outState)
     }
 
     /** One short first-run explanation, with the one setting that decides whether downloads survive in the background. */
@@ -192,55 +107,44 @@ class MainActivity : MobileActivity(), TaskActions {
             .setNeutralButton(R.string.battery_open) { _, _ -> Power.openSettings(this) }.show()
     }
 
-    private fun menu(anchor: View) {
-        val popup = PopupMenu(this, anchor)
-        val items = listOf(R.string.browser, R.string.pause_all, R.string.resume_all, R.string.clear_finished, R.string.plugins, R.string.settings)
-        items.forEachIndexed { index, title -> popup.menu.add(0, index, index, title) }
-        popup.setOnMenuItemClickListener { item ->
-            when (items[item.itemId]) {
-                R.string.browser -> startActivity(Intent(this, BrowserActivity::class.java))
-                R.string.pause_all -> forEach(TaskPolicy.inFlight + TaskState.QUEUED + TaskState.WAITING_NETWORK, DownloadService.ACTION_PAUSE)
-                R.string.resume_all -> forEach(setOf(TaskState.PAUSED, TaskState.FAILED, TaskState.WAITING_NETWORK), DownloadService.ACTION_RESUME)
-                R.string.clear_finished -> { TaskStore.get(this).clearFinished(); render() }
-                R.string.plugins -> startActivity(Intent(this, SettingsActivity::class.java).putExtra(SettingsActivity.EXTRA_PLUGINS, true))
-                else -> startActivity(Intent(this, SettingsActivity::class.java))
-            }
-            true
+    private fun menuAction(action: Int) {
+        when (action) {
+            R.string.browser -> startActivity(Intent(this, BrowserActivity::class.java))
+            R.string.paste -> addLinks(clipboardText())
+            R.string.pause_all -> forEach(TaskPolicy.inFlight + TaskState.QUEUED + TaskState.WAITING_NETWORK, DownloadService.ACTION_PAUSE)
+            R.string.resume_all -> forEach(setOf(TaskState.PAUSED, TaskState.FAILED, TaskState.WAITING_NETWORK), DownloadService.ACTION_RESUME)
+            R.string.clear_finished -> { TaskStore.get(this).clearFinished(); render() }
+            R.string.select_all -> { selection.addAll(homeState.rows.map { it.task.id }); render() }
+            R.string.plugins -> startActivity(Intent(this, SettingsActivity::class.java).putExtra(SettingsActivity.EXTRA_PLUGINS, true))
+            else -> startActivity(Intent(this, SettingsActivity::class.java))
         }
-        popup.show()
     }
 
     private fun render() {
-        if (!::adapter.isInitialized) return
-        val store = TaskStore.get(this)
-        val all = store.list()
+        val all = TaskStore.get(this).list()
         val now = System.currentTimeMillis()
         val finished = setOf(TaskState.COMPLETED, TaskState.CANCELLED)
         val activeCount = all.count { it.state !in finished }
-        pageTitle.text = getString(if (history) R.string.history else R.string.nav_downloads)
-        summary.text = getString(R.string.summary_line, activeCount, all.size - activeCount)
         val open = Schedule.now(MobilePreferences(this).window)
-        val inTab = all.asReversed().filter {
-            (it.state in finished) == history && (query.isBlank() || it.title.contains(query, true) || it.fileName.contains(query, true))
-        }
-        val present = TaskFilter.present(inTab)
-        if (category != null && category !in present) category = null
-        renderFilters(present)
-        val shown = inTab.filter { TaskFilter.matches(it, category) }
-        shown.forEach { if (it.state !in TaskPolicy.inFlight) meter.forget(it.id) }
-        adapter.submitList(shown.map { task ->
+        selection.retainAll(all.map { it.id }.toSet())
+        val shown = all.filter {
+            (it.state in finished) == history && (query.isBlank() || it.title.contains(query, true) || it.fileName.contains(query, true)) && TaskFilter.matches(it, category)
+        }.let { items -> when (sortOrder) {
+            1 -> items.sortedBy { it.createdAt }
+            2 -> items.sortedBy { it.title.lowercase(java.util.Locale.ROOT) }
+            3 -> items.sortedByDescending { it.totalBytes }
+            else -> items.sortedByDescending { it.createdAt }
+        } }
+        homeState = homeState.copy(rows = shown.map { task ->
+            if (task.state !in TaskPolicy.inFlight) meter.forget(task.id)
             val label = when {
                 task.startAt > now -> getString(R.string.scheduled_for, DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(task.startAt)))
                 !open && task.state in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) -> getString(R.string.outside_window)
                 else -> ""
             }
             TaskRow(task, stats(task), label, task.id in selection)
-        })
-        empty.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE
-        selection.retainAll(all.map { it.id }.toSet())
-        header.visibility = if (selection.isEmpty()) View.VISIBLE else View.GONE
-        selectionBar.visibility = if (selection.isEmpty()) View.GONE else View.VISIBLE
-        selectionTitle.text = getString(R.string.selected_count, selection.size)
+        }, selecting = selection.isNotEmpty(), history = history, query = query, category = category,
+            summary = getString(R.string.summary_line, activeCount, all.size - activeCount))
         leaveSelection.isEnabled = selection.isNotEmpty()
     }
 
@@ -268,25 +172,6 @@ class MainActivity : MobileActivity(), TaskActions {
         "Video" -> R.string.cat_video; "Music" -> R.string.cat_music; "Archives" -> R.string.cat_archives; "Programs" -> R.string.cat_programs
         "Documents" -> R.string.cat_documents; "Images" -> R.string.cat_images; else -> R.string.cat_other
     })
-
-    /** A row of category chips (All, Video, Music…), shown only when the list holds more than one kind. */
-    private fun renderFilters(present: List<String>) {
-        val key = present.joinToString(",") + "|" + category
-        if (key == filterKey) return
-        filterKey = key
-        filters.removeAllViews()
-        fun add(label: String, value: String?) {
-            val on = category == value
-            filters.addView(MaterialButton(this).apply {
-                text = label; textSize = 13f; isAllCaps = false; minHeight = dp(48); minimumWidth = dp(48); isCheckable = true; isChecked = on; setPadding(dp(14), dp(7), dp(14), dp(7)); minimumHeight = dp(48); gravity = Gravity.CENTER
-                setTextColor(if (on) paper else accent)
-                background = if (on) rounded(accent, 20) else rounded(android.graphics.Color.TRANSPARENT, 20, accent and 0x66FFFFFF)
-                setOnClickListener { category = value; render() }
-            }, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) })
-        }
-        if (present.size > 1) { add(getString(R.string.filter_all), null); present.forEach { add(categoryName(it), it) } }
-        filterScroll.visibility = if (filters.childCount == 0) View.GONE else View.VISIBLE
-    }
 
     /** "12.4 MB / 80 MB · 2.1 MB/s · 0:32 left", from what the service has stored. */
     private fun stats(task: MobileTask): String {
@@ -376,8 +261,16 @@ class MainActivity : MobileActivity(), TaskActions {
         row(R.string.detail_added, DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(task.createdAt)))
         if (task.startAt > System.currentTimeMillis()) row(R.string.detail_starts, DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(task.startAt)))
         if (task.error.isNotEmpty()) row(R.string.detail_problem, MobileText.error(this, task.error))
-        val actions = LinearLayout(this).apply { setPadding(0, dp(8), 0, 0) }
-        fun act(text: Int, block: () -> Unit) = actions.addView(button(getString(text)) { sheet.dismiss(); block() }, LinearLayout.LayoutParams(0, -2, 1f))
+        val actions = column().apply { setPadding(0, dp(8), 0, 0) }
+        fun act(text: Int, block: () -> Unit) = actions.addView(button(getString(text)) { sheet.dismiss(); block() }, LinearLayout.LayoutParams(-1, -2))
+        when (task.state) {
+            TaskState.COMPLETED -> { act(R.string.open_file) { open(task) }; act(R.string.share_file) { share(task) } }
+            TaskState.CANCELLED -> Unit
+            TaskState.PAUSED, TaskState.FAILED, TaskState.WAITING_NETWORK -> act(R.string.resume) { command(task, DownloadService.ACTION_RESUME) }
+            else -> act(R.string.pause) { command(task, DownloadService.ACTION_PAUSE) }
+        }
+        if (task.state !in setOf(TaskState.COMPLETED, TaskState.CANCELLED)) act(R.string.cancel) { command(task, DownloadService.ACTION_CANCEL) }
+        if (task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED, TaskState.FAILED)) act(R.string.remove) { remove(task) }
         act(R.string.copy_link) {
             (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(ClipData.newPlainText("link", task.url))
             Toast.makeText(this, R.string.link_copied, Toast.LENGTH_SHORT).show()
@@ -389,69 +282,34 @@ class MainActivity : MobileActivity(), TaskActions {
             if (task.startAt > 0) act(R.string.schedule_clear) { TaskStore.get(this).schedule(task.id, 0); DownloadService.wake(this); render() }
         }
         box.addView(actions)
-        sheet.setContentView(box)
+        sheet.setContentView(ScrollView(this).apply { addView(box) })
         sheet.show()
     }
 
-    /** Copied links are offered once, as a one-tap download; reading the clipboard needs window focus. */
+    private fun clipboardText(): String {
+        val clip = (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).primaryClip
+        return clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (!hasFocus || !::banner.isInitialized) return
-        banner.removeAllViews(); banner.visibility = android.view.View.GONE
-        if (!MobilePreferences(this).watchClipboard) return
-        val clip = (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).primaryClip
-        val text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
-        val urls = LinkPlan.parse(text).filter { LinkUtils.isPublicHttpUrl(it) }
-        if (urls.isEmpty() || urls.joinToString("\n") == dismissedLink) return
-        val key = urls.joinToString("\n")
-        banner.visibility = android.view.View.VISIBLE
-        banner.addView(label(if (urls.size == 1) getString(R.string.clipboard_found, LinkPlan.host(urls.first())) else getString(R.string.clipboard_many, urls.size), 14f))
-        if (urls.any { Spotify.isTrackUrl(it) }) banner.addView(label(getString(R.string.spotify_note), 12f))
-        val row = LinearLayout(this)
-        row.addView(button(getString(R.string.download_now)) {
-            dismissedLink = key; banner.visibility = android.view.View.GONE
-            if (urls.size == 1) startActivity(Intent(this, ShareActivity::class.java).putExtra(Intent.EXTRA_TEXT, urls.first()))
-            else addLinks(key)
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        row.addView(button(getString(R.string.dismiss)) { dismissedLink = key; banner.visibility = android.view.View.GONE }, LinearLayout.LayoutParams(0, -2, 1f))
-        banner.addView(row)
+        if (!hasFocus || !MobilePreferences(this).watchClipboard) return
+        val urls = LinkPlan.parse(clipboardText()).filter { LinkUtils.isPublicHttpUrl(it) }
+        val text = urls.joinToString("\n")
+        if (text.isNotEmpty() && text != dismissedLink) homeState = homeState.copy(clipboard = text)
     }
-    /** Paste any number of links (or a `[1-20]` pattern); each one is routed to the right engine. */
-    private fun addLinks(prefill: String = "") {
-        val prefs = MobilePreferences(this)
-        val form = column().apply { setPadding(dp(20), dp(8), dp(20), 0) }
-        val input = EditText(this).apply { hint = getString(R.string.links_hint); minLines = 3; maxLines = 6; setTextColor(ink); setHintTextColor(muted); background = rounded(surface, 16); setPadding(dp(16), dp(14), dp(16), dp(14)); setText(prefill)
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE }
-        val summary = label("", 13f)
-        val audio = CheckBox(this).apply { minimumHeight = dp(48); text = getString(R.string.audio_only_all); isChecked = prefs.defaultAudio; setTextColor(ink) }
-        form.addView(input); form.addView(label(getString(R.string.add_link_help), 12f)); form.addView(summary); form.addView(audio); form.addView(label(getString(R.string.pattern_hint), 12f))
-        form.addView(button(getString(R.string.paste_clipboard)) {
-            val clip = (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).primaryClip
-            val text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
-            if (text.isNotBlank()) input.setText(if (input.text.isBlank()) text else input.text.toString() + "\n" + text)
-        })
-        val dialog = AlertDialog.Builder(this).setTitle(R.string.add_links).setView(ScrollView(this).apply { addView(form) })
-            .setPositiveButton(R.string.download_action, null).setNegativeButton(R.string.cancel, null).create()
-        fun links() = LinkPlan.parse(input.text.toString())
-        input.doAfterTextChanged {
-            val urls = links(); val counts = LinkPlan.summarize(urls)
-            summary.text = if (urls.isEmpty()) "" else getString(R.string.links_summary, urls.size, counts.files, counts.media)
-        }
-        dialog.setOnShowListener {
-            dialog.window?.setBackgroundDrawable(rounded(paper, 24))
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(accent)
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(muted)
-            input.setText(input.text.toString())   // refresh the summary for a prefilled list
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val urls = links()
-                if (urls.isEmpty() || urls.any { !LinkUtils.isPublicHttpUrl(it) }) { input.error = getString(R.string.bad_link); return@setOnClickListener }
-                if (urls.size == 1 && LinkPlan.classify(urls.first()) == LinkKind.MEDIA && !Spotify.isTrackUrl(urls.first()) && !audio.isChecked && !prefs.quickDownload)
-                    startActivity(Intent(this, ShareActivity::class.java).putExtra(Intent.EXTRA_TEXT, urls.first()))   // one video: choose quality
-                else DownloadService.startMany(this, urls, prefs.defaultHeight, audio.isChecked)
-                dialog.dismiss()
-            }
 
-        }
-        dialog.show()
+    private fun addLinks(prefill: String = "") { addPrefill = prefill }
+
+    private fun downloadLinks(text: String, audio: Boolean): Boolean {
+        val urls = LinkPlan.parse(text)
+        if (urls.isEmpty() || urls.any { !LinkUtils.isPublicHttpUrl(it) }) return false
+        val prefs = MobilePreferences(this)
+        if (urls.size == 1 && LinkPlan.classify(urls.first()) == LinkKind.MEDIA && !Spotify.isTrackUrl(urls.first()) && !audio && !prefs.quickDownload)
+            startActivity(Intent(this, ShareActivity::class.java).putExtra(Intent.EXTRA_TEXT, urls.first()))
+        else DownloadService.startMany(this, urls, prefs.defaultHeight, audio)
+        addPrefill = null
+        render()
+        return true
     }
 }

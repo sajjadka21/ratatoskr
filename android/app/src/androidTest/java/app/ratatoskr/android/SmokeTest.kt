@@ -24,6 +24,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Before
 import org.junit.BeforeClass
 import org.junit.Test
+import org.junit.Rule
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import org.junit.Assert.assertEquals
 import org.hamcrest.Description
 import org.hamcrest.Matcher
@@ -33,6 +36,7 @@ import org.hamcrest.TypeSafeMatcher
 /** Opens the real screens on an emulator. Every click and typed key also runs the accessibility checks
  * (labels, touch-target size, contrast) over the whole screen, so a regression there fails the build. */
 class SmokeTest {
+    @get:Rule val compose = createEmptyComposeRule()
     companion object {
         @JvmStatic @BeforeClass fun accessibility() {
             AccessibilityChecks.enable().setRunChecksFromRootView(true)
@@ -56,43 +60,44 @@ class SmokeTest {
         }
     }
 
-    @Test fun homeScreenShowsTheBrandTheTabsAndTheAddButton() {
+    @Test fun homeScreenShowsTheAbToolbarAndTheAddButton() {
         ActivityScenario.launch(MainActivity::class.java).use {
-            onView(withText("Ratatoskr")).check(matches(isDisplayed()))
+            compose.onNodeWithText("Ratatoskr").assertIsDisplayed()
             it.onActivity { activity ->
                 val viewport = activity.findViewById<ViewGroup>(android.R.id.content)
                 assertEquals(viewport.height, viewport.getChildAt(0).height)
             }
-            onView(withContentDescription(R.string.add_links)).check(matches(isDisplayed()))
-            onView(withText(R.string.empty_jobs)).check(matches(isDisplayed()))
+            compose.onNodeWithContentDescription(context.getString(R.string.add_links)).assertIsDisplayed()
+            compose.onNodeWithText(context.getString(R.string.empty_jobs)).assertIsDisplayed()
             screenshot("home-empty")
         }
     }
 
     @Test fun addingLinksCountsFilesAndVideosAsYouType() {
         ActivityScenario.launch(MainActivity::class.java).use {
-            onView(withContentDescription(R.string.add_links)).perform(click())
-            onView(isAssignableFrom(EditText::class.java)).perform(typeText("https://example.org/p[01-03].jpg https://youtu.be/abc"), closeSoftKeyboard())
-            onView(withText(context.getString(R.string.links_summary, 4, 3, 1))).check(matches(isDisplayed()))
+            compose.onNodeWithContentDescription(context.getString(R.string.add_links)).performClick()
+            compose.onNode(hasSetTextAction()).performTextInput("https://example.org/p[01-03].jpg https://youtu.be/abc")
+            compose.onNodeWithText(context.getString(R.string.links_summary, 4, 3, 1)).assertIsDisplayed()
         }
     }
 
-    @Test fun addLinkHasOneDownloadActionAndTheDockOpensSettings() {
+    @Test fun addLinkHasOneDownloadActionAndTheAbMenuOpensSettings() {
         ActivityScenario.launch(MainActivity::class.java).use {
-            onView(withText(R.string.settings)).perform(click())
+            compose.onNodeWithContentDescription(context.getString(R.string.menu)).performClick()
+            compose.onNodeWithText(context.getString(R.string.settings)).performClick()
             onView(withText(R.string.section_network)).check(matches(isDisplayed()))
             androidx.test.espresso.Espresso.pressBack()
-            onView(withContentDescription(R.string.add_links)).perform(click())
-            onView(withText(R.string.download_action)).check(matches(isDisplayed()))
-            onView(withText(R.string.file_download)).check(androidx.test.espresso.assertion.ViewAssertions.doesNotExist())
+            compose.onNodeWithContentDescription(context.getString(R.string.add_links)).performClick()
+            compose.onNodeWithText(context.getString(R.string.download_action)).assertIsDisplayed()
+            compose.onNodeWithText(context.getString(R.string.file_download)).assertDoesNotExist()
             screenshot("add-link-single-action")
         }
     }
 
     @Test fun settingsOpensFromTheMenu() {
         ActivityScenario.launch(MainActivity::class.java).use {
-            onView(withContentDescription(R.string.menu)).perform(click())
-            onView(withText(R.string.settings)).inRoot(isPlatformPopup()).perform(click())
+            compose.onNodeWithContentDescription(context.getString(R.string.menu)).performClick()
+            compose.onNodeWithText(context.getString(R.string.settings)).performClick()
             onView(withText(R.string.section_network)).check(matches(isDisplayed()))
         }
     }
@@ -134,6 +139,34 @@ class SmokeTest {
         }
     }
 
+    @Test fun abListShowsDownloadFailureRetryAndSurvivesRecreation() {
+        val prefs = MobilePreferences(context)
+        val store = TaskStore.get(context)
+        val queued = store.enqueue("https://example.org/ratatoskr-desktop.zip", null, false, "Ratatoskr Desktop.zip", "file")
+        store.state(queued.id, TaskState.FAILED, "not_a_file")
+        val completed = store.enqueue("https://example.org/guide.pdf", null, false, "Getting started.pdf", "file")
+        store.state(completed.id, TaskState.COMPLETED)
+        try {
+            prefs.language = "en"; prefs.mode = "dark"
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                compose.onNodeWithText("Ratatoskr Desktop.zip").assertIsDisplayed()
+                compose.onNodeWithText(context.getString(R.string.error_not_file)).assertIsDisplayed()
+                compose.onNodeWithContentDescription(context.getString(R.string.resume)).assertIsDisplayed()
+                screenshot("ab-home-downloads-dark")
+                compose.onNodeWithContentDescription(context.getString(R.string.search_history)).performClick()
+                compose.onNode(hasSetTextAction()).performTextInput("Desktop")
+                scenario.recreate()
+                compose.onNodeWithText("Desktop").assertIsDisplayed()
+                compose.onNodeWithText("Ratatoskr Desktop.zip").assertIsDisplayed()
+            }
+            prefs.mode = "light"; prefs.language = "fa"
+            ActivityScenario.launch(MainActivity::class.java).use {
+                compose.onNodeWithText("Ratatoskr Desktop.zip").assertIsDisplayed()
+                screenshot("ab-home-downloads-light-fa")
+            }
+        } finally { store.remove(queued.id); store.remove(completed.id); prefs.language = "" }
+    }
+
     private fun screenshot(name: String) {
         require(name.matches(Regex("[a-z-]+")))
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
@@ -168,8 +201,8 @@ class SmokeTest {
 
     @Test fun theBrowserOpensFromTheMenu() {
         ActivityScenario.launch(MainActivity::class.java).use {
-            onView(withContentDescription(R.string.menu)).perform(click())
-            onView(withText(R.string.browser)).inRoot(isPlatformPopup()).perform(click())
+            compose.onNodeWithContentDescription(context.getString(R.string.menu)).performClick()
+            compose.onNodeWithText(context.getString(R.string.browser)).performClick()
             onView(withText(R.string.download_page)).check(matches(isDisplayed()))
         }
     }

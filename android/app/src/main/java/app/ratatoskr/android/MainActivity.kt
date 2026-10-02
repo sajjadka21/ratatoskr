@@ -117,7 +117,7 @@ class MainActivity : MobileActivity(), TaskActions {
         }
         empty = column().apply {
             gravity = Gravity.CENTER; visibility = View.GONE
-            addView(ImageView(this@MainActivity).apply { setImageResource(R.mipmap.ic_launcher); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO; alpha = 0.85f; layoutParams = LinearLayout.LayoutParams(dp(96), dp(96)) })
+            addView(ImageView(this@MainActivity).apply { setImageResource(R.drawable.brand_emblem); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO; alpha = 0.85f; layoutParams = LinearLayout.LayoutParams(dp(96), dp(96)) })
             addView(TextView(this@MainActivity).apply { text = getString(R.string.empty_jobs); textSize = 14f; gravity = Gravity.CENTER; setTextColor(muted); setPadding(dp(32), dp(12), dp(32), 0) })
         }
         val body = FrameLayout(this)

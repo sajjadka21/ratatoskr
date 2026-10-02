@@ -103,7 +103,7 @@ class TaskStore internal constructor(context: Context, databaseName: String = "d
         writableDatabase.delete("outputs", "task_id=?", arrayOf(id))
         writableDatabase.delete("tasks", "id=?", arrayOf(id))
     }
-    @Synchronized fun clearFinished() = list().filter { it.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED, TaskState.FAILED) }.forEach { remove(it.id) }
+    @Synchronized fun clearFinished() = list().filter { it.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED) }.forEach { remove(it.id) }
     /** A new address for an unfinished task (an expired signed link), kept as the same task so what was downloaded is reused.
      * Returns false for a finished or running task, or an address that is not a public web link. */
     @Synchronized fun updateUrl(id: String, url: String): Boolean {

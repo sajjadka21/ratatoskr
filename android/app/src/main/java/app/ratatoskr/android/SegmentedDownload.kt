@@ -101,7 +101,17 @@ object SegmentedDownload {
         if (failure.get() != null) workers.forEach { it.interrupt() }
         workers.forEach { it.join() }
         report(true)
-        failure.get()?.let { throw if (it is Exception) it else IOException(it) }
+        failure.get()?.let { error ->
+            // All writers are joined before discarding range state. A full GET
+            // starts clean; bytes from different versions are never stitched.
+            control.check()
+            if (error is TransferFailure && error.code == "invalid_range") {
+                if (!journal.delete() && journal.exists()) throw TransferFailure("cannot_write")
+                if (!part.delete() && part.exists()) throw TransferFailure("cannot_write")
+                return single()
+            }
+            throw if (error is Exception) error else IOException(error)
+        }
         control.check()
         if (segments.any { !it.finished } || received.get() < plan.total) throw TransferFailure("incomplete")
 
@@ -181,7 +191,12 @@ object SegmentedDownload {
                     SafeHttp.requireSuccess(connection.responseCode)
                     val range = Regex("bytes (\\d+)-(\\d+)/(\\d+)").matchEntire(connection.getHeaderField("Content-Range").orEmpty())
                     if (connection.responseCode != 206 || range == null || range.groupValues[1].toLong() != from ||
-                        range.groupValues[3].toLong() != plan.total || range.groupValues[2].toLong() < segment.end) throw TransferFailure("invalid_range")
+                        range.groupValues[3].toLong() != plan.total || range.groupValues[2].toLong() < segment.end ||
+                        range.groupValues[2].toLong() >= plan.total) throw TransferFailure("invalid_range")
+                    val expectedValidator = HttpResumePolicy.ifRange(plan.validators)!!
+                    val actualValidator = if (expectedValidator == plan.validators.etag)
+                        connection.getHeaderField("ETag") else connection.getHeaderField("Last-Modified")
+                    if (actualValidator != expectedValidator) throw TransferFailure("invalid_range")
                     RandomAccessFile(part, "rw").use { file ->
                         file.seek(from)
                         val buffer = ByteArray(64 * 1024)
@@ -227,18 +242,29 @@ object SegmentedDownload {
         }
     }
 
-    private fun readJournal(file: File, url: String): Plan? {
-        val json = runCatching { JSONObject(file.readText()) }.getOrNull() ?: return null
+    private fun readJournal(file: File, url: String): Plan? = runCatching {
+        if (!file.isFile || file.length() > 1024 * 1024) return null
+        val json = JSONObject(file.readText())
         if (!LinkUtils.sameResource(json.optString("source"), url)) return null
         val rows = json.optJSONArray("segments") ?: return null
+        if (rows.length() !in 1..4096) return null
+        val total = json.optLong("total", -1)
+        if (total <= 0) return null
+        val validators = HttpValidators(json.optString("etag").ifEmpty { null }, json.optString("modified").ifEmpty { null })
+        if (HttpResumePolicy.ifRange(validators) == null) return null
         val segments = (0 until rows.length()).map {
             val row = rows.getJSONArray(it)
-            Segment(row.getLong(0), row.getLong(1), row.getLong(2).coerceIn(0, row.getLong(1)))
+            Segment(row.getLong(0), row.getLong(1), row.getLong(2))
+        }.sortedBy { it.start }
+        var covered = 0L
+        for (segment in segments) {
+            if (segment.start != covered || segment.length <= 0 || segment.length > total - covered ||
+                segment.done < 0 || segment.done > segment.length) return null
+            covered += segment.length
         }
-        val total = json.optLong("total", -1)
-        if (total <= 0 || segments.isEmpty() || segments.sumOf { it.length } != total) return null
-        return Plan(url, total, json.optString("name", "file"), HttpValidators(json.optString("etag").ifEmpty { null }, json.optString("modified").ifEmpty { null }), segments)
-    }
+        if (covered != total) return null
+        Plan(url, total, json.optString("name", "file"), validators, segments)
+    }.getOrNull()
 
     @Synchronized private fun writeJournal(file: File, plan: Plan) {
         val rows = JSONArray()

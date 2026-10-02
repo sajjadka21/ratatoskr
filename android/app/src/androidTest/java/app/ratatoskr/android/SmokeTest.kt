@@ -51,6 +51,7 @@ class SmokeTest {
             onView(withText("Ratatoskr")).check(matches(isDisplayed()))
             onView(withText(R.string.add_links)).check(matches(isDisplayed()))
             onView(withText(R.string.empty_jobs)).check(matches(isDisplayed()))
+            screenshot("home-empty")
         }
     }
 
@@ -77,16 +78,26 @@ class SmokeTest {
         MobilePreferences(context).apply { mode = "light"; brand = "ember-forge"; language = "" }
         ActivityScenario.launch(SettingsActivity::class.java).use {
             selectSetting(R.string.appearance, 2)
+            screenshot("settings-dark")
             assertEquals("dark", MobilePreferences(context).mode)
             openAndDismissPlugins()
             selectSetting(R.string.appearance, 1)
+            screenshot("settings-light")
             assertEquals("light", MobilePreferences(context).mode)
             openAndDismissPlugins()
             selectSetting(R.string.app_name, 3)
             assertEquals("frost-byte", MobilePreferences(context).brand)
+            screenshot("settings-frost-byte")
+            for ((position, brand) in listOf(0 to "midnight-arcane", 1 to "ember-forge", 2 to "forest-rune")) {
+                selectSetting(R.string.app_name, position)
+                assertEquals(brand, MobilePreferences(context).brand)
+                openAndDismissPlugins()
+                screenshot("settings-$brand")
+            }
             openAndDismissPlugins()
             selectSetting(R.string.language, 1)
             assertEquals("fa", MobilePreferences(context).language)
+            screenshot("settings-fa")
             openAndDismissPlugins()
             selectSetting(R.string.language, 2)
             assertEquals("en", MobilePreferences(context).language)
@@ -95,6 +106,13 @@ class SmokeTest {
             assertEquals("", MobilePreferences(context).language)
             openAndDismissPlugins()
         }
+    }
+
+    private fun screenshot(name: String) {
+        val bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot() ?: return
+        val directory = java.io.File(context.getExternalFilesDir(null), "ui-review").apply { mkdirs() }
+        java.io.File(directory, "$name.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        bitmap.recycle()
     }
 
     private fun selectSetting(title: Int, position: Int) {

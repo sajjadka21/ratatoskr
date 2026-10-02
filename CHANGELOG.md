@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.0
 
 - Desktop: **Part info** in the download window — the file drawn as one block per connection, filling as it arrives, plus a per-part table and "Resume support".
 - Desktop and Android: **plugins** — small JSON rule files (rewrite a link, rename a file, per-site Referer/User-Agent on desktop). Data only, never code. See docs/PLUGINS.md.

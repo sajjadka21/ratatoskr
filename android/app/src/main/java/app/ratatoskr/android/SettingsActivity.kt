@@ -19,6 +19,12 @@ import com.google.android.material.switchmaterial.SwitchMaterial
 /** All settings on one scrolling page. Every control saves the moment it changes; there is no Save button. */
 class SettingsActivity : MobileActivity() {
     private lateinit var prefs: MobilePreferences
+    private val pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            prefs.saveTree = uri.toString(); recreate()
+        }
+    }
     private val pickPlugin = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) importPlugin(uri) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,6 +49,9 @@ class SettingsActivity : MobileActivity() {
             choice(R.string.network_setting, listOf(R.string.network_any, R.string.network_wifi, R.string.network_unmetered).map { getString(it) }, prefs.networkPolicy.ordinal) { prefs.networkPolicy = NetworkPolicy.entries[it]; NetworkJobs.schedule(this@SettingsActivity); wake() }
             toggle(R.string.roaming_setting, prefs.allowRoaming) { prefs.allowRoaming = it; wake() }
             windowRows()
+            addView(label(getString(R.string.battery_setting), 14f))
+            if (Power.excluded(this@SettingsActivity)) addView(label(getString(R.string.battery_ok), 12f).apply { setTextColor(success) })
+            else addView(button(getString(R.string.battery_open)) { Power.openSettings(this@SettingsActivity) })
         })
 
         // --- downloads
@@ -53,6 +62,15 @@ class SettingsActivity : MobileActivity() {
             val limits = listOf(0L, 256L, 512L, 1024L, 2048L, 5120L)
             choice(R.string.speed_setting, limits.map { if (it == 0L) getString(R.string.speed_unlimited) else Format.speed(it * 1024) }, limits.indexOf(prefs.speedLimit / 1024).let { if (it < 0) 0 else it }) { prefs.speedLimit = limits[it] * 1024 }
             toggle(R.string.category_setting, prefs.categoryFolders) { prefs.categoryFolders = it }
+            addView(label(getString(R.string.folder_setting), 14f))
+            addView(label(if (prefs.saveTree.isEmpty()) getString(R.string.folder_default) else Uri.parse(prefs.saveTree).lastPathSegment.orEmpty(), 12f).apply { setTextColor(muted) })
+            val folderButtons = LinearLayout(this@SettingsActivity)
+            folderButtons.addView(button(getString(R.string.folder_choose)) { pickFolder.launch(null) }, LinearLayout.LayoutParams(0, -2, 1f))
+            if (prefs.saveTree.isNotEmpty()) folderButtons.addView(button(getString(R.string.folder_reset)) {
+                runCatching { contentResolver.releasePersistableUriPermission(Uri.parse(prefs.saveTree), Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+                prefs.saveTree = ""; recreate()
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(folderButtons)
         })
 
         // --- adding links
@@ -89,11 +107,28 @@ class SettingsActivity : MobileActivity() {
             engine = button(getString(R.string.update_engine)) { updateEngine(engine) }
             addView(engine)
             addView(button(getString(R.string.open_plugins)) { plugins() })
+            addView(button(getString(R.string.share_info)) { shareInfo() })
             addView(button(getString(R.string.app_release)) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AppUpdate.RELEASES_PAGE))) })
         })
         page.addView(label(getString(R.string.about_details), 12f).apply { setTextColor(muted) })
         setContentView(root)
         if (intent.getBooleanExtra(EXTRA_PLUGINS, false)) plugins()
+    }
+
+    /** App version, phone, settings and counts only: no links, names or accounts, so it is safe to send with a bug report. */
+    private fun shareInfo() {
+        val info = packageManager.getPackageInfo(packageName, 0)
+        val tasks = TaskStore.get(this).list()
+        val text = buildString {
+            appendLine("Ratatoskr ${info.versionName} (${if (android.os.Build.VERSION.SDK_INT >= 28) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()})")
+            appendLine("Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT}), ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+            appendLine("ABIs: ${android.os.Build.SUPPORTED_ABIS.joinToString()}")
+            appendLine("Network policy: ${prefs.networkPolicy}, roaming: ${prefs.allowRoaming}, connections: ${prefs.connections}, parallel: ${prefs.concurrency}, speed limit: ${prefs.speedLimit / 1024} KiB/s")
+            appendLine("Window: ${prefs.window}, own folder: ${prefs.saveTree.isNotEmpty()}, plugins on: ${PluginStore(this@SettingsActivity).active().size}, battery excluded: ${Power.excluded(this@SettingsActivity)}")
+            appendLine("Downloads: " + tasks.groupingBy { it.state }.eachCount().entries.joinToString { "${it.key}=${it.value}" })
+            appendLine("Last problems: " + tasks.filter { it.error.isNotEmpty() }.takeLast(5).joinToString { it.error })
+        }
+        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), getString(R.string.share_info)))
     }
 
     private fun wake() { if (DownloadService.running) DownloadService.wake(this) }

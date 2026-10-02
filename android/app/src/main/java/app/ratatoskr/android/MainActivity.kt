@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.widget.*
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -32,6 +33,11 @@ import java.util.Date
 class MainActivity : MobileActivity(), TaskActions {
     private lateinit var adapter: TaskAdapter
     private lateinit var banner: LinearLayout
+    private lateinit var header: LinearLayout
+    private lateinit var selectionBar: LinearLayout
+    private lateinit var selectionTitle: TextView
+    private val selection = linkedSetOf<String>()
+    private val leaveSelection = object : OnBackPressedCallback(false) { override fun handleOnBackPressed() { selection.clear(); render() } }
     private lateinit var empty: LinearLayout
     private lateinit var summary: TextView
     private lateinit var activeTab: MaterialButton
@@ -55,7 +61,7 @@ class MainActivity : MobileActivity(), TaskActions {
         val root = FrameLayout(this).apply { setBackgroundColor(paper) }
         val content = column()
         // header: icon, title, summary, menu
-        val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(4), 0, dp(8)) }
+        header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(4), 0, dp(8)) }
         header.addView(ImageView(this).apply { setImageResource(R.mipmap.ic_launcher); layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(12) } })
         val titles = column().apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f) }
         titles.addView(TextView(this).apply { text = "Ratatoskr"; textSize = 22f; setTextColor(ink); typeface = android.graphics.Typeface.DEFAULT_BOLD })
@@ -67,6 +73,17 @@ class MainActivity : MobileActivity(), TaskActions {
         more = icon(R.drawable.ic_more, getString(R.string.menu)) { menu(more) }
         header.addView(more)
         content.addView(header)
+        // shown instead of the header while downloads are selected
+        selectionBar = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(4), 0, dp(8)); visibility = View.GONE }
+        selectionBar.addView(icon(R.drawable.ic_close, getString(R.string.cancel)) { selection.clear(); render() })
+        selectionTitle = TextView(this).apply { textSize = 17f; setTextColor(ink); layoutParams = LinearLayout.LayoutParams(0, -2, 1f); setPadding(dp(8), 0, 0, 0) }
+        selectionBar.addView(selectionTitle)
+        selectionBar.addView(button(getString(R.string.select_all)) { selection.addAll(adapter.currentList.map { it.task.id }); render() })
+        selectionBar.addView(icon(R.drawable.ic_pause, getString(R.string.pause)) { applyToSelection(DownloadService.ACTION_PAUSE) })
+        selectionBar.addView(icon(R.drawable.ic_retry, getString(R.string.resume)) { applyToSelection(DownloadService.ACTION_RESUME) })
+        selectionBar.addView(icon(R.drawable.ic_delete, getString(R.string.remove), danger) { removeSelection() })
+        content.addView(selectionBar)
+        onBackPressedDispatcher.addCallback(this, leaveSelection)
         banner = column().apply { visibility = View.GONE }
         content.addView(banner)
 
@@ -120,6 +137,7 @@ class MainActivity : MobileActivity(), TaskActions {
         setContentView(root)
         lifecycleScope.launch { repeatOnLifecycle(Lifecycle.State.STARTED) { while (isActive) { render(); delay(750) } } }
         UpdateFlow.check(this, manual = false)
+        welcome()
         if (android.os.Build.VERSION.SDK_INT < 29 && checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 2)
         if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
@@ -128,6 +146,16 @@ class MainActivity : MobileActivity(), TaskActions {
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean("history", history); outState.putString("query", query); super.onSaveInstanceState(outState)
+    }
+
+    /** One short first-run explanation, with the one setting that decides whether downloads survive in the background. */
+    private fun welcome() {
+        val prefs = MobilePreferences(this)
+        if (prefs.onboarded) return
+        prefs.onboarded = true
+        AlertDialog.Builder(this).setTitle(R.string.welcome_title).setMessage(R.string.welcome_body)
+            .setPositiveButton(R.string.welcome_done, null)
+            .setNeutralButton(R.string.battery_open) { _, _ -> Power.openSettings(this) }.show()
     }
 
     private fun menu(anchor: View) {
@@ -172,9 +200,34 @@ class MainActivity : MobileActivity(), TaskActions {
                 !open && task.state in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) -> getString(R.string.outside_window)
                 else -> ""
             }
-            TaskRow(task, stats(task), label)
+            TaskRow(task, stats(task), label, task.id in selection)
         })
         empty.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE
+        selection.retainAll(all.map { it.id }.toSet())
+        header.visibility = if (selection.isEmpty()) View.VISIBLE else View.GONE
+        selectionBar.visibility = if (selection.isEmpty()) View.GONE else View.VISIBLE
+        selectionTitle.text = getString(R.string.selected_count, selection.size)
+        leaveSelection.isEnabled = selection.isNotEmpty()
+    }
+
+    override val selecting get() = selection.isNotEmpty()
+    override fun toggle(task: MobileTask) { if (!selection.remove(task.id)) selection.add(task.id); render() }
+
+    private fun selectedTasks() = TaskStore.get(this).list().filter { it.id in selection }
+    private fun applyToSelection(action: String) {
+        selectedTasks().forEach { runCatching { DownloadService.command(this, it.id, action) } }
+        selection.clear(); render()
+    }
+    /** Finished downloads leave the list (their files stay); unfinished ones are cancelled first. */
+    private fun removeSelection() {
+        val chosen = selectedTasks()
+        if (chosen.isEmpty()) return
+        AlertDialog.Builder(this).setMessage(getString(R.string.remove_selected, chosen.size))
+            .setPositiveButton(R.string.remove) { _, _ ->
+                val store = TaskStore.get(this)
+                chosen.forEach { if (it.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED, TaskState.FAILED)) store.remove(it.id) else runCatching { DownloadService.command(this, it.id, DownloadService.ACTION_CANCEL) } }
+                selection.clear(); render()
+            }.setNegativeButton(R.string.cancel, null).show()
     }
 
     private fun categoryName(value: String) = getString(when (value) {
@@ -244,6 +297,25 @@ class MainActivity : MobileActivity(), TaskActions {
         }, now.get(Calendar.YEAR), now.get(Calendar.MONTH), now.get(Calendar.DAY_OF_MONTH)).show()
     }
 
+    /** Compares the saved file with a hash the user pasted from the download page. */
+    private fun verifyChecksum(task: MobileTask) {
+        val file = media(task).firstOrNull() ?: return
+        val input = EditText(this).apply { hint = getString(R.string.checksum_hint); maxLines = 2 }
+        val box = column().apply { setPadding(dp(20), dp(8), dp(20), 0); addView(input) }
+        AlertDialog.Builder(this).setTitle(R.string.verify_checksum).setView(box).setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val expected = Checksums.normalize(input.text.toString())
+                val algorithm = Checksums.algorithm(expected)
+                if (algorithm == null) { Toast.makeText(this, R.string.checksum_bad, Toast.LENGTH_LONG).show(); return@setPositiveButton }
+                Toast.makeText(this, R.string.checksum_checking, Toast.LENGTH_SHORT).show()
+                lifecycleScope.launch {
+                    val actual = runCatching { withContext(Dispatchers.IO) { Checksums.compute(contentResolver.openInputStream(android.net.Uri.parse(file.uri)) ?: error("unreadable"), algorithm) } }.getOrNull()
+                    val text = when { actual == null -> getString(R.string.checksum_unreadable); actual == expected -> getString(R.string.checksum_match, algorithm); else -> getString(R.string.checksum_mismatch, algorithm) }
+                    AlertDialog.Builder(this@MainActivity).setMessage(text).setPositiveButton(android.R.string.ok, null).show()
+                }
+            }.show()
+    }
+
     /** Everything about one download, with the actions that do not fit on the card. */
     override fun details(task: MobileTask) {
         val sheet = BottomSheetDialog(this)
@@ -263,6 +335,7 @@ class MainActivity : MobileActivity(), TaskActions {
             (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(ClipData.newPlainText("link", task.url))
             Toast.makeText(this, R.string.link_copied, Toast.LENGTH_SHORT).show()
         }
+        if (task.state == TaskState.COMPLETED && media(task).isNotEmpty()) act(R.string.verify_checksum) { verifyChecksum(task) }
         if (task.state !in setOf(TaskState.COMPLETED, TaskState.CANCELLED) && task.state !in TaskPolicy.inFlight) {
             act(R.string.schedule) { schedule(task) }
             if (task.startAt > 0) act(R.string.schedule_clear) { TaskStore.get(this).schedule(task.id, 0); DownloadService.wake(this); render() }

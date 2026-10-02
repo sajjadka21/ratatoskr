@@ -161,4 +161,25 @@
     <string name="cat_documents">Documents</string>
     <string name="cat_images">Images</string>
     <string name="cat_other">Other</string>
+    <string name="selected_count">%1$d selected</string>
+    <string name="select_all">All</string>
+    <string name="remove_selected">Remove %1$d items from the list? Saved files are kept and unfinished downloads are cancelled.</string>
+    <string name="verify_checksum">Verify checksum</string>
+    <string name="checksum_hint">Paste an MD5, SHA-1 or SHA-256</string>
+    <string name="checksum_bad">That is not a valid checksum (32, 40 or 64 hex characters).</string>
+    <string name="checksum_checking">Checking the file…</string>
+    <string name="checksum_match">The file is intact: %1$s matches ✓</string>
+    <string name="checksum_mismatch">%1$s does not match. The file is damaged or changed; download it again.</string>
+    <string name="checksum_unreadable">The file could not be read.</string>
+    <string name="folder_setting">Save folder</string>
+    <string name="folder_default">Downloads/Ratatoskr (default)</string>
+    <string name="folder_choose">Choose a folder…</string>
+    <string name="folder_reset">Back to the default</string>
+    <string name="battery_setting">Keep downloading in the background</string>
+    <string name="battery_ok">The app is excluded from battery limits ✓</string>
+    <string name="battery_open">Open battery settings</string>
+    <string name="share_info">Share app info for a bug report</string>
+    <string name="welcome_title">Welcome to Ratatoskr</string>
+    <string name="welcome_body">Send a link from any app with Share, or tap Add links. If you copied a link, the app offers to download it when it opens.\n\nSo that long downloads are not stopped when the screen turns off, exclude Ratatoskr from battery limits.</string>
+    <string name="welcome_done">Got it</string>
 </resources>

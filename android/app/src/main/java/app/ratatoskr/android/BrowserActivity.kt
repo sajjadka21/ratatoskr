@@ -29,7 +29,7 @@ class BrowserActivity : MobileActivity() {
         address = EditText(this).apply {
             hint = getString(R.string.browser_address); setTextColor(ink); setHintTextColor(muted); maxLines = 1; isSingleLine = true
             inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI; imeOptions = EditorInfo.IME_ACTION_GO
-            background = rounded(surface, 14); setPadding(dp(14), dp(10), dp(14), dp(10)); contentDescription = getString(R.string.browser_address)
+            background = rounded(surface, 14); setPadding(dp(14), dp(10), dp(14), dp(10)); minimumHeight = dp(48); contentDescription = getString(R.string.browser_address)
             setOnEditorActionListener { _, action, _ -> if (action == EditorInfo.IME_ACTION_GO) { open(text.toString()); true } else false }
         }
         top.addView(address, LinearLayout.LayoutParams(0, -2, 1f))

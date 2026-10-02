@@ -62,7 +62,7 @@ class MainActivity : MobileActivity(), TaskActions {
         val content = column()
         // header: icon, title, summary, menu
         header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(4), 0, dp(8)) }
-        header.addView(ImageView(this).apply { setImageResource(R.mipmap.ic_launcher); layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(12) } })
+        header.addView(ImageView(this).apply { setImageResource(R.mipmap.ic_launcher); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO; layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(12) } })
         val titles = column().apply { layoutParams = LinearLayout.LayoutParams(0, -2, 1f) }
         titles.addView(TextView(this).apply { text = "Ratatoskr"; textSize = 22f; setTextColor(ink); typeface = android.graphics.Typeface.DEFAULT_BOLD })
         summary = TextView(this).apply { textSize = 12f; setTextColor(muted) }
@@ -89,7 +89,7 @@ class MainActivity : MobileActivity(), TaskActions {
 
         val group = MaterialButtonToggleGroup(this).apply { isSingleSelection = true; isSelectionRequired = true }
         fun tab() = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-            id = View.generateViewId(); setTextColor(accent); layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f)
+            id = View.generateViewId(); setTextColor(accent); layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f)
         }
         activeTab = tab(); historyTab = tab()
         group.addView(activeTab); group.addView(historyTab)
@@ -98,7 +98,7 @@ class MainActivity : MobileActivity(), TaskActions {
         content.addView(group, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
         content.addView(EditText(this).apply {
             hint = getString(R.string.search_history); setTextColor(ink); setHintTextColor(muted); setText(query); maxLines = 1; inputType = android.text.InputType.TYPE_CLASS_TEXT
-            background = rounded(surface, 14); setPadding(dp(14), dp(10), dp(14), dp(10))
+            background = rounded(surface, 14); setPadding(dp(14), dp(10), dp(14), dp(10)); minimumHeight = dp(48); contentDescription = getString(R.string.search_history)
             doAfterTextChanged { query = it.toString(); render() }
         }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
 
@@ -113,7 +113,7 @@ class MainActivity : MobileActivity(), TaskActions {
         }
         empty = column().apply {
             gravity = Gravity.CENTER; visibility = View.GONE
-            addView(ImageView(this@MainActivity).apply { setImageResource(R.mipmap.ic_launcher); alpha = 0.85f; layoutParams = LinearLayout.LayoutParams(dp(96), dp(96)) })
+            addView(ImageView(this@MainActivity).apply { setImageResource(R.mipmap.ic_launcher); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO; alpha = 0.85f; layoutParams = LinearLayout.LayoutParams(dp(96), dp(96)) })
             addView(TextView(this@MainActivity).apply { text = getString(R.string.empty_jobs); textSize = 14f; gravity = Gravity.CENTER; setTextColor(muted); setPadding(dp(32), dp(12), dp(32), 0) })
         }
         val body = FrameLayout(this)
@@ -245,7 +245,7 @@ class MainActivity : MobileActivity(), TaskActions {
         fun add(label: String, value: String?) {
             val on = category == value
             filters.addView(TextView(this).apply {
-                text = label; textSize = 13f; setPadding(dp(14), dp(7), dp(14), dp(7))
+                text = label; textSize = 13f; setPadding(dp(14), dp(7), dp(14), dp(7)); minimumHeight = dp(48); gravity = Gravity.CENTER
                 setTextColor(if (on) paper else accent)
                 background = if (on) rounded(accent, 20) else rounded(android.graphics.Color.TRANSPARENT, 20, accent and 0x66FFFFFF)
                 setOnClickListener { category = value; render() }

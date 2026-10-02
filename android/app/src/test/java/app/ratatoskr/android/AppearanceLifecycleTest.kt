@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.Spinner
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
@@ -26,6 +27,8 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
 import org.robolectric.annotation.SQLiteMode
 import org.robolectric.shadows.ShadowDialog
+import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 /** Real settings controls and lifecycle, without running downloads or update checks.
  * Duplicate selection delivery models layout/state restoration callbacks: these
@@ -37,9 +40,17 @@ import org.robolectric.shadows.ShadowDialog
 class AppearanceLifecycleTest {
     private val controllers = mutableListOf<ActivityController<out MobileActivity>>()
     private lateinit var prefs: MobilePreferences
+    private lateinit var store: TaskStore
+    private lateinit var databaseName: String
+    private var previousStore: Any? = null
+    private val instanceField = TaskStore::class.java.getDeclaredField("instance").apply { isAccessible = true }
 
     @Before fun preparePreferences() {
         val app = RuntimeEnvironment.getApplication()
+        databaseName = "appearance-test-${UUID.randomUUID()}.db"
+        store = TaskStore(app, databaseName)
+        previousStore = instanceField.get(null)
+        instanceField.set(null, store)
         app.getSharedPreferences("download_preferences", Context.MODE_PRIVATE).edit().clear().commit()
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
         AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
@@ -51,6 +62,9 @@ class AppearanceLifecycleTest {
     @After fun closeActivities() {
         controllers.asReversed().forEach { it.pause().stop().destroy() }
         controllers.clear()
+        instanceField.set(null, previousStore)
+        store.close()
+        RuntimeEnvironment.getApplication().deleteDatabase(databaseName)
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
         RuntimeEnvironment.getApplication().getSharedPreferences("download_preferences", Context.MODE_PRIVATE).edit().clear().commit()
@@ -151,5 +165,53 @@ class AppearanceLifecycleTest {
         assertTrue(views(content(restored)).filterIsInstance<com.google.android.material.button.MaterialButton>().first {
             it.text.toString().startsWith(restored.getString(R.string.history))
         }.isChecked)
+    }
+
+    @Test fun changingBrandRetainsTheSettingsScrollPosition() {
+        val controller = settings()
+        fun scroll(): ScrollView = views(content(controller.get())).filterIsInstance<ScrollView>().first()
+        fun layout() {
+            val root = content(controller.get())
+            root.measure(View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1600, View.MeasureSpec.EXACTLY))
+            root.layout(0, 0, 1080, 1600)
+            idle()
+        }
+        layout()
+        scroll().scrollTo(0, 400)
+        val originalOffset = scroll().scrollY
+        assertTrue("Fixture must start below the top of the settings page", originalOffset > 0)
+        spinner(controller.get(), R.string.app_name).setSelection(3)
+        idle(); layout()
+        assertEquals("frost-byte", prefs.brand)
+        assertEquals("Changing appearance must keep the current settings position", originalOffset, scroll().scrollY)
+    }
+
+    @Test fun failedDirectTaskStaysOnActiveWithItsExplanationAndRetry() {
+        val task = store.enqueue("https://example.org/fixture.zip", null, false, "Failed direct fixture", "file")
+        val controller = Robolectric.buildActivity(MainActivity::class.java)
+        controllers.add(controller); controller.setup().visible(); idle()
+        val activity = controller.get()
+        val list = views(content(activity)).filterIsInstance<androidx.recyclerview.widget.RecyclerView>().first()
+        val adapter = list.adapter as TaskAdapter
+        assertEquals(task.id, adapter.currentList.single().task.id)
+        store.state(task.id, TaskState.FAILED, "not_a_file")
+        // The resumed home polls its journal. Allow the real list differ to
+        // finish instead of replacing the adapter or calling private render.
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        do {
+            shadowOf(Looper.getMainLooper()).idleFor(750, TimeUnit.MILLISECONDS)
+            if (adapter.currentList.singleOrNull()?.task?.state == TaskState.FAILED) break
+            Thread.sleep(10)
+        } while (System.nanoTime() < deadline)
+        assertEquals("Failure must stay on the current Active tab", task.id, adapter.currentList.singleOrNull()?.task?.id)
+        assertEquals(TaskState.FAILED, adapter.currentList.single().task.state)
+        // Bind the actual displayed row through the production adapter to
+        // verify the explanation and accessible Retry action together.
+        val holder = adapter.onCreateViewHolder(list, 0)
+        adapter.onBindViewHolder(holder, 0)
+        assertEquals(View.VISIBLE, holder.error.visibility)
+        assertEquals(activity.getString(R.string.error_unsupported), holder.error.text.toString())
+        assertTrue(holder.error.text.isNotBlank())
+        assertTrue(views(holder.buttons).any { it.contentDescription?.toString() == activity.getString(R.string.resume) && it.isEnabled })
     }
 }

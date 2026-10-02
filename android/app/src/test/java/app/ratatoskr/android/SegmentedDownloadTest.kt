@@ -1,5 +1,7 @@
 package app.ratatoskr.android
 
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -29,6 +31,7 @@ class SegmentedDownloadTest {
     private val rangeRequests = AtomicInteger()
     @Volatile private var supportRanges = true
     @Volatile private var supportOnlyProbeRange = false
+    @Volatile private var changeVersionForLaterRanges = false
     @Volatile private var sendEtag = true
     @Volatile private var failFirstRange = false
     private val failed = AtomicInteger()
@@ -45,12 +48,18 @@ class SegmentedDownloadTest {
 
     private fun serve(request: TestHttpServer.Request) {
         val range = request.headers["range"]
+        // Keep the initial part on v1 while other parts come from v2; a downloader
+        // that trusts Content-Range alone would publish a mixture of both files.
+        val laterRange = Regex("bytes=(\\d+)-.*").matchEntire(range.orEmpty())
+            ?.groupValues?.get(1)?.toLongOrNull()?.let { it > 0 } == true
+        val replacement = changeVersionForLaterRanges && (range == null || laterRange)
+        val body = if (replacement) ByteArray(payload.size) { (payload[it].toInt() xor 0x5a).toByte() } else payload
         val common = mutableMapOf("Content-Type" to "application/octet-stream")
-        if (sendEtag) common["ETag"] = etag
+        if (sendEtag) common["ETag"] = if (replacement) "\"v2\"" else etag
         val match = Regex("bytes=(\\d+)-(\\d*)").matchEntire(range.orEmpty())
         if (!supportRanges || match == null || (supportOnlyProbeRange && range != "bytes=0-0")) {
             request.respond(200, common, payload.size.toLong())
-            request.out.write(payload); return
+            request.out.write(body); return
         }
         rangeRequests.incrementAndGet()
         val from = match.groupValues[1].toInt()
@@ -62,7 +71,7 @@ class SegmentedDownloadTest {
         if (slowFirstPart && from == 0 && to > 0) {
             var at = from
             while (at <= to) { val n = minOf(32 * 1024, to - at + 1); request.out.write(payload, at, n); request.out.flush(); at += n; Thread.sleep(8) }
-        } else request.out.write(payload, from, to - from + 1)
+        } else request.out.write(body, from, to - from + 1)
     }
 
     private class Conn(private val c: HttpURLConnection) : HttpConnection {
@@ -141,6 +150,43 @@ class SegmentedDownloadTest {
                 }
             } finally { connection.disconnect() }
         })
+        assertArrayEquals(payload, file.readBytes())
+        assertFalse(File(directory, "segments.part").exists())
+        assertFalse(File(directory, "segments.json").exists())
+    }
+
+    @Test fun changedRangeValidatorRestartsTheWholeFileInsteadOfPublishingMixedVersions() {
+        changeVersionForLaterRanges = true
+        val file = run(single = {
+            val connection = open(base, emptyMap(), control::check)
+            try {
+                assertEquals(200, connection.responseCode)
+                File(directory, "replacement.bin").apply {
+                    outputStream().use { output -> connection.inputStream.use { it.copyTo(output) } }
+                }
+            } finally { connection.disconnect() }
+        })
+        val replacement = ByteArray(payload.size) { (payload[it].toInt() xor 0x5a).toByte() }
+        assertArrayEquals(replacement, file.readBytes())
+        assertFalse(File(directory, "segments.part").exists())
+        assertFalse(File(directory, "segments.json").exists())
+    }
+
+    @Test fun aJournalWithOverlappingRangesAndAnUncoveredTailRestartsFromValidCoverage() {
+        val total = payload.size.toLong()
+        val firstLength = total / 2
+        // Lengths sum to total, but the second range overlaps the first and leaves
+        // the final quarter uncovered. Marking both finished must not publish it.
+        val rows = JSONArray()
+            .put(JSONArray().put(0).put(firstLength).put(firstLength))
+            .put(JSONArray().put(firstLength / 2).put(total - firstLength).put(total - firstLength))
+        File(directory, "segments.json").writeText(JSONObject()
+            .put("source", base).put("name", "corrupt.bin").put("total", total)
+            .put("etag", etag).put("modified", "").put("segments", rows).toString())
+        File(directory, "segments.part").writeBytes(ByteArray(payload.size))
+
+        val file = run()
+
         assertArrayEquals(payload, file.readBytes())
         assertFalse(File(directory, "segments.part").exists())
         assertFalse(File(directory, "segments.json").exists())

@@ -84,7 +84,7 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.14.1")
     // Real-screen smoke and accessibility tests, run on an emulator by .github/workflows/android-ui.yml
     androidTestImplementation("androidx.test:runner:1.6.2")
-    androidTestImplementation("androidx.test.ext:junit:1.2.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     androidTestImplementation("androidx.test.espresso:espresso-contrib:3.6.1")
     androidTestImplementation("androidx.test.espresso:espresso-accessibility:3.6.1")

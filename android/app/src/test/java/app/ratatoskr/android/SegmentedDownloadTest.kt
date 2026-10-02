@@ -13,6 +13,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.InputStream
 import java.net.HttpURLConnection
@@ -129,6 +130,39 @@ class SegmentedDownloadTest {
 
     @Test fun usesTheNameChosenByTheUser() {
         assertEquals("mine.bin", run(name = "mine.bin").name)
+    }
+
+    @Test fun aServerFileNamedSegmentsJsonSurvivesRemovalOfTheSegmentJournal() {
+        // Inject byte-range responses directly: this case needs no HTTP server
+        // traffic and must preserve both user data and completion metadata.
+        val file = SegmentedDownload.fetch(directory, "", base, control, 4, 0, { _, _ -> },
+            { error("Range-capable server should not require single-stream fallback") },
+            { _, headers, check ->
+                check()
+                val range = Regex("bytes=(\\d+)-(\\d+)").matchEntire(headers.getValue("Range"))!!
+                val from = range.groupValues[1].toInt()
+                val to = range.groupValues[2].toInt()
+                object : HttpConnection {
+                    override val responseCode = 206
+                    override val contentLengthLong = (to - from + 1).toLong()
+                    override val contentType = "application/octet-stream"
+                    override val url = URL(base)
+                    override val inputStream: InputStream = ByteArrayInputStream(payload, from, to - from + 1)
+                    override fun getHeaderField(name: String): String? = when (name) {
+                        "ETag" -> etag
+                        "Content-Range" -> "bytes $from-$to/${payload.size}"
+                        "Content-Disposition" -> "attachment; filename=\"segments.json\""
+                        else -> null
+                    }
+                    override fun disconnect() { inputStream.close() }
+                }
+            })
+
+        assertEquals("segments.json", file.name)
+        assertArrayEquals(payload, file.readBytes())
+        val completed = JSONObject(File(directory, "transfer.json").readText())
+        assertTrue(completed.getBoolean("completed"))
+        assertEquals(payload.size.toLong(), completed.getLong("completed_bytes"))
     }
 
     @Test fun fallsBackToSingleStreamWithoutRangeSupport() {

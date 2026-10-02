@@ -53,8 +53,7 @@ class DirectDownloadTest {
         store.close()
         context.deleteDatabase(databaseName)
         assertEquals(context.filesDir.canonicalFile, directory.canonicalFile.parentFile)
-        directory.listFiles()?.forEach { assertTrue(it.delete()) }
-        assertTrue(directory.delete())
+        directory.walkBottomUp().forEach { assertTrue(it.delete()) }
     }
 
     private class Response(
@@ -165,6 +164,21 @@ class DirectDownloadTest {
         val first = fetch { _, _, _ -> Response(200, bytes, mapOf("ETag" to tag)) }
         val recovered = fetch { _, _, _ -> throw AssertionError("Completed local output must not be downloaded again") }
         assertEquals(first, recovered)
+        assertArrayEquals(bytes, recovered.readBytes())
+    }
+
+    @Test fun aServerFileNamedTransferJsonCannotBeOverwrittenByTheCompletionJournal() {
+        val bytes = "The server's exact transfer.json content".toByteArray()
+        val output = fetch { _, _, _ -> Response(200, bytes, mapOf(
+            "ETag" to tag, "Content-Disposition" to "attachment; filename=\"transfer.json\"")) }
+
+        assertEquals("transfer.json", output.name)
+        assertArrayEquals(bytes, output.readBytes())
+        assertTrue(journal().getBoolean("completed"))
+        assertEquals(bytes.size.toLong(), journal().getLong("completed_bytes"))
+
+        val recovered = fetch { _, _, _ -> throw AssertionError("The completed file must be reused without another request") }
+        assertEquals(output, recovered)
         assertArrayEquals(bytes, recovered.readBytes())
     }
 

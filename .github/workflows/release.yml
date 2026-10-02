@@ -96,6 +96,14 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.9
+      - name: Confirm configured Android signing identity
+        env:
+          EXPECTED_CERTIFICATE: ${{ vars.ANDROID_SIGNING_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          source_certificate=$(tr -d '\r\n' < android/release-signing-certificate.sha256)
+          [[ "$source_certificate" =~ ^[0-9a-f]{64}$ ]]
+          test "$EXPECTED_CERTIFICATE" = "$source_certificate" || { echo "::error::Configured Android signer differs from the version-controlled production certificate. Review upgrade compatibility before changing signing credentials."; exit 1; }
       - name: Decode the production signing key
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

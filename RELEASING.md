@@ -68,8 +68,11 @@ for later updates. The public certificate is
 The repository variable `ANDROID_SIGNING_CERT_SHA256` pins the expected APK
 certificate. Current fingerprint:
 `4b1ca19c7645b36c951f793494506a125d3e01e41a2ed5336d5d49dceb85e476`.
-The release job rejects a different certificate, the wrong package/version,
-or a debuggable APK. An old debug-signed copy with the same package ID must
+The release job first compares the configured fingerprint with
+`android/release-signing-certificate.sha256`, then verifies the final APK signer,
+package/version and non-debuggable identity. Changing a repository variable and
+keystore together cannot silently change the production signer; intentional key
+rotation needs an explicit source review and compatible migration plan. An old debug-signed copy with the same package ID must
 be uninstalled before the production-signed version can be installed.
 
 To release: raise the version in `src-tauri/tauri.conf.json`, `package.json`,

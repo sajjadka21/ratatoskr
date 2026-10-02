@@ -130,7 +130,7 @@ class MainActivity : MobileActivity(), TaskActions {
         }
         val dockParams = FrameLayout.LayoutParams(-1, dp(76), Gravity.BOTTOM).apply { setMargins(dp(16), 0, dp(16), dp(12)) }
         fun destination(title: Int, drawable: Int, selected: Boolean = false, action: () -> Unit) = MaterialButton(this).apply {
-            text = getString(title); textSize = 10f; isAllCaps = false; isCheckable = selected
+            text = getString(title); textSize = 12f; isAllCaps = false; isCheckable = selected
             iconGravity = MaterialButton.ICON_GRAVITY_TOP; setIconResource(drawable); iconSize = dp(22); iconPadding = dp(4)
             insetTop = 0; insetBottom = 0; minWidth = 0; minimumWidth = dp(48); minHeight = dp(56)
             setPadding(dp(2), dp(4), dp(2), dp(4)); cornerRadius = dp(16)
@@ -168,7 +168,7 @@ class MainActivity : MobileActivity(), TaskActions {
             fabParams.setMargins(dp(20) + bars.left, 0, dp(20) + bars.right, dp(104) + bars.bottom); fab.layoutParams = fabParams
             inset
         }
-        setContentView(root)
+        setContentView(root, android.view.ViewGroup.LayoutParams(-1, -1))
         lifecycleScope.launch { repeatOnLifecycle(Lifecycle.State.STARTED) { while (isActive) { render(); delay(750) } } }
         UpdateFlow.check(this, manual = false)
         welcome()
@@ -438,6 +438,9 @@ class MainActivity : MobileActivity(), TaskActions {
             summary.text = if (urls.isEmpty()) "" else getString(R.string.links_summary, urls.size, counts.files, counts.media)
         }
         dialog.setOnShowListener {
+            dialog.window?.setBackgroundDrawable(rounded(paper, 24))
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(accent)
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(muted)
             input.setText(input.text.toString())   // refresh the summary for a prefilled list
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val urls = links()

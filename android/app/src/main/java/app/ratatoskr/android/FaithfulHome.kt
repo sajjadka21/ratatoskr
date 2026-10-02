@@ -254,7 +254,7 @@ private fun kindIcon(task:MobileTask):Int {
         value=withContext(Dispatchers.IO) { runCatching {
             val uri=source?.let(Uri::parse) ?: return@runCatching null
             val bytes=when(uri.scheme) {
-                "file","content" -> context.contentResolver.openInputStream(uri)?.use { it.readBytesBounded() }
+                "file","content" -> context.contentResolver.openInputStream(uri)?.use { it.readBytesBounded(8*1024*1024) }
                 "https","http" -> SafeHttp.open(uri.toString()).let { connection -> try { SafeHttp.requireSuccess(connection.responseCode);connection.inputStream.use { it.readBytesBounded() } } finally { connection.disconnect() } }
                 else -> null
             } ?: return@runCatching null
@@ -268,9 +268,9 @@ private fun kindIcon(task:MobileTask):Int {
         if(bitmap!=null)Image(bitmap!!,null,Modifier.fillMaxSize().semantics { testTag="download-preview" },contentScale=ContentScale.Crop) else Icon(painterResource(kindIcon(task)),null,Modifier.size(30.dp),tint=MaterialTheme.colorScheme.primary)
     }
 }
-private fun java.io.InputStream.readBytesBounded():ByteArray {
+private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArray {
     val output=java.io.ByteArrayOutputStream();val buffer=ByteArray(8192);var count=0
-    while(true){val n=read(buffer);if(n<0)break;count+=n;require(count<=2*1024*1024);output.write(buffer,0,n)}
+    while(true){val n=read(buffer);if(n<0)break;count+=n;require(count<=limit);output.write(buffer,0,n)}
     return output.toByteArray()
 }
 @Composable private fun NetworkStatus() {

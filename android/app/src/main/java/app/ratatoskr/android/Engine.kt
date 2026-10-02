@@ -17,6 +17,8 @@ data class SavedMedia(val uri: String, val name: String, val mime: String)
 object Engine {
     @Volatile private var ready = false
     private val cache = ConcurrentHashMap<String, Pair<Long, LinkInfo>>()
+    /** UI reads only already resolved public metadata; it never starts extraction. */
+    fun cachedThumbnail(url: String): String? = cache[url]?.second?.items?.firstOrNull()?.thumbnail
     @Synchronized fun init(context: Context) {
         if (ready) return
         YoutubeDL.getInstance().init(context.applicationContext)

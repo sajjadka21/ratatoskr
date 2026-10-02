@@ -49,6 +49,14 @@ class MainActivity : MobileActivity(), TaskActions {
     private var query = ""
     private var dismissedLink = ""
     private val meter = SpeedMeter()
+    private var folderLabel by mutableStateOf("")
+    private val chooseDownloadFolder = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) runCatching {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            MobilePreferences(this).saveTree = uri.toString()
+            folderLabel = uri.lastPathSegment?.substringAfterLast(':').orEmpty()
+        }.onFailure { Toast.makeText(this, R.string.error_write, Toast.LENGTH_LONG).show() }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,7 +90,9 @@ class MainActivity : MobileActivity(), TaskActions {
                                 R.string.remove -> removeSelection()
                             } })
                         addPrefill?.let { prefill -> AbEnterUrl(prefill, MobilePreferences(this@MainActivity).defaultAudio,
-                            onClose = { addPrefill = null }, onPaste = ::clipboardText, onDownload = ::downloadLinks) }
+                            onClose = { addPrefill = null }, onPaste = ::clipboardText, onDownload = ::downloadLinks,
+                            folder = folderLabel.ifEmpty { MobilePreferences(this@MainActivity).saveTree.takeIf { it.isNotEmpty() }?.let { android.net.Uri.parse(it).lastPathSegment?.substringAfterLast(':') }.orEmpty().ifEmpty { "Downloads/Ratatoskr" } },
+                            onFolder = { chooseDownloadFolder.launch(null) }) }
                     }
                 }
             }
@@ -149,7 +159,7 @@ class MainActivity : MobileActivity(), TaskActions {
                 !open && task.state in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) -> getString(R.string.outside_window)
                 else -> ""
             }
-            TaskRow(task, stats(task), label, task.id in selection)
+            TaskRow(task, stats(task), label, task.id in selection, Engine.cachedThumbnail(task.url))
         }, selecting = selection.isNotEmpty(), selectionCount = selection.size, history = history, query = query, category = category,
             summary = getString(R.string.summary_line, activeCount, all.size - activeCount))
         leaveSelection.isEnabled = selection.isNotEmpty()

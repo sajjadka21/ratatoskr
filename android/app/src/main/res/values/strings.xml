@@ -213,4 +213,15 @@
     <string name="filter_category">دسته‌بندی</string>
     <string name="more_options">گزینه‌های بیشتر</string>
     <string name="pending_downloads">در انتظار</string>
+    <string name="new_download">دانلود جدید</string>
+    <string name="link_label">لینک دانلود</string>
+    <string name="paste_short">چسباندن</string>
+    <string name="save_location">محل ذخیره</string>
+    <string name="automatic_hint">فایل یا ویدیو، خودکار تشخیص داده می‌شود</string>
+    <string name="group_transferring">در حال دانلود</string>
+    <string name="group_completed">تکمیل‌شده</string>
+    <string name="connected_wifi">متصل به Wi-Fi</string>
+    <string name="connected_mobile">متصل به اینترنت همراه</string>
+    <string name="network_unavailable">منتظر اتصال شبکه</string>
+    <string name="task_details">جزئیات دانلود</string>
 </resources>

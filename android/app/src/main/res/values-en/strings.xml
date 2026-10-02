@@ -212,4 +212,15 @@ Tap + to add a link.</string>
     <string name="filter_category">Category</string>
     <string name="more_options">More options</string>
     <string name="pending_downloads">Waiting</string>
+    <string name="new_download">New download</string>
+    <string name="link_label">Download link</string>
+    <string name="paste_short">Paste</string>
+    <string name="save_location">Save location</string>
+    <string name="automatic_hint">Files and videos are detected automatically</string>
+    <string name="group_transferring">Downloading</string>
+    <string name="group_completed">Completed</string>
+    <string name="connected_wifi">Connected to Wi-Fi</string>
+    <string name="connected_mobile">Connected to mobile data</string>
+    <string name="network_unavailable">Waiting for a connection</string>
+    <string name="task_details">Download details</string>
 </resources>

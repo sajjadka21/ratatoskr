@@ -11,7 +11,7 @@ import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 
 /** One line of the list: the task plus the texts derived from it, so a change in either redraws the row. */
-data class TaskRow(val task: MobileTask, val stats: String, val schedule: String, val selected: Boolean = false)
+data class TaskRow(val task: MobileTask, val stats: String, val schedule: String, val selected: Boolean = false, val thumbnail: String? = null)
 
 interface TaskActions {
     /** True while some downloads are selected; a tap then selects instead of opening the details. */

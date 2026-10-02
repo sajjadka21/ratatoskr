@@ -70,7 +70,7 @@ class FaithfulDesignTest {
                     compose.waitUntil(10000) { runCatching { compose.onAllNodesWithText("Design course.mp4").fetchSemanticsNodes().isNotEmpty() }.getOrDefault(false) }
                     compose.onNodeWithText("Design course.mp4").assertIsDisplayed()
                     compose.onNodeWithText("Portfolio.pdf").assertIsDisplayed()
-                    compose.waitUntil(5000) { compose.onAllNodesWithTag("download-preview").fetchSemanticsNodes().isNotEmpty() }
+                    compose.waitUntil(5000) { compose.onAllNodesWithTag("download-preview",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty() }
                     capture("approved-home-$mode-fa")
                     if(mode=="dark") {
                         compose.onNodeWithContentDescription(context.getString(R.string.add_links)).performClick()

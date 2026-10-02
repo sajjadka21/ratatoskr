@@ -20,8 +20,14 @@ abstract class MobileActivity : AppCompatActivity() {
         // AppCompat applies its locale override while attaching the base context.
         // Setting it only in onCreate can render a first frame in the old language.
         val language = MobilePreferences(newBase).language
-        if (AppCompatDelegate.getApplicationLocales().toLanguageTags() != language)
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            // The framework locale service works before there is an active AppCompat delegate.
+            val manager = newBase.getSystemService(android.app.LocaleManager::class.java)
+            if (manager.applicationLocales.toLanguageTags() != language)
+                manager.applicationLocales = android.os.LocaleList.forLanguageTags(language)
+        } else if (AppCompatDelegate.getApplicationLocales().toLanguageTags() != language) {
             AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(language))
+        }
         super.attachBaseContext(newBase)
     }
     fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
@@ -55,6 +61,12 @@ abstract class MobileActivity : AppCompatActivity() {
     private var appliedAppearance = emptyList<String>()
     override fun onResume() {
         super.onResume()
+        window.statusBarColor = paper
+        window.navigationBarColor = paper
+        androidx.core.view.WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !dark
+            isAppearanceLightNavigationBars = !dark
+        }
         val prefs = MobilePreferences(this)
         if (appliedAppearance != listOf(prefs.mode, prefs.brand, prefs.language)) {
             window.decorView.post { if (!isFinishing && !isDestroyed) recreate() }

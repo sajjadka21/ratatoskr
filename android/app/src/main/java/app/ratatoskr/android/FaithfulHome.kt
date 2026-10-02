@@ -130,7 +130,7 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
                 val groups = listOf(rows.filter { it.task.state in TaskPolicy.inFlight }, rows.filter { it.task.state !in TaskPolicy.inFlight && it.task.state !in setOf(TaskState.COMPLETED, TaskState.CANCELLED) }, rows.filter { it.task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED) })
                 groups.forEachIndexed { index, group ->
                     if (group.isNotEmpty()) {
-                        item(key = "section-$index") { Text(stringResource(when(index) { 0 -> R.string.group_transferring; 2 -> R.string.group_completed; else -> R.string.pending_downloads }) + " (${group.size})", Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 8.dp), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Right) }
+                        item(key = "section-$index") { Text(stringResource(when(index) { 0 -> R.string.group_transferring; 2 -> R.string.group_completed; else -> R.string.pending_downloads }) + " (${java.text.NumberFormat.getIntegerInstance(LocalContext.current.resources.configuration.locales[0]).format(group.size)})", Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 8.dp), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Right) }
                         items(group, key = { it.task.id }) { row -> if (index == 0) ActiveTransfer(row, state.selecting, actions) else FileRow(row, state.selecting, actions) }
                         if (index == 0) item(key = "network") { NetworkStatus() }
                     }
@@ -171,13 +171,13 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
 @Composable private fun TransferAction(task:MobileTask,actions:TaskActions) {
     val c=MaterialTheme.colorScheme
     val resume=task.state in setOf(TaskState.PAUSED,TaskState.FAILED,TaskState.WAITING_NETWORK)
-    val waiting=task.state in setOf(TaskState.QUEUED,TaskState.NEEDS_SELECTION)
+    val waiting=task.state in setOf(TaskState.QUEUED,TaskState.NEEDS_SELECTION,TaskState.CANCELLED)
     val complete=task.state==TaskState.COMPLETED
     val tint=when { complete -> Color(0xff65BB86); task.state==TaskState.FAILED -> c.error; waiting -> c.onSurfaceVariant; else -> c.primary }
     val label=when { complete -> R.string.open_file; resume -> R.string.resume; waiting -> R.string.task_details; else -> R.string.pause }
     IconButton(onClick={ when { complete -> actions.open(task); waiting -> actions.details(task); resume -> actions.command(task,DownloadService.ACTION_RESUME); else -> actions.command(task,DownloadService.ACTION_PAUSE) } },
         modifier=Modifier.size(48.dp).border(1.5.dp,tint.copy(alpha=.8f),CircleShape)) {
-        Icon(painterResource(when { complete -> R.drawable.ui_check; resume -> R.drawable.ui_play; waiting -> R.drawable.ui_clock; else -> R.drawable.ui_pause }),stringResource(label),Modifier.size(24.dp),tint=tint)
+        Icon(painterResource(when { complete -> R.drawable.ui_check; resume -> R.drawable.ui_play; task.state==TaskState.CANCELLED -> R.drawable.ui_x; waiting -> R.drawable.ui_clock; else -> R.drawable.ui_pause }),stringResource(label),Modifier.size(24.dp),tint=tint)
     }
 }
 private fun kindIcon(task:MobileTask):Int {
@@ -190,8 +190,9 @@ private fun kindIcon(task:MobileTask):Int {
 @Composable private fun FileBadge(task:MobileTask,modifier:Modifier=Modifier) {
     val c=MaterialTheme.colorScheme
     val archive=kindIcon(task)==R.drawable.ui_file_archive
-    Box(modifier.size(32.dp).clip(RoundedCornerShape(6.dp)).background(if(archive)c.primary.copy(alpha=.4f) else c.onSurfaceVariant.copy(alpha=.2f)),contentAlignment=Alignment.Center) {
-        Icon(painterResource(kindIcon(task)),null,Modifier.size(24.dp),tint=if(archive)c.primary else c.onSurface)
+    val completedPdf=task.state==TaskState.COMPLETED && task.fileName.lowercase(java.util.Locale.ROOT).endsWith(".pdf")
+    Box(modifier.size(32.dp).clip(RoundedCornerShape(6.dp)).background(if(completedPdf)Color(0xffB83E36) else if(archive)c.primary.copy(alpha=.4f) else c.onSurfaceVariant.copy(alpha=.2f)),contentAlignment=Alignment.Center) {
+        Icon(painterResource(kindIcon(task)),null,Modifier.size(24.dp),tint=if(completedPdf)Color.White else if(archive)c.primary else c.onSurface)
     }
 }
 @OptIn(ExperimentalFoundationApi::class)
@@ -278,9 +279,11 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
     val cm=context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     val caps=cm.getNetworkCapabilities(cm.activeNetwork)
     val wifi=caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)==true
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
     Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically) {
         Icon(painterResource(if(caps==null)R.drawable.ui_wifi_off else R.drawable.ui_wifi),null,Modifier.size(22.dp),tint=c.onSurfaceVariant)
         Text(stringResource(if(caps==null)R.string.network_unavailable else if(wifi)R.string.connected_wifi else R.string.connected_mobile),Modifier.padding(start=8.dp),color=c.onSurfaceVariant,fontSize=13.sp)
+    }
     }
 }
 

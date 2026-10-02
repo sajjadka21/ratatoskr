@@ -120,7 +120,7 @@ class NetworkJobService : JobService() {
     }
     private fun notifyTask(task: MobileTask) {
         val home = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val notice = NotificationCompat.Builder(this, "downloads").setSmallIcon(android.R.drawable.stat_sys_download)
+        val notice = NotificationCompat.Builder(this, "downloads").setSmallIcon(R.drawable.ic_stat_download)
             .setContentTitle(task.title.ifEmpty { "Ratatoskr" }).setContentText(MobileText.state(this, task))
             .setContentIntent(home).setOnlyAlertOnce(true).setAutoCancel(task.state == TaskState.COMPLETED)
         if (task.state in TaskPolicy.inFlight) notice.setProgress(100, task.progress, task.progress == 0)

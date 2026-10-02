@@ -40,6 +40,9 @@ class DownloadService : Service() {
         store = taskStoreProvider(this); prefs = MobilePreferences(this); MobileRuntime.initialize(store)
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL, getString(R.string.notification_channel), NotificationManager.IMPORTANCE_LOW))
+        // A finished (or failed) download makes a sound, unlike the quiet progress notification.
+        getSystemService(NotificationManager::class.java).createNotificationChannel(
+            NotificationChannel(DONE_CHANNEL, getString(R.string.notification_channel_done), NotificationManager.IMPORTANCE_DEFAULT))
         getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)
         // The download window closes at a time of day, not when the network changes, so look again now and then.
         scope.launch { while (isActive) { delay(30_000); networkChanged() } }
@@ -97,13 +100,18 @@ class DownloadService : Service() {
                             getSystemService(NotificationManager::class.java).notify(task.notificationId, notification(store.get(task.id)))
                         })
                         control.check()
+                        attempts.remove(task.id)
                         store.updateActive(task.id, ContentValues().apply { put("state", TaskState.COMPLETED.name); put("progress", 100); put("error", "") })
                     }
                 } catch (error: Exception) {
                     val current = store.get(task.id)
                     if (current != null && (current.state in TaskPolicy.inFlight || current.state == TaskState.QUEUED)) {
                         val code = errorCode(error)
-                        store.transitionActive(task.id, if (code == "waiting_network") TaskState.WAITING_NETWORK else if (error is CancellationException) TaskState.PAUSED else TaskState.FAILED, code)
+                        val wait = if (error is CancellationException) null else AutoRetry.delayMillis(code, attempts.merge(task.id, 1, Int::plus) ?: 1)
+                        if (wait != null) {
+                            // Try again a little later instead of failing: queued with a start time, woken by the timer job.
+                            store.updateActive(task.id, ContentValues().apply { put("state", TaskState.QUEUED.name); put("error", ""); put("start_at", System.currentTimeMillis() + wait) })
+                        } else store.transitionActive(task.id, if (code == "waiting_network") TaskState.WAITING_NETWORK else if (error is CancellationException) TaskState.PAUSED else TaskState.FAILED, code)
                     }
                 } finally {
                     jobs.remove(task.id)
@@ -125,7 +133,8 @@ class DownloadService : Service() {
     }
     private fun notification(task: MobileTask?): Notification {
         val home = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val builder = NotificationCompat.Builder(this, CHANNEL).setSmallIcon(android.R.drawable.stat_sys_download)
+        val done = task != null && task.state in setOf(TaskState.COMPLETED, TaskState.FAILED)
+        val builder = NotificationCompat.Builder(this, if (done) DONE_CHANNEL else CHANNEL).setSmallIcon(R.drawable.ic_stat_download)
             .setContentTitle(task?.title?.ifEmpty { getString(R.string.app_name) } ?: getString(R.string.app_name))
             .setContentText(task?.let { MobileText.state(this, it) } ?: getString(R.string.queue_running))
             .setContentIntent(home).setOnlyAlertOnce(true)
@@ -168,7 +177,10 @@ class DownloadService : Service() {
     }
     companion object {
         @Volatile var running = false; private set
+        /** Automatic retries used so far, per task; lost with the process, which only makes retrying more patient. */
+        private val attempts = java.util.concurrent.ConcurrentHashMap<String, Int>()
         private const val CHANNEL = "downloads"
+        private const val DONE_CHANNEL = "finished"
         private const val SUMMARY_ID = Int.MAX_VALUE
         const val ACTION_PAUSE = "app.ratatoskr.android.PAUSE"
         const val ACTION_CANCEL = "app.ratatoskr.android.CANCEL"

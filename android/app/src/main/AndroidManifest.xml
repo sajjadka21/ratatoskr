@@ -44,6 +44,25 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="ratatoskr" android:host="add" />
             </intent-filter>
+            <!-- A file link opened from a browser or another app: "Open with Ratatoskr". -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:scheme="http" />
+                <data android:host="*" />
+                <data android:pathPattern=".*\\.zip" />
+                <data android:pathPattern=".*\\.rar" />
+                <data android:pathPattern=".*\\.7z" />
+                <data android:pathPattern=".*\\.apk" />
+                <data android:pathPattern=".*\\.pdf" />
+                <data android:pathPattern=".*\\.mp4" />
+                <data android:pathPattern=".*\\.mkv" />
+                <data android:pathPattern=".*\\.mp3" />
+                <data android:pathPattern=".*\\.iso" />
+                <data android:pathPattern=".*\\.exe" />
+            </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />

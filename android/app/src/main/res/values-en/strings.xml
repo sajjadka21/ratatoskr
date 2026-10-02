@@ -152,4 +152,13 @@
     <string name="open_plugins">Manage plugins</string>
     <string name="version_line">Version %1$s</string>
     <string name="language">Language</string>
+    <string name="notification_channel_done">Download finished</string>
+    <string name="filter_all">All</string>
+    <string name="cat_video">Video</string>
+    <string name="cat_music">Music</string>
+    <string name="cat_archives">Archives</string>
+    <string name="cat_programs">Programs</string>
+    <string name="cat_documents">Documents</string>
+    <string name="cat_images">Images</string>
+    <string name="cat_other">Other</string>
 </resources>

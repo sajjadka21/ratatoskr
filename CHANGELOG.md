@@ -2,6 +2,8 @@
 
 ## 1.2.0
 
+- Android: category filter chips on the list, automatic retry (3 times, 10 s / 30 s / 90 s) after a dropped connection or a busy server, a sound when a download finishes, and "Open with Ratatoskr" for file links.
+
 - Desktop: **Part info** in the download window — the file drawn as one block per connection, filling as it arrives, plus a per-part table and "Resume support".
 - Desktop and Android: **plugins** — small JSON rule files (rewrite a link, rename a file, per-site Referer/User-Agent on desktop). Data only, never code. See docs/PLUGINS.md.
 - Desktop: a new version now asks first ("Update now / Later / Skip this version") before anything is downloaded; still verified against the app's signing key.

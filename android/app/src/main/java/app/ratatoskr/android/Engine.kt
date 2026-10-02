@@ -103,7 +103,8 @@ object Engine {
             val prefs = MobilePreferences(context)
             val directory = work(context, task.id)
             val file = SegmentedDownload.fetch(directory, task.fileName, task.url, control, prefs.connections, prefs.speedLimit,
-                { done, total ->
+                { received, total ->
+                    val done = if (total > 0) minOf(received, total) else received   // overlapping retries can briefly count extra
                     store.update(task.id, ContentValues().apply { put("bytes_done", done); put("total_bytes", total) })
                     onProgress(if (total > 0) done.toFloat() / total * 98f else 0f)
                 },

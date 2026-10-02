@@ -104,12 +104,7 @@ class TaskAdapter(private val activity: MobileActivity, private val actions: Tas
         h.buttons.visibility = if (h.buttons.childCount == 0) View.GONE else View.VISIBLE
     }
 
-    private fun badgeFor(task: MobileTask): String {
-        val folder = FileCategory.folder(task.fileName, task.mime)
-        return when {
-            task.fileName.isEmpty() -> if (task.audioOnly || Spotify.isTrackUrl(task.url)) "🎵" else if (task.kind == "file") "📁" else "🎬"
-            folder == "Video" -> "🎬"; folder == "Music" -> "🎵"; folder == "Archives" -> "🗜"
-            folder == "Programs" -> "📦"; folder == "Documents" -> "📄"; folder == "" -> "🖼"; else -> "📁"
-        }
+    private fun badgeFor(task: MobileTask) = when (TaskFilter.categoryOf(task)) {
+        "Video" -> "🎬"; "Music" -> "🎵"; "Archives" -> "🗜"; "Programs" -> "📦"; "Documents" -> "📄"; "Images" -> "🖼"; else -> "📁"
     }
 }

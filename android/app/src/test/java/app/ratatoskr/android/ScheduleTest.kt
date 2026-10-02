@@ -63,3 +63,17 @@ class ScheduleTest {
         assertEquals("23:00", Schedule.clock(23 * 60))
     }
 }
+
+class AutoRetryTest {
+    @Test fun transientFailuresRetryWithGrowingDelaysThenGiveUp() {
+        assertEquals(10_000L, AutoRetry.delayMillis("network", 1))
+        assertEquals(30_000L, AutoRetry.delayMillis("rate_limited", 2))
+        assertEquals(90_000L, AutoRetry.delayMillis("network", 3))
+        assertNull(AutoRetry.delayMillis("network", 4))
+        assertNull(AutoRetry.delayMillis("network", 0))
+    }
+
+    @Test fun permanentFailuresAreNotRetried() {
+        for (code in listOf("no_space", "auth_required", "not_found", "unsupported_media", "invalid_range", "download_failed")) assertNull(code, AutoRetry.delayMillis(code, 1))
+    }
+}

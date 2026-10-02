@@ -57,3 +57,13 @@ object Schedule {
 
     fun clock(minute: Int) = "%02d:%02d".format(minute / 60, minute % 60)
 }
+
+/** Transient failures (a dropped connection, a busy server) are retried a few times, a little later each time. */
+object AutoRetry {
+    const val MAX_ATTEMPTS = 3
+    private val retryable = setOf("network", "rate_limited")
+    private val delays = longArrayOf(10_000, 30_000, 90_000)
+
+    /** How long to wait before attempt number [attempt] (1-based) after a failure with [code], or null to give up. */
+    fun delayMillis(code: String, attempt: Int): Long? = if (code in retryable && attempt in 1..MAX_ATTEMPTS) delays[attempt - 1] else null
+}

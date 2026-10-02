@@ -153,4 +153,13 @@
     <string name="open_plugins">مدیریت افزونه‌ها</string>
     <string name="version_line">نسخه‌ی %1$s</string>
     <string name="language">زبان</string>
+    <string name="notification_channel_done">پایان دانلود</string>
+    <string name="filter_all">همه</string>
+    <string name="cat_video">ویدیو</string>
+    <string name="cat_music">موسیقی</string>
+    <string name="cat_archives">فشرده</string>
+    <string name="cat_programs">برنامه</string>
+    <string name="cat_documents">سند</string>
+    <string name="cat_images">تصویر</string>
+    <string name="cat_other">سایر</string>
 </resources>

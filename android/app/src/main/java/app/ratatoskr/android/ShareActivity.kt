@@ -48,7 +48,10 @@ class ShareActivity : MobileActivity() {
         setContentView(ScrollView(this).apply { addView(box) })
         model = ViewModelProvider(this)[ShareModel::class.java]
         val shared = if (intent?.action == Intent.ACTION_VIEW) {
-            LinkUtils.handoffUrl(intent?.dataString) ?: run { finishWith(R.string.bad_link); return }
+            // ratatoskr://add?url=… from our own pages, or a plain file link opened with "Open with Ratatoskr"
+            val data = intent?.dataString
+            (if (data?.startsWith("http", true) == true) data.takeIf { LinkUtils.isPublicHttpUrl(it) } else LinkUtils.handoffUrl(data))
+                ?: run { finishWith(R.string.bad_link); return }
         } else intent?.getStringExtra(Intent.EXTRA_TEXT)
         val text = shared ?: if (intent?.getBooleanExtra(EXTRA_FROM_CLIPBOARD, false) == true) clipboardText() else null
         val urls = LinkPlan.parse(text)

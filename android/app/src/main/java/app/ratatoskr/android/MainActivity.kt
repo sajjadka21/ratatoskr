@@ -37,6 +37,10 @@ class MainActivity : MobileActivity(), TaskActions {
     private lateinit var activeTab: MaterialButton
     private lateinit var historyTab: MaterialButton
     private var history = false
+    private var category: String? = null
+    private var filterKey = ""
+    private lateinit var filters: LinearLayout
+    private lateinit var filterScroll: HorizontalScrollView
     private var query = ""
     private var dismissedLink = ""
     private val meter = SpeedMeter()
@@ -80,6 +84,10 @@ class MainActivity : MobileActivity(), TaskActions {
             background = rounded(surface, 14); setPadding(dp(14), dp(10), dp(14), dp(10))
             doAfterTextChanged { query = it.toString(); render() }
         }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+
+        filters = LinearLayout(this)
+        filterScroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; visibility = View.GONE; addView(filters) }
+        content.addView(filterScroll, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
 
         adapter = TaskAdapter(this, this)
         val list = RecyclerView(this).apply {
@@ -150,9 +158,13 @@ class MainActivity : MobileActivity(), TaskActions {
         historyTab.text = getString(R.string.tab_count, getString(R.string.history), all.size - activeCount)
         summary.text = getString(R.string.summary_line, activeCount, all.size - activeCount)
         val open = Schedule.now(MobilePreferences(this).window)
-        val shown = all.asReversed().filter {
+        val inTab = all.asReversed().filter {
             (it.state in finished) == history && (query.isBlank() || it.title.contains(query, true) || it.fileName.contains(query, true))
         }
+        val present = TaskFilter.present(inTab)
+        if (category != null && category !in present) category = null
+        renderFilters(present)
+        val shown = inTab.filter { TaskFilter.matches(it, category) }
         shown.forEach { if (it.state !in TaskPolicy.inFlight) meter.forget(it.id) }
         adapter.submitList(shown.map { task ->
             val label = when {
@@ -163,6 +175,30 @@ class MainActivity : MobileActivity(), TaskActions {
             TaskRow(task, stats(task), label)
         })
         empty.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE
+    }
+
+    private fun categoryName(value: String) = getString(when (value) {
+        "Video" -> R.string.cat_video; "Music" -> R.string.cat_music; "Archives" -> R.string.cat_archives; "Programs" -> R.string.cat_programs
+        "Documents" -> R.string.cat_documents; "Images" -> R.string.cat_images; else -> R.string.cat_other
+    })
+
+    /** A row of category chips (All, Video, Music…), shown only when the list holds more than one kind. */
+    private fun renderFilters(present: List<String>) {
+        val key = present.joinToString(",") + "|" + category
+        if (key == filterKey) return
+        filterKey = key
+        filters.removeAllViews()
+        fun add(label: String, value: String?) {
+            val on = category == value
+            filters.addView(TextView(this).apply {
+                text = label; textSize = 13f; setPadding(dp(14), dp(7), dp(14), dp(7))
+                setTextColor(if (on) paper else accent)
+                background = if (on) rounded(accent, 20) else rounded(android.graphics.Color.TRANSPARENT, 20, accent and 0x66FFFFFF)
+                setOnClickListener { category = value; render() }
+            }, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) })
+        }
+        if (present.size > 1) { add(getString(R.string.filter_all), null); present.forEach { add(categoryName(it), it) } }
+        filterScroll.visibility = if (filters.childCount == 0) View.GONE else View.VISIBLE
     }
 
     /** "12.4 MB / 80 MB · 2.1 MB/s · 0:32 left", from what the service has stored. */

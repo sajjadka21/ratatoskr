@@ -25,6 +25,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
@@ -65,7 +66,7 @@ fun RatatoskrTheme(activity: MobileActivity, content: @Composable () -> Unit) {
     ), content = content)
 }
 
-private val abShape = RoundedCornerShape(8.dp)
+private val abShape = RoundedCornerShape(16.dp)
 private val primaryGradient: Brush
     @Composable get() = Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)))
 
@@ -109,108 +110,90 @@ fun AbHome(
     var showingSearch by rememberSaveable { mutableStateOf(state.query.isNotEmpty()) }
     var menu by remember { mutableStateOf(false) }
     var filter by remember { mutableStateOf(false) }
-    var sort by remember { mutableStateOf(false) }
+    var activeOnly by rememberSaveable { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
-    PageUi(
-        header = {
-            Column(Modifier.fillMaxWidth().background(colors.background.copy(alpha = 0.96f))) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (state.selecting) {
-                        AbIconButton(ABDMIcons.Clear, stringResource(R.string.cancel)) { onSelection(R.string.cancel) }
-                        Text(stringResource(R.string.selected_count, state.selectionCount), Modifier.weight(1f), fontSize = 16.sp, maxLines = 2)
-                        AbResourceButton(R.drawable.ic_pause, R.string.pause) { onSelection(R.string.pause) }
-                        AbResourceButton(R.drawable.ic_retry, R.string.resume) { onSelection(R.string.resume) }
-                        AbResourceButton(R.drawable.ic_delete, R.string.remove) { onSelection(R.string.remove) }
-                    } else {
-                        AndroidView(factory = { android.widget.ImageView(it).apply { setImageResource(R.mipmap.ic_launcher); importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO } }, modifier = Modifier.size(28.dp))
-                        Spacer(Modifier.width(12.dp))
-                        Text("Ratatoskr", Modifier.weight(1f), fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                        Text(state.summary, color = colors.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.widthIn(max = 150.dp), maxLines = 2)
-                    }
-                }
-                if (state.clipboard.isNotEmpty()) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(stringResource(R.string.clipboard_many, LinkPlan.parse(state.clipboard).size), Modifier.weight(1f), fontSize = 12.sp)
-                        TextButton(onClick = { onClipboard(true) }) { Text(stringResource(R.string.download_action)) }
-                        AbIconButton(ABDMIcons.Clear, stringResource(R.string.dismiss)) { onClipboard(false) }
+    val shown = if (activeOnly && !state.history) state.copy(rows = state.rows.filter { it.task.state !in setOf(TaskState.COMPLETED, TaskState.CANCELLED) }) else state
+    PageUi(header = {
+        Column(Modifier.fillMaxWidth().background(colors.background)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                AndroidView(factory = { android.widget.ImageView(it).apply { setImageResource(R.mipmap.ic_launcher); importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO } }, modifier = Modifier.size(32.dp))
+                Text("Ratatoskr", Modifier.weight(1f).padding(start = 10.dp), fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                AbResourceButton(R.drawable.ic_nav_browser, R.string.browser) { onMenu(R.string.browser) }
+                AbIconButton(ABDMIcons.Search, stringResource(R.string.search_history)) { showingSearch = !showingSearch }
+                Box {
+                    AbIconButton(ABDMIcons.Menu, stringResource(R.string.menu)) { menu = true }
+                    DropdownMenu(menu, { menu = false }) {
+                        listOf(R.string.paste, R.string.pause_all, R.string.resume_all, R.string.clear_finished, R.string.select_all, R.string.plugins).forEach { title ->
+                            DropdownMenuItem(text = { Text(stringResource(title)) }, onClick = { menu = false; onMenu(title) })
+                        }
+                        listOf(R.string.sort_newest, R.string.sort_oldest, R.string.sort_name, R.string.sort_size).forEachIndexed { index, title ->
+                            DropdownMenuItem(text = { Text(stringResource(title)) }, onClick = { menu = false; onSort(index) })
+                        }
                     }
                 }
             }
-        },
-        footer = {
-            Column(Modifier.background(Brush.verticalGradient(listOf(Color.Transparent, colors.background))).imePadding()) {
-                BottomNavigation(showingSearch, state.query, onQuery, { showingSearch = false }, { showingSearch = true }, onAdd,
-                    menu, { menu = !menu }, filter, { filter = !filter }, sort, { sort = !sort }, state.history, categories.firstOrNull { it.first == state.category }?.second,
-                    mainMenu = {
-                        DropdownMenu(menu, { menu = false }) {
-                            listOf(R.string.browser, R.string.paste, R.string.pause_all, R.string.resume_all, R.string.clear_finished, R.string.select_all, R.string.plugins, R.string.settings).forEach { title ->
-                                DropdownMenuItem(text = { Text(stringResource(title)) }, onClick = { menu = false; onMenu(title) })
-                            }
-                        }
-                    },
-                    filterMenu = {
-                        DropdownMenu(filter, { filter = false }) {
-                            DropdownMenuItem(text = { Text(stringResource(R.string.nav_downloads)) }, onClick = { filter = false; onHistory(false) })
-                            DropdownMenuItem(text = { Text(stringResource(R.string.history)) }, onClick = { filter = false; onHistory(true) })
-                            HorizontalDivider()
-                            DropdownMenuItem(text = { Text(stringResource(R.string.filter_all)) }, onClick = { filter = false; onCategory(null) })
-                            categories.forEach { (key, label) -> DropdownMenuItem(text = { Text(label) }, onClick = { filter = false; onCategory(key) }) }
-                        }
-                    },
-                    sortMenu = {
-                        DropdownMenu(sort, { sort = false }) {
-                            listOf(R.string.sort_newest, R.string.sort_oldest, R.string.sort_name, R.string.sort_size).forEachIndexed { index, title ->
-                                DropdownMenuItem(text = { Text(stringResource(title)) }, onClick = { sort = false; onSort(index) })
-                            }
-                        }
-                    })
-            }
-        },
-    ) { padding -> DownloadList(state, actions, padding) }
-}
-
-/** Adapted directly from AB's BottomNavigation and navigation item composables. */
-@Composable
-private fun BottomNavigation(
-    showingSearch: Boolean, query: String, onQuery: (String) -> Unit, onDismissSearch: () -> Unit, onSearch: () -> Unit,
-    onAdd: () -> Unit, menuSelected: Boolean, onMenu: () -> Unit,
-    filterSelected: Boolean, onFilter: () -> Unit, sortSelected: Boolean, onSort: () -> Unit,
-    history: Boolean, category: String?,
-    mainMenu: @Composable () -> Unit, filterMenu: @Composable () -> Unit, sortMenu: @Composable () -> Unit,
-) {
-    val colors = MaterialTheme.colorScheme
-    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.weight(1f).height(IntrinsicSize.Max).shadow(4.dp, abShape).clip(abShape)
-            .border(1.dp, colors.onSurface.copy(alpha = 0.1f), abShape).background(colors.surface)) {
-            AnimatedContent(showingSearch, label = "AB toolbar search") { search ->
-                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), verticalAlignment = Alignment.CenterVertically) {
-                    if (search) SearchBox(query, onQuery, onDismissSearch)
-                    else {
-                        Box { mainMenu(); BottomNavigationItem(ABDMIcons.Menu, stringResource(R.string.menu), menuSelected, onMenu) }
-                        BottomNavigationItem(ABDMIcons.Search, stringResource(R.string.search_history), false, onSearch)
-                        Spacer(Modifier.fillMaxHeight().width(1.dp).background(colors.onSurface.copy(alpha = 0.1f)))
-                        Box(Modifier.weight(1f)) {
-                            filterMenu()
-                            Column(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(onClick = onFilter).padding(horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                                Text(stringResource(if (history) R.string.history else R.string.active_jobs), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
-                                category?.let { Text(it, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                            }
-                            BottomNavigationSelectedIndicator(filterSelected)
-                        }
-                        Spacer(Modifier.fillMaxHeight().width(1.dp).background(colors.onSurface.copy(alpha = 0.1f)))
-                        Box { sortMenu(); BottomNavigationItem(ABDMIcons.Clock, stringResource(R.string.sort_downloads), sortSelected, onSort) }
+            if (state.selecting) Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                AbIconButton(ABDMIcons.Clear, stringResource(R.string.cancel)) { onSelection(R.string.cancel) }
+                Text(stringResource(R.string.selected_count, state.selectionCount), Modifier.weight(1f))
+                AbResourceButton(R.drawable.ic_pause, R.string.pause) { onSelection(R.string.pause) }
+                AbResourceButton(R.drawable.ic_retry, R.string.resume) { onSelection(R.string.resume) }
+                AbResourceButton(R.drawable.ic_delete, R.string.remove) { onSelection(R.string.remove) }
+            } else Text(stringResource(R.string.nav_downloads), Modifier.padding(horizontal = 24.dp, vertical = 12.dp), fontSize = 30.sp, fontWeight = FontWeight.Bold)
+            if (showingSearch) SearchBox(state.query, onQuery) { showingSearch = false; onQuery("") }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                listOf(R.string.filter_all, R.string.active_jobs, R.string.completed).forEachIndexed { index, title ->
+                    val selected = if (state.history) index == 2 else index == if (activeOnly) 1 else 0
+                    TextButton(onClick = { activeOnly = index == 1; onHistory(index == 2) }, modifier = Modifier.weight(1f).drawBehind {
+                        if (selected) drawLine(colors.primary, Offset(0f, size.height), Offset(size.width, size.height), 2.dp.toPx())
+                    }) { Text(stringResource(title), color = if (selected) colors.primary else colors.onSurfaceVariant) }
+                }
+                Box {
+                    AbIconButton(ABDMIcons.Folder, stringResource(R.string.filter_category)) { filter = true }
+                    DropdownMenu(filter, { filter = false }) {
+                        DropdownMenuItem(text = { Text(stringResource(R.string.filter_all)) }, onClick = { filter = false; onCategory(null) })
+                        categories.forEach { (key, label) -> DropdownMenuItem(text = { Text(label) }, onClick = { filter = false; onCategory(key) }) }
                     }
                 }
+            }
+            if (state.clipboard.isNotEmpty()) Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.clipboard_many, LinkPlan.parse(state.clipboard).size), Modifier.weight(1f))
+                TextButton(onClick = { onClipboard(true) }) { Text(stringResource(R.string.download_action)) }
+                AbIconButton(ABDMIcons.Clear, stringResource(R.string.dismiss)) { onClipboard(false) }
             }
         }
-        AnimatedVisibility(!showingSearch) {
-            Row {
-                Spacer(Modifier.width(8.dp))
-                Icon(ABDMIcons.Plus, stringResource(R.string.add_links), Modifier.shadow(4.dp, abShape)
-                    .border(1.dp, primaryGradient, abShape).clip(abShape).background(colors.surface)
-                    .background(Brush.linearGradient(listOf(colors.primary.copy(alpha = 0.25f), colors.primary.copy(alpha = 0.15f))))
-                    .clickable(onClick = onAdd).padding(16.dp).size(20.dp), tint = colors.primary)
+    }, footer = { RatatoskrDock(onAdd, { activeOnly = false; onHistory(false) }, { onMenu(R.string.settings) }) }) { padding -> DownloadList(shown, actions, padding) }
+}
+
+/** A real concave cradle, drawn independently of RTL destination placement. */
+@Composable
+private fun RatatoskrDock(onAdd: () -> Unit, onDownloads: () -> Unit, onSettings: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val gold = if (androidx.compose.ui.platform.LocalContext.current.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK == android.content.res.Configuration.UI_MODE_NIGHT_YES) Color(0xffD6B778) else Color(0xffB48B42)
+    Box(Modifier.fillMaxWidth().height(96.dp).imePadding()) {
+        Box(Modifier.fillMaxSize().drawBehind {
+            val mid = size.width / 2; val top = 24.dp.toPx(); val radius = 36.dp.toPx()
+            val path = Path().apply {
+                moveTo(0f, top); lineTo(mid - radius - 12.dp.toPx(), top)
+                cubicTo(mid - radius, top, mid - radius, top + radius, mid, top + radius)
+                cubicTo(mid + radius, top + radius, mid + radius, top, mid + radius + 12.dp.toPx(), top)
+                lineTo(size.width, top); lineTo(size.width, size.height); lineTo(0f, size.height); close()
             }
+            drawPath(path, colors.surface)
+        })
+        Row(Modifier.fillMaxWidth().align(Alignment.BottomCenter).height(68.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).clickable(onClick = onDownloads).heightIn(min = 56.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Icon(painterResource(R.drawable.ic_nav_downloads), null, tint = colors.primary, modifier = Modifier.size(24.dp))
+                Text(stringResource(R.string.nav_downloads), fontSize = 12.sp, color = colors.primary)
+            }
+            Spacer(Modifier.width(88.dp))
+            Column(Modifier.weight(1f).clickable(onClick = onSettings).heightIn(min = 56.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Icon(painterResource(R.drawable.ic_nav_settings), null, modifier = Modifier.size(24.dp))
+                Text(stringResource(R.string.settings), fontSize = 12.sp)
+            }
+        }
+        FilledIconButton(onClick = onAdd, modifier = Modifier.align(Alignment.TopCenter).size(56.dp), shape = CircleShape,
+            colors = IconButtonDefaults.filledIconButtonColors(containerColor = gold, contentColor = Color(0xff12171B))) {
+            Icon(ABDMIcons.Plus, stringResource(R.string.add_links), Modifier.size(28.dp))
         }
     }
 }
@@ -228,31 +211,18 @@ private fun SearchBox(text: String, onText: (String) -> Unit, onDismiss: () -> U
             focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent))
 }
 
-@Composable
-private fun BottomNavigationItem(icon: ImageVector, description: String, selected: Boolean, onClick: () -> Unit) {
-    Box {
-        Icon(icon, description, Modifier.clickable(onClick = onClick).padding(16.dp).size(20.dp))
-        BottomNavigationSelectedIndicator(selected)
-    }
-}
-
-@Composable
-private fun BoxScope.BottomNavigationSelectedIndicator(selected: Boolean) {
-    if (selected) {
-        val color = MaterialTheme.colorScheme.primary
-        Box(Modifier.matchParentSize().background(Brush.horizontalGradient(listOf(color.copy(alpha = 0.15f), Color.Transparent))))
-        Box(Modifier.matchParentSize().wrapContentHeight(Alignment.Bottom).height(1.dp).background(primaryGradient))
-    }
-}
-
 /** AB's flat, stable-keyed animated list, rather than an unrelated card dashboard. */
 @Composable
 private fun DownloadList(state: AbHomeState, actions: TaskActions, padding: PaddingValues) {
-    val divider = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.25f)
+    val divider = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.10f)
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize().semantics { contentDescription = "downloads-list" }, state = rememberLazyListState(), contentPadding = padding) {
-            itemsIndexed(state.rows, key = { _, row -> row.task.id }) { index, row ->
+            itemsIndexed(state.rows.sortedBy { if (it.task.state in TaskPolicy.inFlight) 0 else if (it.task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED)) 2 else 1 }, key = { _, row -> row.task.id }) { index, row ->
                 Column(Modifier.animateItem()) {
+                    val ordered = state.rows.sortedBy { if (it.task.state in TaskPolicy.inFlight) 0 else if (it.task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED)) 2 else 1 }
+                    val group = if (row.task.state in TaskPolicy.inFlight) 0 else if (row.task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED)) 2 else 1
+                    val previous = ordered.getOrNull(index - 1)?.task?.state?.let { if (it in TaskPolicy.inFlight) 0 else if (it in setOf(TaskState.COMPLETED, TaskState.CANCELLED)) 2 else 1 }
+                    if (previous != group) Text(stringResource(when (group) { 0 -> R.string.downloading; 2 -> R.string.completed; else -> R.string.pending_downloads }), Modifier.padding(horizontal = 24.dp, vertical = 16.dp), fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                     RenderDownloadItem(row, state.selecting, actions,
                         Modifier.let { if (index == 0) it else it.drawBehind {
                             drawLine(Brush.horizontalGradient(listOf(Color.Transparent, divider, Color.Transparent)), Offset.Zero, Offset(size.width, 0f))
@@ -273,29 +243,38 @@ private fun RenderDownloadItem(row: TaskRow, selecting: Boolean, actions: TaskAc
     val colors = MaterialTheme.colorScheme
     val statusColor = when (task.state) { TaskState.COMPLETED -> Color(0xff65bb86); TaskState.FAILED -> colors.error; in TaskPolicy.inFlight -> colors.primary; else -> colors.onSurfaceVariant }
     val name = task.title.ifEmpty { task.fileName.ifEmpty { LinkPlan.host(task.url) } }
-    Column(modifier.fillMaxWidth().let { if (row.selected) it.background(Brush.horizontalGradient(listOf(colors.primary.copy(alpha = 0.15f), colors.primary.copy(alpha = 0.03f)))) else it }
+    Column(modifier.fillMaxWidth().let { if (task.state in TaskPolicy.inFlight) it.padding(horizontal = 16.dp, vertical = 8.dp).clip(RoundedCornerShape(20.dp)).background(colors.surface) else it }.let { if (row.selected) it.background(Brush.horizontalGradient(listOf(colors.primary.copy(alpha = 0.15f), colors.primary.copy(alpha = 0.03f)))) else it }
         .combinedClickable(onClick = { if (selecting) actions.toggle(task) else actions.details(task) }, onLongClick = { actions.toggle(task) })
         .padding(16.dp).semantics { stateDescription = task.state.name }) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AnimatedVisibility(selecting) { Checkbox(row.selected, onCheckedChange = { actions.toggle(task) }) }
-            Icon(ABDMIcons.File, null, Modifier.size(24.dp), tint = colors.primary)
+            Icon(painterResource(when {
+                task.state == TaskState.COMPLETED -> R.drawable.ic_kind_check
+                task.fileName.endsWith(".zip", true) -> R.drawable.ic_kind_archive
+                task.mime.startsWith("video/") -> R.drawable.ic_kind_video
+                task.mime.startsWith("audio/") -> R.drawable.ic_kind_music
+                task.mime.startsWith("image/") -> R.drawable.ic_kind_image
+                else -> R.drawable.ic_kind_file
+            }), null, Modifier.size(36.dp), tint = statusColor)
             Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
-                Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
-                Spacer(Modifier.height(8.dp))
+                Text(name, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                if (task.state in TaskPolicy.inFlight) {
+                Spacer(Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val track = Modifier.weight(1f).height(6.dp).clip(CircleShape)
                     if (task.state == TaskState.PROBING) LinearProgressIndicator(track, color = colors.primary)
                     else LinearProgressIndicator(progress = { task.progress.coerceIn(0,100)/100f }, modifier = track, color = statusColor, trackColor = colors.onSurface.copy(alpha = 0.12f))
                     Spacer(Modifier.width(4.dp))
-                    Box(Modifier.size(6.dp).background(statusColor, CircleShape))
+                    Text("${task.progress}%", color = statusColor, fontSize = 12.sp)
+                }
                 }
             }
         }
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(row.stats.ifEmpty { MobileText.state(androidx.compose.ui.platform.LocalContext.current, task) }, fontSize = 11.sp, color = colors.onSurfaceVariant)
+                Text(listOf(MobileText.state(androidx.compose.ui.platform.LocalContext.current, task), row.stats).filter { it.isNotEmpty() }.joinToString(" · "), fontSize = 13.sp, color = colors.onSurfaceVariant)
                 if (row.schedule.isNotEmpty()) Text(row.schedule, fontSize = 11.sp, color = colors.primary)
                 if (task.error.isNotEmpty()) Text(MobileText.error(androidx.compose.ui.platform.LocalContext.current, task.error), fontSize = 12.sp, color = colors.error)
             }
@@ -327,12 +306,13 @@ private fun AbResourceButton(icon: Int, description: Int, onClick: () -> Unit) {
 fun AbEnterUrl(prefill: String, defaultAudio: Boolean, onClose: () -> Unit, onPaste: () -> String, onDownload: (String, Boolean) -> Boolean) {
     var text by rememberSaveable { mutableStateOf(prefill) }
     var audio by rememberSaveable { mutableStateOf(defaultAudio) }
+    var advanced by rememberSaveable { mutableStateOf(defaultAudio) }
     var invalid by rememberSaveable { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
     val urls = remember(text) { LinkPlan.parse(text) }
     val counts = remember(urls) { LinkPlan.summarize(urls) }
     val navigationBottom = with(LocalDensity.current) { WindowInsets.navigationBars.getBottom(this).toDp() }
-    ModalBottomSheet(onDismissRequest = onClose, containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp), dragHandle = null,
+    ModalBottomSheet(onDismissRequest = onClose, containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), dragHandle = { BottomSheetDefaults.DragHandle() },
         contentWindowInsets = { WindowInsets(0, 0, 0, 0) }) {
         // The sheet subcomposes its children; request focus in that composition,
         // after the field has attached, rather than in the parent composition.
@@ -347,16 +327,15 @@ fun AbEnterUrl(prefill: String, defaultAudio: Boolean, onClose: () -> Unit, onPa
                 trailingIcon = { AbResourceButton(R.drawable.ic_paste, R.string.paste_clipboard) { val pasted = onPaste(); if (pasted.isNotBlank()) text = if (text.isBlank()) pasted else "$text\n$pasted" } },
                 supportingText = { if (invalid) Text(stringResource(R.string.bad_link)) else Text(stringResource(R.string.add_link_help)) }, shape = abShape)
             if (urls.isNotEmpty()) Text(stringResource(R.string.links_summary, urls.size, counts.files, counts.media), fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+            TextButton(onClick = { advanced = !advanced }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.more_options)) }
+            if (advanced) {
             Row(Modifier.fillMaxWidth().clickable { audio = !audio }, verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(audio, { audio = it }); Text(stringResource(R.string.audio_only_all), fontSize = 13.sp)
             }
             Text(stringResource(R.string.pattern_hint), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(16.dp))
-            Row {
-                OutlinedButton(onClose, Modifier.weight(1f), shape = abShape) { Text(stringResource(R.string.cancel)) }
-                Spacer(Modifier.width(8.dp))
-                Button(onClick = { invalid = !onDownload(text, audio) }, enabled = text.isNotBlank(), modifier = Modifier.weight(1f), shape = abShape) { Text(stringResource(R.string.download_action)) }
             }
+            Spacer(Modifier.height(16.dp))
+            Button(onClick = { invalid = !onDownload(text, audio) }, enabled = text.isNotBlank(), modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp), shape = abShape) { Text(stringResource(R.string.download_action)) }
         }
     }
 }

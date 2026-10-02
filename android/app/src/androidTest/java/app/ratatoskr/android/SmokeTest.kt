@@ -60,7 +60,7 @@ class SmokeTest {
         }
     }
 
-    @Test fun homeScreenShowsTheAbToolbarAndTheAddButton() {
+    @Test fun homeScreenShowsTheApprovedDockAndTheAddButton() {
         ActivityScenario.launch(MainActivity::class.java).use {
             compose.onNodeWithText("Ratatoskr").assertIsDisplayed()
             it.onActivity { activity ->
@@ -68,6 +68,8 @@ class SmokeTest {
                 assertEquals(viewport.height, viewport.getChildAt(0).height)
             }
             compose.onNodeWithContentDescription(context.getString(R.string.add_links)).assertIsDisplayed()
+            compose.onNodeWithContentDescription(context.getString(R.string.browser)).assertIsDisplayed()
+            compose.onNodeWithText(context.getString(R.string.settings)).assertIsDisplayed()
             compose.onNodeWithText(context.getString(R.string.empty_jobs)).assertIsDisplayed()
             screenshot("home-empty")
         }
@@ -83,9 +85,8 @@ class SmokeTest {
         }
     }
 
-    @Test fun addLinkHasOneDownloadActionAndTheAbMenuOpensSettings() {
+    @Test fun addLinkHasOneDownloadActionAndTheDockOpensSettings() {
         ActivityScenario.launch(MainActivity::class.java).use {
-            compose.onNodeWithContentDescription(context.getString(R.string.menu)).performClick()
             compose.onNodeWithText(context.getString(R.string.settings)).performClick()
             onView(withText(R.string.section_network)).check(matches(isDisplayed()))
             androidx.test.espresso.Espresso.pressBack()
@@ -96,9 +97,8 @@ class SmokeTest {
         }
     }
 
-    @Test fun settingsOpensFromTheMenu() {
+    @Test fun settingsOpensFromTheDock() {
         ActivityScenario.launch(MainActivity::class.java).use {
-            compose.onNodeWithContentDescription(context.getString(R.string.menu)).performClick()
             compose.onNodeWithText(context.getString(R.string.settings)).performClick()
             onView(withText(R.string.section_network)).check(matches(isDisplayed()))
         }
@@ -159,7 +159,7 @@ class SmokeTest {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 compose.onNodeWithText("Ratatoskr Desktop.zip").assertIsDisplayed()
                 compose.onNodeWithText(context.getString(R.string.error_not_file)).assertIsDisplayed()
-                compose.onNodeWithContentDescription(context.getString(R.string.resume)).assertIsDisplayed()
+                compose.onAllNodesWithContentDescription(context.getString(R.string.resume))[0].assertIsDisplayed()
                 screenshot("ab-home-downloads-dark")
                 compose.onNodeWithContentDescription(context.getString(R.string.search_history)).performClick()
                 compose.onNode(hasSetTextAction()).performTextInput("Desktop")
@@ -212,7 +212,6 @@ class SmokeTest {
 
     @Test fun theBrowserOpensFromTheMenu() {
         ActivityScenario.launch(MainActivity::class.java).use {
-            compose.onNodeWithContentDescription(context.getString(R.string.menu)).performClick()
             compose.onNodeWithText(context.getString(R.string.browser)).performClick()
             onView(withText(R.string.download_page)).check(matches(isDisplayed()))
         }

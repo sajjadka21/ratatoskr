@@ -211,4 +211,6 @@
     <string name="sort_name">نام فایل</string>
     <string name="sort_size">حجم فایل</string>
     <string name="filter_category">دسته‌بندی</string>
+    <string name="more_options">گزینه‌های بیشتر</string>
+    <string name="pending_downloads">در انتظار</string>
 </resources>

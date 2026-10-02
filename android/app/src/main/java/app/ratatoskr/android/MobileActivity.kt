@@ -26,14 +26,14 @@ abstract class MobileActivity : AppCompatActivity() {
     }
     fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     val dark get() = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK == android.content.res.Configuration.UI_MODE_NIGHT_YES
-    val ink get() = Color.parseColor(if (dark) "#EEE5D7" else "#302D28")
-    val paper get() = Color.parseColor(if (dark) "#131820" else "#EAE5DC")
-    val surface get() = Color.parseColor(if (dark) "#202731" else "#F4F0E8")
+    val ink get() = Color.parseColor(if (dark) "#ECEEEB" else "#202829")
+    val paper get() = Color.parseColor(if (dark) "#12171B" else "#E6E5E1")
+    val surface get() = Color.parseColor(if (dark) "#20272B" else "#F0EFEA")
     val accent get() = Color.parseColor(when (MobilePreferences(this).brand) {
         "midnight-arcane" -> if (dark) "#C3A0EB" else "#673E9D"
         "forest-rune" -> if (dark) "#BAD47D" else "#526B1C"
         "frost-byte" -> if (dark) "#90D5F0" else "#14628D"
-        else -> if (dark) "#EBBA75" else "#955311"
+        else -> if (dark) "#D6B778" else "#896326"
     })
     override fun onCreate(savedInstanceState: Bundle?) {
         val prefs = MobilePreferences(this)

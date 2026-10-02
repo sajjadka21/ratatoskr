@@ -134,7 +134,7 @@ class MainActivity : MobileActivity(), TaskActions {
         val open = Schedule.now(MobilePreferences(this).window)
         selection.retainAll(all.map { it.id }.toSet())
         val shown = all.filter {
-            (it.state in finished) == history && (query.isBlank() || it.title.contains(query, true) || it.fileName.contains(query, true)) && TaskFilter.matches(it, category)
+            (!history || it.state in finished) && (query.isBlank() || it.title.contains(query, true) || it.fileName.contains(query, true)) && TaskFilter.matches(it, category)
         }.let { items -> when (sortOrder) {
             1 -> items.sortedBy { it.createdAt }
             2 -> items.sortedBy { it.title.lowercase(java.util.Locale.ROOT) }

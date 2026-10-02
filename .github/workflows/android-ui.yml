@@ -47,12 +47,7 @@ jobs:
           target: google_apis
           disable-animations: true
           working-directory: android
-          script: |
-            result=0
-            gradle --no-daemon :app:connectedDebugAndroidTest || result=$?
-            mkdir -p build/ui-screenshots
-            adb pull /sdcard/Android/data/app.ratatoskr.android/files/ui-review build/ui-screenshots/ || true
-            exit "$result"
+          script: bash ../.github/scripts/android-ui-tests.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:

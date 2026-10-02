@@ -119,10 +119,11 @@ class SmokeTest {
     }
 
     private fun screenshot(name: String) {
-        val bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot() ?: return
-        val directory = java.io.File(context.getExternalFilesDir(null), "ui-review").apply { mkdirs() }
-        java.io.File(directory, "$name.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
-        bitmap.recycle()
+        require(name.matches(Regex("[a-z-]+")))
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        automation.executeShellCommand("mkdir -p /sdcard/Download/ratatoskr-ui-review && screencap -p /sdcard/Download/ratatoskr-ui-review/$name.png").use {
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(it).use { stream -> stream.readBytes() }
+        }
     }
 
     private fun selectSetting(title: Int, position: Int) {

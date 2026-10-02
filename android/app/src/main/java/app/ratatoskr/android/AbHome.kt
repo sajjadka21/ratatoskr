@@ -331,11 +331,13 @@ fun AbEnterUrl(prefill: String, defaultAudio: Boolean, onClose: () -> Unit, onPa
     val focus = remember { FocusRequester() }
     val urls = remember(text) { LinkPlan.parse(text) }
     val counts = remember(urls) { LinkPlan.summarize(urls) }
-    ModalBottomSheet(onDismissRequest = onClose, containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp), dragHandle = null) {
+    val navigationBottom = with(LocalDensity.current) { WindowInsets.navigationBars.getBottom(this).toDp() }
+    ModalBottomSheet(onDismissRequest = onClose, containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp), dragHandle = null,
+        contentWindowInsets = { WindowInsets(0, 0, 0, 0) }) {
         // The sheet subcomposes its children; request focus in that composition,
         // after the field has attached, rather than in the parent composition.
         LaunchedEffect(Unit) { focus.requestFocus() }
-        Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 16.dp)) {
+        Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 16.dp + navigationBottom)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.add_links), Modifier.weight(1f), fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 AbIconButton(ABDMIcons.Clear, stringResource(R.string.cancel), onClose)

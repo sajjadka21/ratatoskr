@@ -78,6 +78,8 @@ class SmokeTest {
             compose.onNodeWithContentDescription(context.getString(R.string.add_links)).performClick()
             compose.onNode(hasSetTextAction()).performTextInput("https://example.org/p[01-03].jpg https://youtu.be/abc")
             compose.onNodeWithText(context.getString(R.string.links_summary, 4, 3, 1)).assertIsDisplayed()
+            onView(androidx.test.espresso.matcher.ViewMatchers.isRoot()).perform(closeSoftKeyboard())
+            screenshot("ab-add-link-filled")
         }
     }
 
@@ -146,6 +148,12 @@ class SmokeTest {
         store.state(queued.id, TaskState.FAILED, "not_a_file")
         val completed = store.enqueue("https://example.org/guide.pdf", null, false, "Getting started.pdf", "file")
         store.state(completed.id, TaskState.COMPLETED)
+        val archive = store.enqueue("https://example.org/studio.zip", null, false, "Android Studio.zip", "file")
+        store.state(archive.id, TaskState.PAUSED)
+        store.update(archive.id, android.content.ContentValues().apply { put("progress", 64); put("bytes_done", 671088640L); put("total_bytes", 1048576000L) })
+        val document = store.enqueue("https://example.org/design.pdf", null, false, "Design guidelines.pdf", "file")
+        store.state(document.id, TaskState.PAUSED)
+        store.update(document.id, android.content.ContentValues().apply { put("progress", 25); put("bytes_done", 2097152L); put("total_bytes", 8388608L) })
         try {
             prefs.language = "en"; prefs.mode = "dark"
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
@@ -157,6 +165,7 @@ class SmokeTest {
                 compose.onNode(hasSetTextAction()).performTextInput("Desktop")
                 scenario.recreate()
                 compose.onNodeWithText("Desktop").assertIsDisplayed()
+                screenshot("ab-search-restored")
                 compose.onNodeWithText("Ratatoskr Desktop.zip").assertIsDisplayed()
             }
             prefs.mode = "light"; prefs.language = "fa"
@@ -166,7 +175,7 @@ class SmokeTest {
                 it.onActivity { activity -> assertEquals(View.LAYOUT_DIRECTION_RTL, activity.findViewById<View>(android.R.id.content).layoutDirection) }
                 screenshot("ab-home-downloads-light-fa")
             }
-        } finally { store.remove(queued.id); store.remove(completed.id); prefs.language = "" }
+        } finally { listOf(queued, completed, archive, document).forEach { store.remove(it.id) }; prefs.language = "" }
     }
 
     private fun screenshot(name: String) {

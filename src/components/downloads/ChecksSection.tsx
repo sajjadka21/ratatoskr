@@ -109,8 +109,8 @@ export function ChecksSection({
           : null;
 
   return (
-    <section className="details__section">
-      <h3>{t("checks.title")}</h3>
+    <details key={downloadId} className="details__section details__disclosure" open={integrity === "mismatch" || scan?.tone === "bad" || undefined}>
+      <summary>{t("checks.title")}</summary>
       {!checks?.expectedChecksum ? <p className="details__note">{t("checks.hint")}</p> : null}
 
       {checks?.expectedChecksum ? (
@@ -230,6 +230,6 @@ export function ChecksSection({
           <RotateCw size={13} /> {t("checks.runAgain")}
         </button>
       ) : null}
-    </section>
+    </details>
   );
 }

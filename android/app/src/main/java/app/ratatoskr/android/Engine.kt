@@ -121,7 +121,13 @@ object Engine {
             return listOf(result)
         }
         onState(TaskState.PROBING)
-        val info = probe(context, task.url, task.id, control::check)
+        val info = try { probe(context, task.url, task.id, control::check) }
+        catch (error: Exception) {
+            control.check()
+            if (LinkPlan.mayTryFile(task.url, DownloadService.errorCode(error)))
+                return download(context, task.copy(kind = "file"), control, onState, onProgress)
+            throw error
+        }
         val spotify = Spotify.isTrackUrl(task.url)
         val audioOnly = task.audioOnly || spotify
         store.update(task.id, ContentValues().apply { put("title", info.title) })

@@ -74,9 +74,13 @@ class ShareActivity : MobileActivity() {
             ShareProbe.Loading -> { box.removeAllViews(); box.addView(label(getString(R.string.checking))); box.addView(label(getString(R.string.checking_help), 14f)); box.addView(ProgressBar(this@ShareActivity)); box.addView(button(getString(R.string.cancel)) { finish() }) }
             is ShareProbe.Ready -> choices(value.info)
             is ShareProbe.Failed -> {
+                if (LinkPlan.mayTryFile(urls.first(), value.code)) {
+                    // Extensionless file endpoints still work with the single
+                    // Download action. The HTTP engine rejects HTML responses.
+                    enqueue(urls, null, false, "file")
+                    return@collect
+                }
                 box.removeAllViews(); box.addView(label(MobileText.error(this@ShareActivity, value.code)))
-                box.addView(label(getString(R.string.direct_link_help), 14f))
-                if (!LinkPlan.isMediaHost(urls.first())) box.addView(button(getString(R.string.file_download)) { enqueue(urls, null, false, "file") })
                 box.addView(button(getString(R.string.cancel)) { finish() })
             }
         } } }

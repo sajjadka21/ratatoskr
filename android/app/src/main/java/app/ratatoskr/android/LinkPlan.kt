@@ -32,6 +32,10 @@ object LinkPlan {
         else -> LinkKind.MEDIA
     }
 
+    /** Only unsupported generic pages may fall back to guarded HTTP. Never
+     * reinterpret authentication, network or media-site failures as a file. */
+    fun mayTryFile(url: String, errorCode: String) = !isMediaHost(url) && errorCode == "unsupported_media"
+
     /** Every link in the text, with `[1-10]` / `[01-10]` ranges in an address expanded. */
     fun parse(text: String?): List<String> = LinkUtils.extractUrls(expand(text.orEmpty()), MAX_LINKS).filterNot { range.containsMatchIn(it) }.take(MAX_LINKS)
 

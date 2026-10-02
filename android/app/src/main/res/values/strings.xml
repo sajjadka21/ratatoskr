@@ -48,7 +48,8 @@
     <string name="error_retry">دانلود قطع شد. فایل ناقص حفظ شده است؛ دوباره تلاش کنید.</string>
     <string name="active_jobs">فعال</string>
     <string name="history">تاریخچه</string>
-    <string name="empty_jobs">هنوز دانلودی اینجا نیست. یک لینک را اشتراک‌گذاری یا وارد کنید.</string>
+    <string name="empty_jobs">هنوز دانلودی نداری.
+برای افزودن لینک، دکمهٔ + را بزن.</string>
     <string name="add_links">افزودن لینک</string>
     <string name="links_hint">یک یا چند لینک HTTP / HTTPS وارد کنید</string>
     <string name="media_download">ویدیو، صدا یا عکس اینستاگرام</string>
@@ -195,11 +196,13 @@
     <string name="browser_added">به دانلودها اضافه شد.</string>
     <string name="downloads_list">فهرست دانلودها</string>
     <string name="automatic_download">دانلود خودکار</string>
-    <string name="add_link_help">خودکار، مسیر فایل یا رسانه را تشخیص می‌دهد. برای پست اینستاگرام و صفحهٔ ویدیو «خودکار» را بزنید؛ دانلود مستقیم مخصوص لینک خودِ فایل است.</string>
+    <string name="add_link_help">لینک فایل یا صفحهٔ رسانه را وارد کن؛ برنامه روش دانلود را خودش انتخاب می‌کند.</string>
     <string name="direct_link_help">دانلود مستقیم به لینک خودِ فایل نیاز دارد. برای صفحهٔ رسانه، دانلود خودکار را انتخاب کنید تا فایل‌ها و کیفیت‌ها پیدا شوند.</string>
     <string name="checking_help">در حال پیدا کردن فایل‌ها و کیفیت‌های موجود. دانلود بعد از انتخاب شما شروع می‌شود.</string>
     <string name="error_not_file">این آدرس یک صفحهٔ وب برگرداند. با دانلود خودکار دوباره اضافه کنید یا لینک خودِ فایل را وارد کنید.</string>
     <string name="error_integrity">پاسخ فایل ناقص بود یا تغییر کرد. دوباره تلاش کنید؛ فایل ناقص ذخیرهٔ نهایی نشده است.</string>
     <string name="error_write">ذخیرهٔ فایل ممکن نشد. پوشهٔ ذخیره و فضای خالی را بررسی و دوباره تلاش کنید.</string>
     <string name="transfer_settings_hint">تعداد اتصال و سقف سرعت پس از شروع دانلود جدید یا ادامهٔ دانلود اعمال می‌شوند.</string>
+    <string name="download_action">دانلود</string>
+    <string name="nav_downloads">دانلودها</string>
 </resources>

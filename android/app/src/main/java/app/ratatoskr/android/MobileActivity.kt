@@ -74,7 +74,7 @@ abstract class MobileActivity : AppCompatActivity() {
     fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
     fun label(value: String, size: Float = 16f) = TextView(this).apply { text = value; textSize = size; setTextColor(ink); setPadding(0, dp(8), 0, dp(8)) }
     fun button(value: String, action: () -> Unit) = MaterialButton(this).apply {
-        text = value; minHeight = dp(48); cornerRadius = dp(12)
+        text = value; isAllCaps = false; textSize = 14f; minHeight = dp(48); cornerRadius = dp(12)
         backgroundTintList = ColorStateList.valueOf(surface); setTextColor(accent)
         setOnClickListener { action() }
     }

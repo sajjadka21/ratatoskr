@@ -23,7 +23,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.button.MaterialButtonToggleGroup
-import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+import com.google.android.material.floatingactionbutton.FloatingActionButton
 import kotlinx.coroutines.*
 import java.text.DateFormat
 import java.util.Calendar
@@ -42,6 +42,7 @@ class MainActivity : MobileActivity(), TaskActions {
     private lateinit var summary: TextView
     private lateinit var activeTab: MaterialButton
     private lateinit var historyTab: MaterialButton
+    private lateinit var pageTitle: TextView
     private var history = false
     private var category: String? = null
     private var filterKey = ""
@@ -91,19 +92,11 @@ class MainActivity : MobileActivity(), TaskActions {
         banner = column().apply { visibility = View.GONE }
         content.addView(banner)
 
-        val group = MaterialButtonToggleGroup(this).apply { isSingleSelection = true; isSelectionRequired = true }
-        fun tab() = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-            id = View.generateViewId(); layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f)
-            val states = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
-            backgroundTintList = android.content.res.ColorStateList(states, intArrayOf(accent, surface))
-            setTextColor(android.content.res.ColorStateList(states, intArrayOf(paper, accent)))
-            strokeColor = android.content.res.ColorStateList.valueOf(accent)
+        pageTitle = label(getString(R.string.nav_downloads), 28f).apply {
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            setPadding(0, dp(8), 0, dp(16))
         }
-        activeTab = tab(); historyTab = tab()
-        group.addView(activeTab); group.addView(historyTab)
-        group.check(if (history) historyTab.id else activeTab.id)
-        group.addOnButtonCheckedListener { _, id, checked -> if (checked) { history = id == historyTab.id; render() } }
-        content.addView(group, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
+        content.addView(pageTitle)
         content.addView(EditText(this).apply {
             hint = getString(R.string.search_history); setTextColor(ink); setHintTextColor(muted); setText(query); maxLines = 1; inputType = android.text.InputType.TYPE_CLASS_TEXT
             background = rounded(surface, 14); setPadding(dp(14), dp(10), dp(14), dp(10)); minimumHeight = dp(48)   // the hint is the label; an editable field must not also carry a contentDescription
@@ -117,11 +110,11 @@ class MainActivity : MobileActivity(), TaskActions {
         adapter = TaskAdapter(this, this)
         val list = RecyclerView(this).apply {
             layoutManager = LinearLayoutManager(this@MainActivity); adapter = this@MainActivity.adapter
-            itemAnimator = null; contentDescription = getString(R.string.downloads_list); clipToPadding = false; setPadding(0, 0, 0, dp(96)); overScrollMode = View.OVER_SCROLL_NEVER
+            itemAnimator = null; contentDescription = getString(R.string.downloads_list); clipToPadding = false; setPadding(0, 0, 0, dp(80)); overScrollMode = View.OVER_SCROLL_NEVER
         }
         empty = column().apply {
             gravity = Gravity.CENTER; visibility = View.GONE
-            addView(ImageView(this@MainActivity).apply { setImageResource(R.drawable.brand_emblem); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO; alpha = 0.85f; layoutParams = LinearLayout.LayoutParams(dp(96), dp(96)) })
+            addView(ImageView(this@MainActivity).apply { setImageResource(R.drawable.ic_nav_downloads); setColorFilter(accent); background = rounded(surface, 24); setPadding(dp(20), dp(20), dp(20), dp(20)); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO; alpha = 0.9f; layoutParams = LinearLayout.LayoutParams(dp(80), dp(80)) })
             addView(TextView(this@MainActivity).apply { text = getString(R.string.empty_jobs); textSize = 14f; gravity = Gravity.CENTER; setTextColor(muted); setPadding(dp(32), dp(12), dp(32), 0) })
         }
         val body = FrameLayout(this)
@@ -129,17 +122,50 @@ class MainActivity : MobileActivity(), TaskActions {
         content.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(content, FrameLayout.LayoutParams(-1, -1))
 
-        val fab = ExtendedFloatingActionButton(this).apply {
-            text = getString(R.string.add_links); setIconResource(R.drawable.ic_add)
-            backgroundTintList = android.content.res.ColorStateList.valueOf(accent); setTextColor(paper); iconTint = android.content.res.ColorStateList.valueOf(paper)
+        // A persistent, labelled dock. Selection stays in the download list,
+        // while Browser and Settings open their existing screens.
+        val dock = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL; setPadding(dp(8), dp(4), dp(8), dp(4))
+            background = rounded(surface, 24); elevation = dp(3).toFloat()
+        }
+        val dockParams = FrameLayout.LayoutParams(-1, dp(76), Gravity.BOTTOM).apply { setMargins(dp(16), 0, dp(16), dp(12)) }
+        fun destination(title: Int, drawable: Int, selected: Boolean = false, action: () -> Unit) = MaterialButton(this).apply {
+            text = getString(title); textSize = 10f; isAllCaps = false; isCheckable = selected
+            iconGravity = MaterialButton.ICON_GRAVITY_TOP; setIconResource(drawable); iconSize = dp(22); iconPadding = dp(4)
+            insetTop = 0; insetBottom = 0; minWidth = 0; minimumWidth = dp(48); minHeight = dp(56)
+            setPadding(dp(2), dp(4), dp(2), dp(4)); cornerRadius = dp(16)
+            val states = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
+            backgroundTintList = android.content.res.ColorStateList(states, intArrayOf((accent and 0x00FFFFFF) or 0x20000000, android.graphics.Color.TRANSPARENT))
+            val tint = android.content.res.ColorStateList(states, intArrayOf(accent, muted))
+            setTextColor(tint); iconTint = tint
+            setOnClickListener { action() }
+            layoutParams = LinearLayout.LayoutParams(0, -1, 1f)
+        }
+        fun showDownloads(showHistory: Boolean) {
+            history = showHistory; activeTab.isChecked = !history; historyTab.isChecked = history; render()
+        }
+        activeTab = destination(R.string.nav_downloads, R.drawable.ic_nav_downloads, true) { showDownloads(false) }
+        historyTab = destination(R.string.history, R.drawable.ic_nav_history, true) { showDownloads(true) }
+        dock.addView(activeTab); dock.addView(historyTab)
+        dock.addView(destination(R.string.browser, R.drawable.ic_nav_browser) { startActivity(Intent(this, BrowserActivity::class.java)) })
+        dock.addView(destination(R.string.settings, R.drawable.ic_nav_settings) { startActivity(Intent(this, SettingsActivity::class.java)) })
+        activeTab.isChecked = !history; historyTab.isChecked = history
+        root.addView(dock, dockParams)
+        val fab = FloatingActionButton(this).apply {
+            contentDescription = getString(R.string.add_links); setImageResource(R.drawable.ic_add)
+            backgroundTintList = android.content.res.ColorStateList.valueOf(accent)
+            imageTintList = android.content.res.ColorStateList.valueOf(paper)
+            shapeAppearanceModel = shapeAppearanceModel.toBuilder().setAllCornerSizes(dp(20).toFloat()).build()
             setOnClickListener { addLinks() }
         }
-        val fabParams = FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { setMargins(dp(16), dp(16), dp(16), dp(16)) }
+        val fabParams = FrameLayout.LayoutParams(dp(56), dp(56), Gravity.BOTTOM or Gravity.END).apply { setMargins(dp(20), 0, dp(20), dp(104)) }
         root.addView(fab, fabParams)
+        content.setPadding(dp(20), dp(8), dp(20), dp(96))
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, inset ->
             val bars = inset.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
-            content.setPadding(dp(16) + bars.left, dp(8) + bars.top, dp(16) + bars.right, 0)
-            fabParams.setMargins(dp(16), dp(16), dp(16), dp(16) + bars.bottom); fab.layoutParams = fabParams
+            content.setPadding(dp(20) + bars.left, dp(8) + bars.top, dp(20) + bars.right, dp(96) + bars.bottom)
+            dockParams.setMargins(dp(16) + bars.left, 0, dp(16) + bars.right, dp(12) + bars.bottom); dock.layoutParams = dockParams
+            fabParams.setMargins(dp(20) + bars.left, 0, dp(20) + bars.right, dp(104) + bars.bottom); fab.layoutParams = fabParams
             inset
         }
         setContentView(root)
@@ -191,8 +217,7 @@ class MainActivity : MobileActivity(), TaskActions {
         val now = System.currentTimeMillis()
         val finished = setOf(TaskState.COMPLETED, TaskState.CANCELLED)
         val activeCount = all.count { it.state !in finished }
-        activeTab.text = getString(R.string.tab_count, getString(R.string.active_jobs), activeCount)
-        historyTab.text = getString(R.string.tab_count, getString(R.string.history), all.size - activeCount)
+        pageTitle.text = getString(if (history) R.string.history else R.string.nav_downloads)
         summary.text = getString(R.string.summary_line, activeCount, all.size - activeCount)
         val open = Schedule.now(MobilePreferences(this).window)
         val inTab = all.asReversed().filter {
@@ -395,7 +420,7 @@ class MainActivity : MobileActivity(), TaskActions {
     private fun addLinks(prefill: String = "") {
         val prefs = MobilePreferences(this)
         val form = column().apply { setPadding(dp(20), dp(8), dp(20), 0) }
-        val input = EditText(this).apply { hint = getString(R.string.links_hint); minLines = 4; maxLines = 8; setText(prefill)
+        val input = EditText(this).apply { hint = getString(R.string.links_hint); minLines = 3; maxLines = 6; setTextColor(ink); setHintTextColor(muted); background = rounded(surface, 16); setPadding(dp(16), dp(14), dp(16), dp(14)); setText(prefill)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE }
         val summary = label("", 13f)
         val audio = CheckBox(this).apply { minimumHeight = dp(48); text = getString(R.string.audio_only_all); isChecked = prefs.defaultAudio; setTextColor(ink) }
@@ -406,7 +431,7 @@ class MainActivity : MobileActivity(), TaskActions {
             if (text.isNotBlank()) input.setText(if (input.text.isBlank()) text else input.text.toString() + "\n" + text)
         })
         val dialog = AlertDialog.Builder(this).setTitle(R.string.add_links).setView(ScrollView(this).apply { addView(form) })
-            .setPositiveButton(R.string.automatic_download, null).setNeutralButton(R.string.file_download, null).setNegativeButton(R.string.cancel, null).create()
+            .setPositiveButton(R.string.download_action, null).setNegativeButton(R.string.cancel, null).create()
         fun links() = LinkPlan.parse(input.text.toString())
         input.doAfterTextChanged {
             val urls = links(); val counts = LinkPlan.summarize(urls)
@@ -422,16 +447,7 @@ class MainActivity : MobileActivity(), TaskActions {
                 else DownloadService.startMany(this, urls, prefs.defaultHeight, audio.isChecked)
                 dialog.dismiss()
             }
-            // "Direct file": treat every link as a plain file, whatever the address looks like.
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                val urls = links()
-                if (urls.isEmpty() || urls.any { !LinkUtils.isPublicHttpUrl(it) }) { input.error = getString(R.string.bad_link); return@setOnClickListener }
-                if (urls.any { LinkPlan.isMediaHost(it) && LinkPlan.extension(it) !in setOf("mp4", "mp3", "m4a", "webm", "jpg", "png") }) {
-                    input.error = getString(R.string.direct_link_help); return@setOnClickListener
-                }
-                urls.forEach { DownloadService.start(this, it, null, false, "", "file") }
-                dialog.dismiss()
-            }
+
         }
         dialog.show()
     }

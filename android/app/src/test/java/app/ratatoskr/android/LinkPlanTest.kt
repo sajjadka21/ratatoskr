@@ -30,6 +30,12 @@ class LinkPlanTest {
         assertEquals(listOf("https://a.org/x.zip", "https://youtu.be/abc"), urls)
         assertEquals(LinkPlan.Summary(1, 1), LinkPlan.summarize(urls))
     }
+    @Test fun unsupportedGenericLinksMayUseGuardedFileTransferButMediaAndAuthNeverDo() {
+        org.junit.Assert.assertTrue(LinkPlan.mayTryFile("https://example.org/download?id=42", "unsupported_media"))
+        org.junit.Assert.assertFalse(LinkPlan.mayTryFile("https://instagram.com/reel/abc", "unsupported_media"))
+        org.junit.Assert.assertFalse(LinkPlan.mayTryFile("https://example.org/download", "auth_required"))
+        org.junit.Assert.assertFalse(LinkPlan.mayTryFile("https://example.org/download", "network"))
+    }
     @Test fun categories() {
         assertEquals("Video", FileCategory.folder("a.mp4", "video/mp4"))
         assertEquals("Music", FileCategory.folder("a.m4a", "audio/mp4"))

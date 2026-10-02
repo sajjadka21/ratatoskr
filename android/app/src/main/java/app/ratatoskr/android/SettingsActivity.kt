@@ -156,7 +156,7 @@ class SettingsActivity : MobileActivity() {
         setPadding(dp(4), dp(20), 0, dp(6))
     }
     private fun card(build: LinearLayout.() -> Unit) = column().apply {
-        setPadding(dp(14), dp(6), dp(14), dp(10)); background = rounded(surface, 18, accent and 0x33FFFFFF); build()
+        setPadding(dp(14), dp(6), dp(14), dp(10)); background = rounded(surface, 16); build()
     }
     private fun LinearLayout.toggle(text: Int, checked: Boolean, onChange: (Boolean) -> Unit) = addView(SwitchMaterial(this@SettingsActivity).apply {
         this.text = getString(text); isChecked = checked; setTextColor(ink); setPadding(0, dp(10), 0, dp(10))

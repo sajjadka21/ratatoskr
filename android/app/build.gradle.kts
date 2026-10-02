@@ -11,8 +11,8 @@ android {
         applicationId = "app.ratatoskr.android"
         minSdk = 26          // Android 8; from Android 10 saving to Downloads needs no storage permission
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.2.3"
+        versionCode = 10
+        versionName = "1.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         resourceConfigurations += listOf("en", "fa")   // library strings in other languages are dead weight
         // The CPUs shipped are chosen by the per-ABI splits below; abiFilters cannot be combined with them.

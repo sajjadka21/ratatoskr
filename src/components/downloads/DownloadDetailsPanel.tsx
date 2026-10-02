@@ -149,7 +149,7 @@ export function DownloadDetailsPanel({
         </button>
       </header>
 
-      <div className="details__body">
+      <div className="details__body" tabIndex={0}>
         <section className="details__hero">
           <svg width="76" height="76" viewBox="0 0 76 76" className={`details__ring details__ring--${status}`} aria-hidden="true">
             <circle cx="38" cy="38" r="30" className="details__ring-track" />
@@ -310,8 +310,8 @@ export function DownloadDetailsPanel({
 
         <ChecksSection downloadId={current.id} completed={status === "completed"} onError={onError} />
 
-        <section className="details__section">
-          <h3>{t("details.activity")}</h3>
+        <details key={current.id} className="details__section details__disclosure">
+          <summary>{t("details.activity")}</summary>
           {activity.length ? (
             <ol className="details__timeline">
               {[...activity].reverse().map((entry, index) => (
@@ -328,7 +328,7 @@ export function DownloadDetailsPanel({
           ) : (
             <p className="details__note">{t("details.activityEmpty")}</p>
           )}
-        </section>
+        </details>
       </div>
     </aside>
   );

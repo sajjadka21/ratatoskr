@@ -59,7 +59,7 @@ class SmokeTest {
     @Test fun homeScreenShowsTheBrandTheTabsAndTheAddButton() {
         ActivityScenario.launch(MainActivity::class.java).use {
             onView(withText("Ratatoskr")).check(matches(isDisplayed()))
-            onView(withText(R.string.add_links)).check(matches(isDisplayed()))
+            onView(withContentDescription(R.string.add_links)).check(matches(isDisplayed()))
             onView(withText(R.string.empty_jobs)).check(matches(isDisplayed()))
             screenshot("home-empty")
         }
@@ -67,9 +67,21 @@ class SmokeTest {
 
     @Test fun addingLinksCountsFilesAndVideosAsYouType() {
         ActivityScenario.launch(MainActivity::class.java).use {
-            onView(withText(R.string.add_links)).perform(click())
+            onView(withContentDescription(R.string.add_links)).perform(click())
             onView(isAssignableFrom(EditText::class.java)).perform(typeText("https://example.org/p[01-03].jpg https://youtu.be/abc"), closeSoftKeyboard())
             onView(withText(context.getString(R.string.links_summary, 4, 3, 1))).check(matches(isDisplayed()))
+        }
+    }
+
+    @Test fun addLinkHasOneDownloadActionAndTheDockOpensSettings() {
+        ActivityScenario.launch(MainActivity::class.java).use {
+            onView(withText(R.string.settings)).perform(click())
+            onView(withText(R.string.section_network)).check(matches(isDisplayed()))
+            androidx.test.espresso.Espresso.pressBack()
+            onView(withContentDescription(R.string.add_links)).perform(click())
+            onView(withText(R.string.download_action)).check(matches(isDisplayed()))
+            onView(withText(R.string.file_download)).check(androidx.test.espresso.assertion.ViewAssertions.doesNotExist())
+            screenshot("add-link-single-action")
         }
     }
 

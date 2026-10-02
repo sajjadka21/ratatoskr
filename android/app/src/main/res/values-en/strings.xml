@@ -47,7 +47,8 @@
     <string name="error_retry">Download interrupted. Your partial files are kept; try again.</string>
     <string name="active_jobs">Active</string>
     <string name="history">History</string>
-    <string name="empty_jobs">No downloads here yet. Share a link or paste one to start.</string>
+    <string name="empty_jobs">Your downloads start here.
+Tap + to add a link.</string>
     <string name="add_links">Add links</string>
     <string name="links_hint">Paste one or more HTTP / HTTPS links</string>
     <string name="media_download">Video, audio or Instagram photo</string>
@@ -194,11 +195,13 @@
     <string name="browser_added">Added to downloads.</string>
     <string name="downloads_list">Downloads list</string>
     <string name="automatic_download">Download automatically</string>
-    <string name="add_link_help">Automatic chooses the file or media downloader. For Instagram posts and video pages, use Automatic; Direct file requires a link to the file itself.</string>
+    <string name="add_link_help">Paste a file or media page link. Ratatoskr chooses how to download it.</string>
     <string name="direct_link_help">Direct file needs the actual file URL. For a media page, choose Automatic to find items and qualities.</string>
     <string name="checking_help">Finding downloadable items and available qualities. The download starts after you choose.</string>
     <string name="error_not_file">This address returned a web page, not a file. Add it again with Automatic or use the actual file link.</string>
     <string name="error_integrity">The file response was incomplete or changed. Retry; no incomplete file was published.</string>
     <string name="error_write">Cannot save the file. Check the save folder and free storage, then retry.</string>
     <string name="transfer_settings_hint">Connection count and speed changes apply when a download starts or resumes.</string>
+    <string name="download_action">Download</string>
+    <string name="nav_downloads">Downloads</string>
 </resources>

@@ -2,6 +2,10 @@
 
 ## 1.2.0
 
+- Desktop: the close button (X) now differs from minimising. Minimising never stops anything; X can keep going in the tray, quit, or ask when something is downloading or scheduled (Settings → close button). Existing yes/no choice is respected.
+- Desktop: the list refreshes itself every few seconds and when the window returns; Ctrl+R / F5 refresh the list instead of reloading the page.
+- Desktop: noticing copied links is now off by default (the browser extension's right-click is the deliberate way in); download rows have a faint band and a hairline between them; many parts scroll inside their own box.
+
 - Android: category filter chips on the list, automatic retry (3 times, 10 s / 30 s / 90 s) after a dropped connection or a busy server, a sound when a download finishes, and "Open with Ratatoskr" for file links.
 
 - Desktop: **Part info** in the download window — the file drawn as one block per connection, filling as it arrives, plus a per-part table and "Resume support".

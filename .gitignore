@@ -44,3 +44,9 @@ __pycache__/
 /android/.gradle/
 /android/local.properties
 .test-tmp/
+
+# Signing material must never be committed
+*.jks
+*.keystore
+ANDROID_KEYSTORE_BASE64.txt
+RatatoskrSecrets/

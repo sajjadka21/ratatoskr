@@ -11,7 +11,7 @@ people writing it; see "Verification" at the end.
 |---|---|---|
 | Several connections per file, resume, crash recovery | ✅ | ✅ |
 | Fast end of a download (the last part is shared) | ✅ | ✅ |
-| Mirrors, refresh an expired link | ✅ | ⬜ |
+| Mirrors, refresh an expired link | ✅ | 🟡 refresh link; no mirrors |
 | Speed limit | ✅ global, per download, per rule | ✅ global (presets) |
 | Retry after a failure | ✅ backoff, 5 attempts | ✅ 3 attempts for network errors |
 | Disk-space checks, safe file names, no cookies or passwords stored | ✅ | ✅ |
@@ -44,7 +44,7 @@ people writing it; see "Verification" at the end.
 | Share target / "Open with" | ✅ context menu | ✅ share sheet, file links |
 | Browser extension | ✅ Chrome, Edge, Brave, Firefox | ⛔ |
 | Floating drop box, command line | ✅ | ⬜ |
-| Built-in browser with link sniffer | ⬜ | ⬜ |
+| Built-in browser with link sniffer | ⬜ | 🟡 browser and candidate links; no guarantee for protected media |
 
 ## Look and feel
 
@@ -75,14 +75,14 @@ people writing it; see "Verification" at the end.
 | Size | ✅ LTO, strip, `opt-level="s"` | ✅ one APK per CPU, two languages |
 | Oldest system | Windows 10 (Windows 7/8.1 impossible with current Rust and WebView2) | Android 8 |
 | Installer language | ✅ English and Persian picker | n/a |
-| Works without internet at install | ✅ web view runtime embedded | n/a |
+| Works without internet at install | 🟡 WebView2 bootstrapper included; first install may need internet unless runtime already installed | n/a |
 
 ## Quality, safety, support
 
 | | Windows | Android |
 |---|---|---|
 | Automated tests in CI | ✅ Rust, frontend | ✅ unit tests (JVM and Robolectric) |
-| UI tests on a device or emulator | ⬜ | ⬜ |
+| UI tests on a device or emulator | 🟡 frontend component tests; native acceptance pending | 🟡 emulator CI on API 26/29/35; physical acceptance pending |
 | Local-network (SSRF) protection, no telemetry, no accounts | ✅ | ✅ |
 | Diagnostics for bug reports | ✅ report file | ✅ info share without links or names |
 | Dependency audit, CodeQL | ✅ | ✅ |
@@ -93,15 +93,15 @@ people writing it; see "Verification" at the end.
 - 🔒 Android release keystore and the CI secrets (already required by the release workflow).
 - 🔒 Browser-extension store submissions.
 - 🔒 Real-device acceptance in `docs/mobile-acceptance.md`; until it passes, releases stay prereleases.
-- 🔒 Screenshots of the Android app for the README (none can be taken in CI).
+- Emulator screenshots are captured by Android UI CI; physical-device screenshots remain useful for launch.
 
 ## Backlog, most useful first
 
-1. Emulator UI smoke test in CI (Android) so a broken screen cannot reach a release.
-2. Android: mirrors and "refresh link", completion action, backup of the list.
-3. Android: built-in browser with a link sniffer.
-4. Windows: Windows-on-ARM build.
-5. Accessibility pass (focus order, contrast, screen-reader names) on both.
+1. Physical acceptance of transfers, background recovery, installation and updates.
+2. Android: mirrors, backup of the list, queue priorities.
+3. Official browser-extension store listings.
+4. Windows-on-ARM distributable (compile check already runs).
+5. Continued accessibility coverage beyond smoke flows.
 
 ## Verification
 

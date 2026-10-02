@@ -1,0 +1,59 @@
+.close-dialog::backdrop { background: rgba(12, 16, 20, 0.58); }
+.close-dialog:not([open]) { display: none; }
+.close-dialog { max-block-size: calc(100dvh - 32px); overflow: auto; }
+.close-dialog {
+  inline-size: min(440px, calc(100vw - 32px));
+  padding: 20px;
+  display: grid;
+  gap: 12px;
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
+}
+
+.close-dialog h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.close-dialog p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.close-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.close-dialog__actions button {
+  padding: 8px 14px;
+  color: inherit;
+  background: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md, 8px);
+  font: inherit;
+  cursor: pointer;
+}
+
+.close-dialog__actions .close-dialog__primary {
+  color: var(--bg-app);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.close-dialog__remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.close-dialog__error {
+  color: var(--danger, #d4523f);
+}

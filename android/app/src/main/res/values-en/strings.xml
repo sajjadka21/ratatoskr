@@ -182,4 +182,23 @@
     <string name="welcome_title">Welcome to Ratatoskr</string>
     <string name="welcome_body">Send a link from any app with Share, or tap Add links. If you copied a link, the app offers to download it when it opens.\n\nSo that long downloads are not stopped when the screen turns off, exclude Ratatoskr from battery limits.</string>
     <string name="welcome_done">Got it</string>
+    <string name="change_link">Change link</string>
+    <string name="link_changed">Link changed; the download carries on from what was saved.</string>
+    <string name="browser">Browser</string>
+    <string name="browser_address">Address or search</string>
+    <string name="found_media">Media found: %1$d</string>
+    <string name="found_title">Media on this page</string>
+    <string name="nothing_found">No media seen on this page yet. Play the video and try again.</string>
+    <string name="download_page">Download this page</string>
+    <string name="download_file_q">Download %1$s?</string>
+    <string name="browser_added">Added to downloads.</string>
+    <string name="downloads_list">Downloads list</string>
+    <string name="automatic_download">Download automatically</string>
+    <string name="add_link_help">Automatic chooses the file or media downloader. For Instagram posts and video pages, use Automatic; Direct file requires a link to the file itself.</string>
+    <string name="direct_link_help">Direct file needs the actual file URL. For a media page, choose Automatic to find items and qualities.</string>
+    <string name="checking_help">Finding downloadable items and available qualities. The download starts after you choose.</string>
+    <string name="error_not_file">This address returned a web page, not a file. Add it again with Automatic or use the actual file link.</string>
+    <string name="error_integrity">The file response was incomplete or changed. Retry; no incomplete file was published.</string>
+    <string name="error_write">Cannot save the file. Check the save folder and free storage, then retry.</string>
+    <string name="transfer_settings_hint">Connection count and speed changes apply when a download starts or resumes.</string>
 </resources>

@@ -1,4 +1,4 @@
-import { StrictMode, useCallback, useEffect, useState } from "react";
+import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -40,6 +40,7 @@ function applyToDocument(preferences: UiPreferences) {
 
 function Root() {
   const [preferences, setPreferences] = useState<UiPreferences | null>(null);
+  const preferenceRevision = useRef(0);
   useEffect(() => {
     if (!preferences) return;
     const apply = () => applyToDocument(preferences);
@@ -58,11 +59,12 @@ function Root() {
   }, []);
 
   const change = useCallback(async (next: UiPreferences) => {
+    const revision = ++preferenceRevision.current;
     applyToDocument(next);
     setPreferences(next);
     try {
       const saved = await invoke<UiPreferences>("set_ui_preferences", { preferences: next });
-      setPreferences(saved);
+      if (revision === preferenceRevision.current) setPreferences(saved);
     } catch (reason) {
       console.error("Could not save preferences:", reason);
     }

@@ -42,7 +42,10 @@ object MobileText {
         "rate_limited" -> R.string.error_rate
         "auth_required" -> R.string.error_private
         "not_found" -> R.string.error_removed
-        "unsupported_media", "not_a_file", "invalid_output" -> R.string.error_unsupported
+        "not_a_file" -> R.string.error_not_file
+        "invalid_range", "incomplete" -> R.string.error_integrity
+        "cannot_write" -> R.string.error_write
+        "unsupported_media", "invalid_output" -> R.string.error_unsupported
         "system_timeout" -> R.string.error_timeout
         "storage_permission" -> R.string.error_storage
         "bad_link" -> R.string.bad_link

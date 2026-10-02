@@ -67,6 +67,14 @@ jobs:
           gradle-version: 8.9
       - working-directory: android
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-unit-reports
+          path: |
+            android/app/build/reports/tests/
+            android/app/build/test-results/
+          if-no-files-found: ignore
       - name: Verify all native payloads in the APK
         run: |
           for apk in android/app/build/outputs/apk/debug/*.apk; do
@@ -77,6 +85,23 @@ jobs:
           name: android-debug-apks
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+  rust-arm:
+    name: Rust on Windows ARM (check)
+    runs-on: windows-11-arm
+    # Experimental: shows whether the app builds for Windows on ARM before a release is made for it.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: npm ci
+      - run: npm run build
+      - run: cargo check --workspace
 
   telegram-bot:
     name: Telegram bot (tests)

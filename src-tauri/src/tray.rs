@@ -21,8 +21,62 @@ const MENU_PAUSE_ALL: &str = "tray-pause-all";
 pub const TRAY_ACTION_EVENT: &str = "tray-action";
 const MENU_QUIT: &str = "tray-quit";
 
-/// Setting key; closing the window hides it to the tray unless turned off.
+/// Setting key kept from earlier versions: `false` quits, `true` hides to the tray.
 pub const SETTING_CLOSE_TO_TRAY: &str = "ui_close_to_tray";
+/// What the window's close button does: `ask`, `tray` or `quit`. Takes precedence over the older key.
+pub const SETTING_CLOSE_ACTION: &str = "ui_close_action";
+
+/// What closing the main window means. Minimising never reaches this: it keeps everything running.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CloseAction {
+    /// Ask, but only when quitting would stop something (a download or a schedule).
+    Ask,
+    /// Hide to the tray; downloads keep running.
+    Tray,
+    /// Quit; running downloads are paused and resume next time.
+    Quit,
+}
+
+impl CloseAction {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Ask => "ask",
+            Self::Tray => "tray",
+            Self::Quit => "quit",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "ask" => Some(Self::Ask),
+            "tray" => Some(Self::Tray),
+            "quit" => Some(Self::Quit),
+            _ => None,
+        }
+    }
+}
+
+/// The new setting wins; otherwise the old yes/no one; otherwise ask.
+pub fn resolve_close_action(
+    action: Option<&str>,
+    legacy_close_to_tray: Option<&str>,
+) -> CloseAction {
+    action
+        .and_then(CloseAction::parse)
+        .unwrap_or(match legacy_close_to_tray {
+            Some("false") => CloseAction::Quit,
+            Some("true") => CloseAction::Tray,
+            _ => CloseAction::Ask,
+        })
+}
+
+pub fn close_action(state: &AppState) -> CloseAction {
+    let read = |key: &str| state.storage.get_setting(key).ok().flatten();
+    resolve_close_action(
+        read(SETTING_CLOSE_ACTION).as_deref(),
+        read(SETTING_CLOSE_TO_TRAY).as_deref(),
+    )
+}
 
 /// Handles to the tray's menu items so their text can follow the UI language.
 pub struct TrayMenu {
@@ -181,5 +235,50 @@ pub fn update(
             let _ = menu.pause_all.set_text(&labels.pause_all);
             let _ = menu.quit.set_text(&labels.quit);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn with_nothing_saved_the_app_asks() {
+        assert_eq!(resolve_close_action(None, None), CloseAction::Ask);
+    }
+
+    #[test]
+    fn the_older_yes_no_setting_is_still_honoured() {
+        assert_eq!(resolve_close_action(None, Some("true")), CloseAction::Tray);
+        assert_eq!(resolve_close_action(None, Some("false")), CloseAction::Quit);
+        assert_eq!(resolve_close_action(None, Some("maybe")), CloseAction::Ask);
+    }
+
+    #[test]
+    fn the_new_setting_wins_over_the_old_one() {
+        assert_eq!(
+            resolve_close_action(Some("quit"), Some("true")),
+            CloseAction::Quit
+        );
+        assert_eq!(
+            resolve_close_action(Some("tray"), Some("false")),
+            CloseAction::Tray
+        );
+        assert_eq!(
+            resolve_close_action(Some("ask"), Some("true")),
+            CloseAction::Ask
+        );
+        assert_eq!(
+            resolve_close_action(Some("garbage"), Some("false")),
+            CloseAction::Quit
+        );
+    }
+
+    #[test]
+    fn actions_round_trip_through_their_names() {
+        for action in [CloseAction::Ask, CloseAction::Tray, CloseAction::Quit] {
+            assert_eq!(CloseAction::parse(action.as_str()), Some(action));
+        }
+        assert_eq!(CloseAction::parse(""), None);
     }
 }

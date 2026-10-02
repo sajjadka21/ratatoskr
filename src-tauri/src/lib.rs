@@ -841,6 +841,72 @@ fn set_start_with_windows(enabled: bool) -> Result<bool, String> {
     Ok(dm_system::autostart::enabled(&application))
 }
 
+const CLOSE_REQUESTED_EVENT: &str = "close-requested";
+
+/// True when closing the app would stop something: a transfer in progress or waiting, or an enabled schedule.
+fn has_background_work(state: &AppState) -> bool {
+    let busy = state.storage.list_downloads().is_ok_and(|downloads| {
+        downloads.iter().any(|download| {
+            matches!(
+                download.status,
+                DownloadStatus::Probing
+                    | DownloadStatus::Queued
+                    | DownloadStatus::Downloading
+                    | DownloadStatus::Retrying
+                    | DownloadStatus::Finalizing
+            )
+        })
+    });
+    busy || state
+        .storage
+        .list_queue_schedules()
+        .is_ok_and(|schedules| schedules.iter().any(|schedule| schedule.enabled))
+}
+
+#[tauri::command]
+fn get_close_action(state: State<'_, AppState>) -> String {
+    tray::close_action(&state).as_str().to_owned()
+}
+
+#[tauri::command]
+fn set_close_action(state: State<'_, AppState>, action: String) -> Result<String, String> {
+    let action =
+        tray::CloseAction::parse(&action).ok_or_else(|| "unknown close action".to_owned())?;
+    state
+        .storage
+        .set_setting(tray::SETTING_CLOSE_ACTION, action.as_str())
+        .map_err(|error| error.to_string())?;
+    Ok(action.as_str().to_owned())
+}
+
+/// The answer to the "keep downloading or quit?" question. `remember` saves it for next time.
+#[tauri::command]
+fn resolve_close(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    action: String,
+    remember: bool,
+) -> Result<(), String> {
+    let action = tray::CloseAction::parse(&action)
+        .filter(|action| *action != tray::CloseAction::Ask)
+        .ok_or_else(|| "choose tray or quit".to_owned())?;
+    if remember {
+        state
+            .storage
+            .set_setting(tray::SETTING_CLOSE_ACTION, action.as_str())
+            .map_err(|error| error.to_string())?;
+    }
+    match action {
+        tray::CloseAction::Quit => app.exit(0),
+        _ => {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.hide();
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Loads the switched-on plugins into the download engine.
 fn apply_plugins(state: &AppState) {
     let disabled = plugin_store::parse_disabled(
@@ -3404,21 +3470,29 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing hides to the tray so downloads keep running; Quit in
-            // the tray menu really exits.
-            // Only the main window: a small download window really closes.
+            // The close button (X) is not the same as minimising. Minimising never ends up here and keeps
+            // everything running. X follows the user's choice: keep going in the tray, quit, or ask when
+            // quitting would stop a download or a schedule. A small download window always just closes.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() != "main" {
                     return;
                 }
                 let app = window.app_handle();
-                let hide = app.try_state::<AppState>().is_some_and(|state| {
-                    tray::close_to_tray_enabled(&state)
-                        && state.tray_menu.lock().is_ok_and(|menu| menu.is_some())
-                });
-                if hide {
-                    api.prevent_close();
-                    let _ = window.hide();
+                let Some(state) = app.try_state::<AppState>() else {
+                    return;
+                };
+                let tray_ready = state.tray_menu.lock().is_ok_and(|menu| menu.is_some());
+                match tray::close_action(&state) {
+                    tray::CloseAction::Quit => {}
+                    tray::CloseAction::Tray if tray_ready => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                    tray::CloseAction::Ask if tray_ready && has_background_work(&state) => {
+                        api.prevent_close();
+                        let _ = window.emit(CLOSE_REQUESTED_EVENT, ());
+                    }
+                    _ => {}
                 }
             }
         })
@@ -3525,6 +3599,9 @@ pub fn run() {
             get_download_checks,
             get_download_parts,
             list_plugins,
+            get_close_action,
+            set_close_action,
+            resolve_close,
             import_plugin,
             remove_plugin,
             set_plugin_enabled,

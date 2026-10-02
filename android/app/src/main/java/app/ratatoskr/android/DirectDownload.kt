@@ -16,11 +16,13 @@ object DirectDownload {
         val partial = File(directory, "transfer.part")
         val journal = File(directory, "transfer.json")
         var saved = runCatching { JSONObject(journal.readText()) }.getOrNull()
-        if (saved?.optString("source") == url && saved.optBoolean("completed")) {
-            val output = File(directory, LinkUtils.safeFileName(saved.optString("name")))
+        if (saved != null && LinkUtils.sameResource(saved.optString("source"), url) && saved.optBoolean("completed")) {
+            val name = LinkUtils.safeFileName(saved.optString("name"))
+            val output = if (saved.optBoolean("output_subdirectory")) outputFile(directory, name)
+                else File(directory, name.takeUnless { it in setOf("transfer.json", "transfer.part", "segments.json", "segments.part", "transfer.json.tmp") } ?: "output/$name")
             if (output.isFile && output.length() == saved.optLong("completed_bytes", -1)) return output
         }
-        var offset = if (saved?.optString("source") == url) partial.length() else 0L
+        var offset = if (saved != null && LinkUtils.sameResource(saved.optString("source"), url)) partial.length() else 0L
         var validators = HttpValidators(saved?.optString("etag")?.takeIf { it.isNotEmpty() }, saved?.optString("modified")?.takeIf { it.isNotEmpty() })
         if (HttpResumePolicy.ifRange(validators) == null) offset = 0
         var connection = openConnection(url, if (offset > 0) mapOf("Range" to "bytes=$offset-", "If-Range" to HttpResumePolicy.ifRange(validators)!!) else emptyMap(), control::check)
@@ -36,7 +38,7 @@ object DirectDownload {
             }
             if (decision == ResumeDecision.COMPLETE) {
                 val name = saved?.optString("name")?.takeIf { it.isNotEmpty() } ?: "file"
-                return complete(partial, File(directory, LinkUtils.safeFileName(name)), journal, saved ?: JSONObject())
+                return complete(partial, outputFile(directory, LinkUtils.safeFileName(name)), journal, saved ?: JSONObject())
             }
             SafeHttp.requireSuccess(response.status)
             if (decision == ResumeDecision.REJECT || (decision == ResumeDecision.RESTART && response.status != 200)) throw TransferFailure("invalid_range")
@@ -88,15 +90,17 @@ object DirectDownload {
             control.check()
             if (!HttpResumePolicy.transferFinished(expectedBody, received) || !HttpResumePolicy.transferFinished(total, partial.length())) throw TransferFailure("incomplete")
             store.update(task.id, ContentValues().apply { put("bytes_done", partial.length()); put("total_bytes", total ?: partial.length()); put("file_name", name) })
-            return complete(partial, File(directory, name), journal, saved)
+            return complete(partial, outputFile(directory, name), journal, saved)
         } finally { connection.disconnect() }
     }
     private fun complete(partial: File, output: File, journal: File, metadata: JSONObject): File {
         if (!partial.renameTo(output)) throw TransferFailure("cannot_write")
-        metadata.put("completed", true).put("completed_bytes", output.length())
+        metadata.put("completed", true).put("completed_bytes", output.length()).put("output_subdirectory", true)
         val temp = File(journal.parentFile, "transfer.json.tmp")
         temp.writeText(metadata.toString())
         if (!temp.renameTo(journal)) { journal.writeText(metadata.toString()); temp.delete() }
         return output
     }
+    internal fun outputFile(directory: File, name: String): File =
+        File(File(directory, "output").apply { if (!isDirectory && !mkdirs()) throw TransferFailure("cannot_write") }, name)
 }

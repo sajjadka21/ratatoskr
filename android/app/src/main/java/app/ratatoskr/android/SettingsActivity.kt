@@ -18,11 +18,22 @@ import com.google.android.material.switchmaterial.SwitchMaterial
 
 /** All settings on one scrolling page. Every control saves the moment it changes; there is no Save button. */
 class SettingsActivity : MobileActivity() {
+    private lateinit var settingsScroll: ScrollView
+    private var rebuilding = false
+    private fun rebuildAfterSelection() {
+        if (rebuilding || isFinishing || isDestroyed) return
+        rebuilding = true
+        window.decorView.post { if (!isFinishing && !isDestroyed) recreate() }
+    }
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putInt("settings-scroll", settingsScroll.scrollY)
+        super.onSaveInstanceState(outState)
+    }
     private lateinit var prefs: MobilePreferences
     private val pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            prefs.saveTree = uri.toString(); recreate()
+            prefs.saveTree = uri.toString(); rebuildAfterSelection()
         }
     }
     private val pickPlugin = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) importPlugin(uri) }
@@ -30,7 +41,7 @@ class SettingsActivity : MobileActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = MobilePreferences(this)
-        val root = ScrollView(this).apply { setBackgroundColor(paper); clipToPadding = false }
+        val root = ScrollView(this).also { settingsScroll = it }.apply { setBackgroundColor(paper); clipToPadding = false }
         val page = column()
         root.addView(page)
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, inset ->
@@ -59,8 +70,9 @@ class SettingsActivity : MobileActivity() {
         page.addView(card {
             slider(R.string.connections_value, 1, 8, prefs.connections) { prefs.connections = it }
             slider(R.string.parallel_value, 1, 3, prefs.concurrency) { prefs.concurrency = it; wake() }
-            val limits = listOf(0L, 256L, 512L, 1024L, 2048L, 5120L)
-            choice(R.string.speed_setting, limits.map { if (it == 0L) getString(R.string.speed_unlimited) else Format.speed(it * 1024) }, limits.indexOf(prefs.speedLimit / 1024).let { if (it < 0) 0 else it }) { prefs.speedLimit = limits[it] * 1024 }
+            val limits = (listOf(0L, 256L, 512L, 1024L, 2048L, 5120L).map { it * 1024 } + prefs.speedLimit).distinct().sorted()
+            choice(R.string.speed_setting, limits.map { if (it == 0L) getString(R.string.speed_unlimited) else Format.speed(it) }, limits.indexOf(prefs.speedLimit)) { prefs.speedLimit = limits[it] }
+            addView(label(getString(R.string.transfer_settings_hint), 12f).apply { setTextColor(muted) })
             toggle(R.string.category_setting, prefs.categoryFolders) { prefs.categoryFolders = it }
             addView(label(getString(R.string.folder_setting), 14f))
             addView(label(if (prefs.saveTree.isEmpty()) getString(R.string.folder_default) else Uri.parse(prefs.saveTree).lastPathSegment.orEmpty(), 12f).apply { setTextColor(muted) })
@@ -68,7 +80,7 @@ class SettingsActivity : MobileActivity() {
             folderButtons.addView(button(getString(R.string.folder_choose)) { pickFolder.launch(null) }, LinearLayout.LayoutParams(0, -2, 1f))
             if (prefs.saveTree.isNotEmpty()) folderButtons.addView(button(getString(R.string.folder_reset)) {
                 runCatching { contentResolver.releasePersistableUriPermission(Uri.parse(prefs.saveTree), Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
-                prefs.saveTree = ""; recreate()
+                prefs.saveTree = ""; rebuildAfterSelection()
             }, LinearLayout.LayoutParams(0, -2, 1f))
             addView(folderButtons)
         })
@@ -87,9 +99,9 @@ class SettingsActivity : MobileActivity() {
         page.addView(section(R.string.section_appearance))
         page.addView(card {
             val modes = listOf("system", "light", "dark")
-            choice(R.string.appearance, listOf(R.string.theme_system, R.string.theme_light, R.string.theme_dark).map { getString(it) }, modes.indexOf(prefs.mode).coerceAtLeast(0)) { prefs.mode = modes[it]; recreate() }
+            choice(R.string.appearance, listOf(R.string.theme_system, R.string.theme_light, R.string.theme_dark).map { getString(it) }, modes.indexOf(prefs.mode).coerceAtLeast(0)) { prefs.mode = modes[it]; rebuildAfterSelection() }
             val brands = listOf("midnight-arcane", "ember-forge", "forest-rune", "frost-byte")
-            choice(R.string.app_name, listOf("Midnight Arcane", "Ember Forge", "Forest Rune", "Frost Byte"), brands.indexOf(prefs.brand).coerceAtLeast(0)) { prefs.brand = brands[it]; recreate() }
+            choice(R.string.app_name, listOf("Midnight Arcane", "Ember Forge", "Forest Rune", "Frost Byte"), brands.indexOf(prefs.brand).coerceAtLeast(0)) { prefs.brand = brands[it]; rebuildAfterSelection() }
             val languages = listOf("", "fa", "en")
             choice(R.string.language, listOf(getString(R.string.theme_system), "فارسی", "English"), languages.indexOf(prefs.language).coerceAtLeast(0)) {
                 prefs.language = languages[it]; AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(prefs.language))
@@ -112,6 +124,7 @@ class SettingsActivity : MobileActivity() {
         })
         page.addView(label(getString(R.string.about_details), 12f).apply { setTextColor(muted) })
         setContentView(root)
+        root.post { root.scrollTo(0, savedInstanceState?.getInt("settings-scroll") ?: 0) }
         if (intent.getBooleanExtra(EXTRA_PLUGINS, false)) plugins()
     }
 
@@ -147,24 +160,33 @@ class SettingsActivity : MobileActivity() {
         setOnCheckedChangeListener { _, value -> onChange(value) }
     })
     private fun LinearLayout.choice(title: Int, entries: List<String>, selected: Int, onPick: (Int) -> Unit) {
-        addView(label(getString(title), 14f))
+        val caption = label(getString(title), 14f)
+        addView(caption)
         addView(Spinner(this@SettingsActivity).apply {
-            adapter = ArrayAdapter(this@SettingsActivity, android.R.layout.simple_spinner_dropdown_item, entries); setSelection(selected)
+            id = View.generateViewId(); caption.labelFor = id; minimumHeight = dp(48)
+            adapter = ArrayAdapter(this@SettingsActivity, android.R.layout.simple_spinner_dropdown_item, entries)
+            setSelection(selected)
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                private var first = true   // the first callback is the initial selection, not a change
-                override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) { if (first) first = false else onPick(position) }
+                private var committed = selected
+                override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                    if (position == committed) return
+                    committed = position
+                    onPick(position)
+                }
                 override fun onNothingSelected(parent: AdapterView<*>?) = Unit
             }
         })
     }
+
     private fun LinearLayout.slider(text: Int, min: Int, max: Int, value: Int, onChange: (Int) -> Unit) {
         val caption = label(getString(text, value), 14f)
         addView(caption)
         addView(SeekBar(this@SettingsActivity).apply {
+            minimumHeight = dp(48); contentDescription = caption.text
             this.max = max - min; progress = value - min
             progressTintList = android.content.res.ColorStateList.valueOf(accent); thumbTintList = android.content.res.ColorStateList.valueOf(accent)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) { caption.text = getString(text, progress + min); if (fromUser) onChange(progress + min) }
+                override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) { caption.text = getString(text, progress + min); contentDescription = caption.text; if (fromUser) onChange(progress + min) }
                 override fun onStartTrackingTouch(bar: SeekBar?) = Unit
                 override fun onStopTrackingTouch(bar: SeekBar?) = Unit
             })

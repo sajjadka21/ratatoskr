@@ -27,6 +27,7 @@ import { CategoriesPage } from "./components/categories/CategoriesPage";
 import { StatsPage } from "./components/stats/StatsPage";
 import { CompletionBanner } from "./components/feedback/CompletionBanner";
 import { UpdatePrompt } from "./components/update/UpdatePrompt";
+import { CloseDialog } from "./components/feedback/CloseDialog";
 import { Toasts, type Toast, type ToastKind } from "./components/feedback/Toasts";
 import { AppShell } from "./components/layout/AppShell";
 import type { DownloadSection, SidebarCounts, WorkspacePage } from "./components/layout/Sidebar";
@@ -192,6 +193,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
 
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const lastSelectedIndex = useRef<number | null>(null);
@@ -398,6 +400,31 @@ function App({ preferences, onPreferencesChange }: AppProps) {
       window.clearInterval(timer);
     };
   }, [page]);
+
+  // The list also changes from outside this window (the browser extension, the command line, another
+  // window), so look again every few seconds and whenever the window comes back. Ctrl+R and F5 do the
+  // same instead of reloading the page and losing what is open.
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible") void refreshDownloads().catch(() => undefined);
+    };
+    const timer = window.setInterval(refresh, 4000);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "F5" || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "r")) {
+        event.preventDefault();
+        refresh();
+      }
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [refreshDownloads]);
 
   useEffect(() => {
     void Promise.all([
@@ -1102,6 +1129,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   // ---- keyboard -----------------------------------------------------------
 
   const overlayOpen =
+    closeDialogOpen ||
     modalOpen ||
     paletteOpen ||
     welcomeOpen ||
@@ -1496,6 +1524,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
 
       <Toasts toasts={toasts} onDismiss={dismissToast} />
       <UpdatePrompt />
+      <CloseDialog onOpenChange={setCloseDialogOpen} />
 
       {completionAction ? (
         <CompletionBanner

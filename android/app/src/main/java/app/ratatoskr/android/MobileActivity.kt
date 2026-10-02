@@ -30,12 +30,23 @@ abstract class MobileActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val prefs = MobilePreferences(this)
         val mode = when (prefs.mode) { "dark" -> AppCompatDelegate.MODE_NIGHT_YES; "light" -> AppCompatDelegate.MODE_NIGHT_NO; else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM }
-        if (AppCompatDelegate.getDefaultNightMode() != mode) AppCompatDelegate.setDefaultNightMode(mode)
-        if (prefs.language.isNotEmpty() && AppCompatDelegate.getApplicationLocales().toLanguageTags() != prefs.language)
+        // Scope configuration to this activity; changing a global default during
+        // another activity's recreation can request overlapping recreations.
+        delegate.localNightMode = mode
+        if (AppCompatDelegate.getApplicationLocales().toLanguageTags() != prefs.language)
             AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(prefs.language))
+        appliedAppearance = listOf(prefs.mode, prefs.brand, prefs.language)
         super.onCreate(savedInstanceState)
     }
-    val muted get() = (ink and 0x00FFFFFF) or 0x99000000.toInt()
+    private var appliedAppearance = emptyList<String>()
+    override fun onResume() {
+        super.onResume()
+        val prefs = MobilePreferences(this)
+        if (appliedAppearance != listOf(prefs.mode, prefs.brand, prefs.language)) {
+            window.decorView.post { if (!isFinishing && !isDestroyed) recreate() }
+        }
+    }
+    val muted get() = (ink and 0x00FFFFFF) or 0xC0000000.toInt()
     val success get() = Color.parseColor(if (dark) "#6CCB8F" else "#1F7A45")
     val danger get() = Color.parseColor(if (dark) "#F08A7A" else "#B3392A")
     /** A rounded rectangle, optionally with a thin outline. */
@@ -48,7 +59,7 @@ abstract class MobileActivity : AppCompatActivity() {
         background = rounded((color and 0x00FFFFFF) or 0x2A000000, 20)
     }
     /** A round icon button with a ripple, tinted with the brand colour. */
-    fun icon(res: Int, description: String, tint: Int = accent, size: Int = 40, action: () -> Unit) = ImageButton(this).apply {
+    fun icon(res: Int, description: String, tint: Int = accent, size: Int = 48, action: () -> Unit) = ImageButton(this).apply {
         setImageResource(res); contentDescription = description; setColorFilter(tint)
         val ripple = TypedValue(); theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true)
         setBackgroundResource(ripple.resourceId)

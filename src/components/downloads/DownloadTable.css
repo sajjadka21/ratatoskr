@@ -356,3 +356,20 @@
   opacity: 0.92;
   filter: drop-shadow(0 6px 18px color-mix(in srgb, var(--accent) 35%, transparent));
 }
+
+/* A faint band on every other row and a hairline under each, so rows read as separate items. */
+.download-table__row {
+  border-block-end-color: color-mix(in srgb, var(--border-subtle) 80%, transparent);
+}
+
+.download-table__row--odd {
+  background: color-mix(in srgb, var(--bg-surface) 55%, transparent);
+}
+
+.download-table__row--odd:hover {
+  background: var(--bg-surface);
+}
+
+.download-table__row--selected.download-table__row--odd {
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-surface));
+}

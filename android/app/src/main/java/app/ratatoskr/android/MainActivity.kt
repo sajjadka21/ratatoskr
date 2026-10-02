@@ -74,14 +74,18 @@ class MainActivity : MobileActivity(), TaskActions {
         header.addView(more)
         content.addView(header)
         // shown instead of the header while downloads are selected
-        selectionBar = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(4), 0, dp(8)); visibility = View.GONE }
-        selectionBar.addView(icon(R.drawable.ic_close, getString(R.string.cancel)) { selection.clear(); render() })
+        selectionBar = column().apply { setPadding(0, dp(4), 0, dp(8)); visibility = View.GONE }
+        val selectionHeader = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        selectionHeader.addView(icon(R.drawable.ic_close, getString(R.string.cancel)) { selection.clear(); render() })
         selectionTitle = TextView(this).apply { textSize = 17f; setTextColor(ink); layoutParams = LinearLayout.LayoutParams(0, -2, 1f); setPadding(dp(8), 0, 0, 0) }
-        selectionBar.addView(selectionTitle)
-        selectionBar.addView(button(getString(R.string.select_all)) { selection.addAll(adapter.currentList.map { it.task.id }); render() })
-        selectionBar.addView(icon(R.drawable.ic_pause, getString(R.string.pause)) { applyToSelection(DownloadService.ACTION_PAUSE) })
-        selectionBar.addView(icon(R.drawable.ic_retry, getString(R.string.resume)) { applyToSelection(DownloadService.ACTION_RESUME) })
-        selectionBar.addView(icon(R.drawable.ic_delete, getString(R.string.remove), danger) { removeSelection() })
+        selectionHeader.addView(selectionTitle)
+        selectionHeader.addView(icon(R.drawable.ic_delete, getString(R.string.remove), danger) { removeSelection() })
+        selectionBar.addView(selectionHeader)
+        val selectionActions = LinearLayout(this)
+        selectionActions.addView(button(getString(R.string.select_all)) { selection.addAll(adapter.currentList.map { it.task.id }); render() }, LinearLayout.LayoutParams(0, -2, 1f))
+        selectionActions.addView(button(getString(R.string.pause)) { applyToSelection(DownloadService.ACTION_PAUSE) }, LinearLayout.LayoutParams(0, -2, 1f))
+        selectionActions.addView(button(getString(R.string.resume)) { applyToSelection(DownloadService.ACTION_RESUME) }, LinearLayout.LayoutParams(0, -2, 1f))
+        selectionBar.addView(selectionActions)
         content.addView(selectionBar)
         onBackPressedDispatcher.addCallback(this, leaveSelection)
         banner = column().apply { visibility = View.GONE }

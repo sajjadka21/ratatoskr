@@ -44,6 +44,16 @@ class SmokeTest {
     @Before fun quietApp() {
         // No first-run dialog, no network look-ups and no clipboard banner while the test drives the screen.
         MobilePreferences(context).apply { onboarded = true; autoUpdateCheck = false; watchClipboard = false }
+        val permission = when {
+            android.os.Build.VERSION.SDK_INT >= 33 -> android.Manifest.permission.POST_NOTIFICATIONS
+            android.os.Build.VERSION.SDK_INT < 29 -> android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+            else -> null
+        }
+        if (permission != null) {
+            InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("pm grant ${context.packageName} $permission").use {
+                android.os.ParcelFileDescriptor.AutoCloseInputStream(it).use { stream -> stream.readBytes() }
+            }
+        }
     }
 
     @Test fun homeScreenShowsTheBrandTheTabsAndTheAddButton() {

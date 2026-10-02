@@ -155,7 +155,8 @@ class AppearanceLifecycleTest {
         val history = views(content(activity)).filterIsInstance<com.google.android.material.button.MaterialButton>().first {
             it.text.toString().startsWith(activity.getString(R.string.history))
         }
-        assertTrue(history.performClick())
+        history.performClick()
+        assertTrue(history.isChecked)
         views(content(activity)).filterIsInstance<EditText>().first().setText("kept history search")
         prefs.mode = "dark"
         controller.recreate().visible(); idle()
@@ -210,7 +211,7 @@ class AppearanceLifecycleTest {
         val holder = adapter.onCreateViewHolder(list, 0)
         adapter.onBindViewHolder(holder, 0)
         assertEquals(View.VISIBLE, holder.error.visibility)
-        assertEquals(activity.getString(R.string.error_unsupported), holder.error.text.toString())
+        assertEquals(activity.getString(R.string.error_not_file), holder.error.text.toString())
         assertTrue(holder.error.text.isNotBlank())
         assertTrue(views(holder.buttons).any { it.contentDescription?.toString() == activity.getString(R.string.resume) && it.isEnabled })
     }

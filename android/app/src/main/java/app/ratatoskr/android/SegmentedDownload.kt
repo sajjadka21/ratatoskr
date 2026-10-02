@@ -115,11 +115,11 @@ object SegmentedDownload {
         control.check()
         if (segments.any { !it.finished } || received.get() < plan.total) throw TransferFailure("incomplete")
 
-        val output = File(directory, LinkUtils.safeFileName(fileName.ifEmpty { plan.name }))
+        val output = DirectDownload.outputFile(directory, LinkUtils.safeFileName(fileName.ifEmpty { plan.name }))
         if (!part.renameTo(output)) throw TransferFailure("cannot_write")
         // Same shape as the single-stream journal, so a finished download is recognised either way.
         val finished = JSONObject().put("source", url).put("name", output.name).put("completed", true)
-            .put("completed_bytes", output.length()).put("total", plan.total)
+            .put("completed_bytes", output.length()).put("total", plan.total).put("output_subdirectory", true)
             .put("etag", plan.validators.etag.orEmpty()).put("modified", plan.validators.lastModified.orEmpty())
         File(directory, "transfer.json").writeText(finished.toString())
         journal.delete()

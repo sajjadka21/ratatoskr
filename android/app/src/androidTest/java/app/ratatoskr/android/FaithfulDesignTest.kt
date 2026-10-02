@@ -54,6 +54,7 @@ class FaithfulDesignTest {
                 prefs.mode=mode
                 ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                     compose.onNodeWithText("Ratatoskr").assertIsDisplayed()
+                    compose.waitUntil(10000) { runCatching { compose.onAllNodesWithText("دانلودها",substring=true).fetchSemanticsNodes().isNotEmpty() }.getOrDefault(false) }
                     compose.waitForIdle()
                     scenario.onActivity { activity ->
                         val rows=sample()

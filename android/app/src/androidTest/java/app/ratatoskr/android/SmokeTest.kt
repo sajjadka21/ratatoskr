@@ -1,12 +1,18 @@
 package app.ratatoskr.android
 
 import android.content.Context
+import android.view.View
+import android.view.ViewGroup
 import android.widget.EditText
+import android.widget.Spinner
+import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
+import androidx.test.espresso.Espresso.onData
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.action.ViewActions.closeSoftKeyboard
 import androidx.test.espresso.action.ViewActions.typeText
+import androidx.test.espresso.action.ViewActions.scrollTo
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.contrib.AccessibilityChecks
 import androidx.test.espresso.matcher.RootMatchers.isPlatformPopup
@@ -18,6 +24,11 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Before
 import org.junit.BeforeClass
 import org.junit.Test
+import org.junit.Assert.assertEquals
+import org.hamcrest.Description
+import org.hamcrest.Matcher
+import org.hamcrest.Matchers.anything
+import org.hamcrest.TypeSafeMatcher
 
 /** Opens the real screens on an emulator. Every click and typed key also runs the accessibility checks
  * (labels, touch-target size, contrast) over the whole screen, so a regression there fails the build. */
@@ -56,6 +67,55 @@ class SmokeTest {
             onView(withContentDescription(R.string.menu)).perform(click())
             onView(withText(R.string.settings)).inRoot(isPlatformPopup()).perform(click())
             onView(withText(R.string.section_network)).check(matches(isDisplayed()))
+        }
+    }
+
+    /** Exercise actual dropdown clicks and framework-driven recreation. Espresso
+     * waits for the newly resumed screen; needing Back/reentry leaves this test
+     * unable to open and dismiss the next dialog. */
+    @Test fun changingAppearanceKeepsSettingsUsableWithoutLeavingTheScreen() {
+        MobilePreferences(context).apply { mode = "light"; brand = "ember-forge"; language = "" }
+        ActivityScenario.launch(SettingsActivity::class.java).use {
+            selectSetting(R.string.appearance, 2)
+            assertEquals("dark", MobilePreferences(context).mode)
+            openAndDismissPlugins()
+            selectSetting(R.string.appearance, 1)
+            assertEquals("light", MobilePreferences(context).mode)
+            openAndDismissPlugins()
+            selectSetting(R.string.app_name, 3)
+            assertEquals("frost-byte", MobilePreferences(context).brand)
+            openAndDismissPlugins()
+            selectSetting(R.string.language, 1)
+            assertEquals("fa", MobilePreferences(context).language)
+            openAndDismissPlugins()
+            selectSetting(R.string.language, 2)
+            assertEquals("en", MobilePreferences(context).language)
+            openAndDismissPlugins()
+            selectSetting(R.string.language, 0)
+            assertEquals("", MobilePreferences(context).language)
+            openAndDismissPlugins()
+        }
+    }
+
+    private fun selectSetting(title: Int, position: Int) {
+        onView(spinnerFollowingLabel(title)).perform(scrollTo(), click())
+        onData(anything()).atPosition(position).perform(click())
+    }
+
+    private fun openAndDismissPlugins() {
+        onView(withText(R.string.open_plugins)).perform(scrollTo(), click())
+        onView(withText(R.string.plugins_hint)).check(matches(isDisplayed()))
+        onView(withText(android.R.string.ok)).perform(click())
+    }
+
+    private fun spinnerFollowingLabel(title: Int): Matcher<View> = object : TypeSafeMatcher<View>() {
+        override fun describeTo(description: Description) { description.appendText("spinner after settings label $title") }
+        override fun matchesSafely(view: View): Boolean {
+            if (view !is Spinner) return false
+            val parent = view.parent as? ViewGroup ?: return false
+            val index = parent.indexOfChild(view)
+            val label = if (index > 0) parent.getChildAt(index - 1) as? TextView else null
+            return label?.text?.toString() == view.context.getString(title)
         }
     }
 

@@ -28,6 +28,7 @@ class SegmentedDownloadTest {
     private val etag = "\"v1\""
     private val rangeRequests = AtomicInteger()
     @Volatile private var supportRanges = true
+    @Volatile private var supportOnlyProbeRange = false
     @Volatile private var sendEtag = true
     @Volatile private var failFirstRange = false
     private val failed = AtomicInteger()
@@ -47,7 +48,7 @@ class SegmentedDownloadTest {
         val common = mutableMapOf("Content-Type" to "application/octet-stream")
         if (sendEtag) common["ETag"] = etag
         val match = Regex("bytes=(\\d+)-(\\d*)").matchEntire(range.orEmpty())
-        if (!supportRanges || match == null) {
+        if (!supportRanges || match == null || (supportOnlyProbeRange && range != "bytes=0-0")) {
             request.respond(200, common, payload.size.toLong())
             request.out.write(payload); return
         }
@@ -125,6 +126,24 @@ class SegmentedDownloadTest {
         supportRanges = false
         val fallback = File(directory, "single.bin").apply { writeText("x") }
         assertEquals(fallback, run(single = { fallback }))
+    }
+
+    @Test fun fallsBackWhenTheServerAcceptsTheProbeButIgnoresActualRanges() {
+        // Some servers accept the tiny probe, then ignore Range (or If-Range) on
+        // the actual file request. A full HTTP download must still succeed.
+        supportOnlyProbeRange = true
+        val file = run(single = {
+            val connection = open(base, emptyMap(), control::check)
+            try {
+                assertEquals(200, connection.responseCode)
+                File(directory, "single.bin").apply {
+                    outputStream().use { output -> connection.inputStream.use { it.copyTo(output) } }
+                }
+            } finally { connection.disconnect() }
+        })
+        assertArrayEquals(payload, file.readBytes())
+        assertFalse(File(directory, "segments.part").exists())
+        assertFalse(File(directory, "segments.json").exists())
     }
 
     @Test fun fallsBackWithoutAValidator() {

@@ -67,7 +67,7 @@ jobs:
           gradle-version: 8.9
       - working-directory: android
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: android-unit-reports
@@ -80,7 +80,7 @@ jobs:
           for apk in android/app/build/outputs/apk/debug/*.apk; do
             python3 scripts/verify_android_native.py "$apk"
           done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: android-debug-apks
           path: android/app/build/outputs/apk/debug/*.apk

@@ -67,7 +67,7 @@ jobs:
           Copy-Item src-tauri/extras "$out/extras" -Recurse
           Set-Content "$out/portable.txt" 'This file makes Ratatoskr keep its data in the "data" folder beside it.'
           Compress-Archive -Force -Path $out -DestinationPath target/portable/Ratatoskr-portable.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-windows
           if-no-files-found: error
@@ -148,7 +148,7 @@ jobs:
           for abi in arm64-v8a armeabi-v7a x86_64; do
             cp "android/app/build/outputs/apk/release/app-$abi-release.apk" "Ratatoskr-android-$abi.apk"
           done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-android
           if-no-files-found: error
@@ -177,7 +177,7 @@ jobs:
           for browser in chrome edge firefox; do
             cp "target/extension/ratatoskr-extension-$browser-$version.zip" "Ratatoskr-extension-$browser.zip"
           done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-extensions
           if-no-files-found: error

@@ -59,6 +59,10 @@ class SmokeTest {
     @Test fun homeScreenShowsTheBrandTheTabsAndTheAddButton() {
         ActivityScenario.launch(MainActivity::class.java).use {
             onView(withText("Ratatoskr")).check(matches(isDisplayed()))
+            it.onActivity { activity ->
+                val viewport = activity.findViewById<ViewGroup>(android.R.id.content)
+                assertEquals(viewport.height, viewport.getChildAt(0).height)
+            }
             onView(withContentDescription(R.string.add_links)).check(matches(isDisplayed()))
             onView(withText(R.string.empty_jobs)).check(matches(isDisplayed()))
             screenshot("home-empty")

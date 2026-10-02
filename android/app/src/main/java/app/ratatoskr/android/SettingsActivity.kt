@@ -41,12 +41,14 @@ class SettingsActivity : MobileActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = MobilePreferences(this)
-        val root = ScrollView(this).also { settingsScroll = it }.apply { setBackgroundColor(paper); clipToPadding = false }
+        val root = ScrollView(this).also { settingsScroll = it }.apply { setBackgroundColor(paper); clipToPadding = true }
         val page = column()
         root.addView(page)
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, inset ->
             val bars = inset.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
-            page.setPadding(dp(16) + bars.left, dp(8) + bars.top, dp(16) + bars.right, dp(24) + bars.bottom)
+            // Keep the scroll viewport outside system bars: child padding scrolls away.
+            root.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            page.setPadding(dp(16), dp(8), dp(16), dp(24))
             inset
         }
         val top = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }

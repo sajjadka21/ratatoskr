@@ -145,7 +145,7 @@ fun AbHome(
                     val selected = if (state.history) index == 2 else index == if (activeOnly) 1 else 0
                     TextButton(onClick = { activeOnly = index == 1; onHistory(index == 2) }, modifier = Modifier.weight(1f).drawBehind {
                         if (selected) drawLine(colors.primary, Offset(0f, size.height), Offset(size.width, size.height), 2.dp.toPx())
-                    }) { Text(stringResource(title), color = if (selected) colors.primary else colors.onSurfaceVariant) }
+                    }) { Text(stringResource(title), color = if (selected) colors.primary else colors.onSurfaceVariant, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
                 Box {
                     AbResourceButton(R.drawable.ic_filter, R.string.filter_category) { filter = true }

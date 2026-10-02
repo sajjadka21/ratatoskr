@@ -15,7 +15,7 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -67,7 +67,7 @@ class MainActivity : MobileActivity(), TaskActions {
             contentDescription = getString(R.string.app_name)
             setContent {
                 RatatoskrTheme(this@MainActivity) {
-                    androidx.compose.material3.Surface(modifier = androidx.compose.ui.Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+                    androidx.compose.material3.Surface(modifier = androidx.compose.ui.Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars), color = androidx.compose.material3.MaterialTheme.colorScheme.background) {
                         AbHome(homeState, this@MainActivity,
                             onAdd = { addLinks() }, onQuery = { query = it; render() },
                             onHistory = { history = it; render() }, onMenu = ::menuAction,

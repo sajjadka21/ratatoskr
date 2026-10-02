@@ -76,11 +76,15 @@ class SmokeTest {
     }
 
     @Test fun addingLinksCountsFilesAndVideosAsYouType() {
-        ActivityScenario.launch(MainActivity::class.java).use {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             compose.onNodeWithContentDescription(context.getString(R.string.add_links)).performClick()
             compose.onNode(hasSetTextAction()).performTextInput("https://example.org/p[01-03].jpg https://youtu.be/abc")
             compose.onNodeWithText(context.getString(R.string.links_summary, 4, 3, 1)).assertIsDisplayed()
-            onView(androidx.test.espresso.matcher.ViewMatchers.isRoot()).perform(closeSoftKeyboard())
+            scenario.onActivity { activity ->
+                // Hide IME through its controller: Espresso root checks cannot inspect the inactive Compose container behind a modal sheet.
+                androidx.core.view.WindowInsetsControllerCompat(activity.window, activity.window.decorView).hide(androidx.core.view.WindowInsetsCompat.Type.ime())
+            }
+            compose.waitForIdle()
             screenshot("ab-add-link-filled")
         }
     }
@@ -210,9 +214,9 @@ class SmokeTest {
         }
     }
 
-    @Test fun theBrowserOpensFromTheMenu() {
+    @Test fun theBrowserOpensFromTheHeader() {
         ActivityScenario.launch(MainActivity::class.java).use {
-            compose.onNodeWithText(context.getString(R.string.browser)).performClick()
+            compose.onNodeWithContentDescription(context.getString(R.string.browser)).performClick()
             onView(withText(R.string.download_page)).check(matches(isDisplayed()))
         }
     }

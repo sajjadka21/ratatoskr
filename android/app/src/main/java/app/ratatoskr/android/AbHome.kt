@@ -138,7 +138,7 @@ fun AbHome(
                 AbResourceButton(R.drawable.ic_pause, R.string.pause) { onSelection(R.string.pause) }
                 AbResourceButton(R.drawable.ic_retry, R.string.resume) { onSelection(R.string.resume) }
                 AbResourceButton(R.drawable.ic_delete, R.string.remove) { onSelection(R.string.remove) }
-            } else Text(stringResource(R.string.nav_downloads), Modifier.padding(horizontal = 24.dp, vertical = 12.dp), fontSize = 30.sp, fontWeight = FontWeight.Bold)
+            } else if (!showingSearch) Text(stringResource(R.string.nav_downloads), Modifier.padding(horizontal = 24.dp, vertical = 12.dp), fontSize = 30.sp, fontWeight = FontWeight.Bold)
             if (showingSearch) SearchBox(state.query, onQuery) { showingSearch = false; onQuery("") }
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 listOf(R.string.filter_all, R.string.active_jobs, R.string.completed).forEachIndexed { index, title ->
@@ -161,7 +161,7 @@ fun AbHome(
                 AbIconButton(ABDMIcons.Clear, stringResource(R.string.dismiss)) { onClipboard(false) }
             }
         }
-    }, footer = { RatatoskrDock(onAdd, { activeOnly = false; onHistory(false) }, { onMenu(R.string.settings) }) }) { padding -> DownloadList(shown, actions, padding) }
+    }, footer = { if (!showingSearch) RatatoskrDock(onAdd, { activeOnly = false; onHistory(false) }, { onMenu(R.string.settings) }) }) { padding -> DownloadList(shown, actions, padding) }
 }
 
 /** A real concave cradle, drawn independently of RTL destination placement. */

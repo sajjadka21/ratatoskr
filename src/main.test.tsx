@@ -14,7 +14,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: (command: string, args?: { pref
 vi.mock("react-dom/client", async (original) => {
   const actual = await original<typeof import("react-dom/client")>();
   const createRoot = (...args: Parameters<typeof actual.createRoot>) => { bridge.root = actual.createRoot(...args); return bridge.root; };
-  return { ...actual, createRoot, default: { ...actual.default, createRoot } };
+  return { ...actual, createRoot, default: { ...actual, createRoot } };
 });
 vi.mock("./App", () => ({ default: ({ preferences, onPreferencesChange }: { preferences: UiPreferences; onPreferencesChange: (next: UiPreferences) => void }) => <>
   <output>{preferences.theme}</output>

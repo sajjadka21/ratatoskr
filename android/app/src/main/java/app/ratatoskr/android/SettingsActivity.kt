@@ -120,7 +120,7 @@ class SettingsActivity : MobileActivity() {
         val info = packageManager.getPackageInfo(packageName, 0)
         val tasks = TaskStore.get(this).list()
         val text = buildString {
-            appendLine("Ratatoskr ${info.versionName} (${if (android.os.Build.VERSION.SDK_INT >= 28) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()})")
+            appendLine("Ratatoskr ${info.versionName} (${androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(info)})")
             appendLine("Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT}), ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
             appendLine("ABIs: ${android.os.Build.SUPPORTED_ABIS.joinToString()}")
             appendLine("Network policy: ${prefs.networkPolicy}, roaming: ${prefs.allowRoaming}, connections: ${prefs.connections}, parallel: ${prefs.concurrency}, speed limit: ${prefs.speedLimit / 1024} KiB/s")

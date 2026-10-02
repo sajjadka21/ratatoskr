@@ -142,9 +142,9 @@ jobs:
         run: rm -f "$RUNNER_TEMP/release.jks"
       - name: Package Android source for this release
         run: python3 scripts/package-android-source.py Ratatoskr-android-source.zip
-      - name: Name the universal and architecture packages
+      - name: Name the default (arm64) and architecture packages
         run: |
-          cp android/app/build/outputs/apk/release/app-universal-release.apk Ratatoskr-android.apk
+          cp android/app/build/outputs/apk/release/app-arm64-v8a-release.apk Ratatoskr-android.apk
           for abi in arm64-v8a armeabi-v7a x86_64; do
             cp "android/app/build/outputs/apk/release/app-$abi-release.apk" "Ratatoskr-android-$abi.apk"
           done

@@ -40,11 +40,17 @@ class DownloadService : Service() {
         store = taskStoreProvider(this); prefs = MobilePreferences(this); MobileRuntime.initialize(store)
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL, getString(R.string.notification_channel), NotificationManager.IMPORTANCE_LOW))
+        // A finished (or failed) download makes a sound, unlike the quiet progress notification.
+        getSystemService(NotificationManager::class.java).createNotificationChannel(
+            NotificationChannel(DONE_CHANNEL, getString(R.string.notification_channel_done), NotificationManager.IMPORTANCE_DEFAULT))
         getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)
+        // The download window closes at a time of day, not when the network changes, so look again now and then.
+        scope.launch { while (isActive) { delay(30_000); networkChanged() } }
     }
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(SUMMARY_ID, notification(null), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        if (android.os.Build.VERSION.SDK_INT >= 29) startForeground(SUMMARY_ID, notification(null), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        else startForeground(SUMMARY_ID, notification(null))
         val id = intent?.getStringExtra(EXTRA_PROCESS)
         if (id != null) when (intent.action) {
             ACTION_PAUSE -> halt(id, TaskState.PAUSED)
@@ -58,7 +64,7 @@ class DownloadService : Service() {
         schedule()
         return START_NOT_STICKY
     }
-    private fun allowed() = TaskPolicy.mayRun(prefs.networkPolicy, networkSnapshotProvider(this), prefs.allowRoaming)
+    private fun allowed() = TaskPolicy.mayRun(prefs.networkPolicy, networkSnapshotProvider(this), prefs.allowRoaming) && Schedule.now(prefs.window)
     private fun halt(id: String, state: TaskState) {
         val task = store.get(id) ?: return
         if (task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED)) return
@@ -76,7 +82,8 @@ class DownloadService : Service() {
     }
     private fun schedule() {
         if (shuttingDown) return
-        val candidates = store.list().filter { it.state in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) && !MobileRuntime.busy(it.id) }
+        val now = System.currentTimeMillis()
+        val candidates = store.list().filter { it.state in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) && !MobileRuntime.busy(it.id) && Schedule.isDue(it.startAt, now) }
         if (!allowed()) candidates.forEach { store.state(it.id, TaskState.WAITING_NETWORK) }
         else for (task in candidates.take((prefs.concurrency - jobs.size).coerceAtLeast(0))) {
             val control = TransferControl { allowed() }
@@ -93,13 +100,18 @@ class DownloadService : Service() {
                             getSystemService(NotificationManager::class.java).notify(task.notificationId, notification(store.get(task.id)))
                         })
                         control.check()
+                        attempts.remove(task.id)
                         store.updateActive(task.id, ContentValues().apply { put("state", TaskState.COMPLETED.name); put("progress", 100); put("error", "") })
                     }
                 } catch (error: Exception) {
                     val current = store.get(task.id)
                     if (current != null && (current.state in TaskPolicy.inFlight || current.state == TaskState.QUEUED)) {
                         val code = errorCode(error)
-                        store.transitionActive(task.id, if (code == "waiting_network") TaskState.WAITING_NETWORK else if (error is CancellationException) TaskState.PAUSED else TaskState.FAILED, code)
+                        val wait = if (error is CancellationException) null else AutoRetry.delayMillis(code, attempts.merge(task.id, 1, Int::plus) ?: 1)
+                        if (wait != null) {
+                            // Try again a little later instead of failing: queued with a start time, woken by the timer job.
+                            store.updateActive(task.id, ContentValues().apply { put("state", TaskState.QUEUED.name); put("error", ""); put("start_at", System.currentTimeMillis() + wait) })
+                        } else store.transitionActive(task.id, if (code == "waiting_network") TaskState.WAITING_NETWORK else if (error is CancellationException) TaskState.PAUSED else TaskState.FAILED, code)
                     }
                 } finally {
                     jobs.remove(task.id)
@@ -121,7 +133,8 @@ class DownloadService : Service() {
     }
     private fun notification(task: MobileTask?): Notification {
         val home = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val builder = NotificationCompat.Builder(this, CHANNEL).setSmallIcon(android.R.drawable.stat_sys_download)
+        val done = task != null && task.state in setOf(TaskState.COMPLETED, TaskState.FAILED)
+        val builder = NotificationCompat.Builder(this, if (done) DONE_CHANNEL else CHANNEL).setSmallIcon(R.drawable.ic_stat_download)
             .setContentTitle(task?.title?.ifEmpty { getString(R.string.app_name) } ?: getString(R.string.app_name))
             .setContentText(task?.let { MobileText.state(this, it) } ?: getString(R.string.queue_running))
             .setContentIntent(home).setOnlyAlertOnce(true)
@@ -164,7 +177,10 @@ class DownloadService : Service() {
     }
     companion object {
         @Volatile var running = false; private set
+        /** Automatic retries used so far, per task; lost with the process, which only makes retrying more patient. */
+        private val attempts = java.util.concurrent.ConcurrentHashMap<String, Int>()
         private const val CHANNEL = "downloads"
+        private const val DONE_CHANNEL = "finished"
         private const val SUMMARY_ID = Int.MAX_VALUE
         const val ACTION_PAUSE = "app.ratatoskr.android.PAUSE"
         const val ACTION_CANCEL = "app.ratatoskr.android.CANCEL"
@@ -172,8 +188,23 @@ class DownloadService : Service() {
         const val EXTRA_PROCESS = "process"
         fun start(context: Context, url: String, height: Int?, audio: Boolean, title: String, kind: String = "media", items: String = "") {
             MobileRuntime.initialize(TaskStore.get(context))
-            TaskStore.get(context).enqueue(url, height, audio, title, kind, items)
+            TaskStore.get(context).enqueue(rewritten(context, url), height, audio, title, kind, items)
             wake(context)
+        }
+        /** Queue many links at once: files go to the segmented engine, media sites to yt-dlp. */
+        fun startMany(context: Context, urls: List<String>, height: Int?, audio: Boolean) {
+            MobileRuntime.initialize(TaskStore.get(context))
+            val store = TaskStore.get(context)
+            urls.map { rewritten(context, it) }.forEach { url ->
+                if (LinkPlan.classify(url) == LinkKind.FILE) store.enqueue(url, null, false, "", "file")
+                else store.enqueue(url, height, audio || Spotify.isTrackUrl(url), "", "media")
+            }
+            wake(context)
+        }
+        /** A plugin may point a link somewhere better; the result is still checked like any other link. */
+        private fun rewritten(context: Context, url: String): String {
+            val result = Plugins.rewriteUrl(PluginStore.active(context), url)
+            return if (result != url && LinkUtils.isPublicHttpUrl(result)) result else url
         }
         fun wake(context: Context) { context.startForegroundService(Intent(context, DownloadService::class.java)) }
         fun command(context: Context, id: String, action: String) {

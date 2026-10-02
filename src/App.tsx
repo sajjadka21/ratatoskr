@@ -26,6 +26,7 @@ import { ThroughputBand } from "./components/downloads/ThroughputBand";
 import { CategoriesPage } from "./components/categories/CategoriesPage";
 import { StatsPage } from "./components/stats/StatsPage";
 import { CompletionBanner } from "./components/feedback/CompletionBanner";
+import { UpdatePrompt } from "./components/update/UpdatePrompt";
 import { Toasts, type Toast, type ToastKind } from "./components/feedback/Toasts";
 import { AppShell } from "./components/layout/AppShell";
 import type { DownloadSection, SidebarCounts, WorkspacePage } from "./components/layout/Sidebar";
@@ -78,7 +79,6 @@ const LINK_INTAKE_EVENT = "link-intake";
 const CLIPBOARD_LINKS_EVENT = "clipboard-links";
 const TRAY_ACTION_EVENT = "tray-action";
 const FOCUS_DOWNLOAD_EVENT = "focus-download";
-const UPDATE_AVAILABLE_EVENT = "update-available";
 const COMPLETION_ACTION_EVENT = "completion-action";
 
 /// Statuses a late progress event may move to "downloading". A progress event
@@ -550,13 +550,6 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     });
     return () => void subscription.then((unlisten) => unlisten());
   }, []);
-
-  useEffect(() => {
-    const subscription = listen<{ version: string }>(UPDATE_AVAILABLE_EVENT, ({ payload }) =>
-      reportSaved(t("update.toast", { version: payload.version })),
-    );
-    return () => void subscription.then((unlisten) => unlisten());
-  }, [reportSaved, t]);
 
   const hasPendingRetry = downloads.some((item) => item.status.toLowerCase() === "retrying" && item.retryAt !== null);
   useEffect(() => {
@@ -1440,6 +1433,33 @@ function App({ preferences, onPreferencesChange }: AppProps) {
             .then((queue) => assignToQueue(item, queue.id))
             .catch((reason) => notify("error", String(reason)))
         }
+        onSchedule={(item, startAt, stopAt) =>
+          void createQueue({
+            name: `${displayName(item)}`.slice(0, 60),
+            maxConcurrent: 1,
+            maxConcurrentPerHost: 1,
+            defaultPriority: "normal",
+          })
+            .then(async (queue) => {
+              await assignToQueue(item, queue.id);
+              await invoke("set_queue_schedule", {
+                queueId: queue.id,
+                enabled: true,
+                kind: "once",
+                startAt,
+                stopAt,
+                weekdaysMask: 0b0111_1111,
+                intervalSeconds: null,
+                completionAction: "none",
+                preventSleep: true,
+                updatedAt: Math.floor(Date.now() / 1000),
+                windowStartMinute: null,
+                windowEndMinute: null,
+              });
+              notify("success", t("action.scheduled"));
+            })
+            .catch((reason) => notify("error", String(reason)))
+        }
         onRemoveFromQueue={(item) => void runQueueAction(() => removeFromQueue(item.id))}
         onChangePriority={(item, priority) => void runQueueAction(() => changePriority(item.id, priority))}
         onRemoveFromHistory={(item) => {
@@ -1475,6 +1495,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
       />
 
       <Toasts toasts={toasts} onDismiss={dismissToast} />
+      <UpdatePrompt />
 
       {completionAction ? (
         <CompletionBanner

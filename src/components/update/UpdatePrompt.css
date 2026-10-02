@@ -1,0 +1,64 @@
+.update-prompt {
+  position: fixed;
+  inset-block-end: 16px;
+  inset-inline-end: 16px;
+  z-index: 60;
+  inline-size: min(420px, calc(100vw - 32px));
+  padding: 14px 16px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
+}
+
+.update-prompt > svg {
+  flex: 0 0 auto;
+  margin-block-start: 2px;
+  color: var(--accent);
+}
+
+.update-prompt__text {
+  flex: 1;
+  min-inline-size: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.update-prompt__text p {
+  margin: 0;
+  color: var(--text-muted);
+  white-space: pre-line;
+}
+
+.update-prompt__error {
+  color: var(--danger, #d4523f);
+}
+
+.update-prompt__actions {
+  inline-size: 100%;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.update-prompt__actions button {
+  padding: 6px 12px;
+  border: 1px solid var(--border-subtle, rgba(127, 127, 127, 0.3));
+  border-radius: var(--radius-md, 8px);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.update-prompt__actions .update-prompt__primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-base, #101518);
+}

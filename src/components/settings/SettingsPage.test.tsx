@@ -49,7 +49,7 @@ describe("settings navigation and search", () => {
     native.invoke.mockReset();
     native.invoke.mockImplementation(async (command: string, args?: Record<string, unknown>) => {
       switch (command) {
-        case "list_queue_schedules": case "list_categories": case "list_download_rules": return [];
+        case "list_queue_schedules": case "list_categories": case "list_download_rules": case "list_plugins": return [];
         case "get_network_settings": return structuredClone(network);
         case "get_engine_settings": return { autoAdoptLinks: false, politeHosts: "", streamMaxHeight: null, streamPreferMp4: true };
         case "get_ffmpeg_status": case "get_ytdlp_status": return { configuredPath: null, foundPath: null, version: null };

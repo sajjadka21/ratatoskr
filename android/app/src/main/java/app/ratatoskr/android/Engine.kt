@@ -25,6 +25,7 @@ object Engine {
     }
     fun probe(context: Context, url: String, processId: String? = null, check: () -> Unit = {}): LinkInfo {
         val canonical = SafeHttp.canonicalSource(url, check)
+        if (Spotify.isTrackUrl(canonical)) return probeSpotify(context, canonical, processId, check)
         cache[canonical]?.takeIf { System.currentTimeMillis() - it.first < 120000 }?.let { return it.second }
         check(); init(context)
         val request = YoutubeDLRequest(canonical).apply {
@@ -40,6 +41,32 @@ object Engine {
         val info = MediaMetadata.parse(canonical, response.out)
         if (cache.size >= 10) cache.clear()
         cache[canonical] = System.currentTimeMillis() to info
+        return info
+    }
+    /** Spotify streams are DRM-protected and cannot be fetched. Like the desktop app and the bot,
+     * read the track's name from the public page and download the matching audio from YouTube. */
+    private fun probeSpotify(context: Context, spotifyUrl: String, processId: String?, check: () -> Unit): LinkInfo {
+        cache[spotifyUrl]?.takeIf { System.currentTimeMillis() - it.first < 120000 }?.let { return it.second }
+        val page = SafeHttp.open(spotifyUrl, check = check)
+        val html = try {
+            SafeHttp.requireSuccess(page.responseCode)
+            Spotify.readLimited(page.inputStream)
+        } finally { page.disconnect() }
+        val track = Spotify.parsePage(html) ?: throw TransferFailure("unsupported_media")
+        check(); init(context)
+        val search = "ytsearch1:${track.query}"
+        val request = YoutubeDLRequest(search).apply {
+            addOption("--dump-single-json"); addOption("--skip-download"); addOption("--ignore-no-formats-error")
+            addOption("--no-warnings"); addOption("--socket-timeout", "15"); addOption("--no-cache-dir")
+        }
+        val response = SafeProxy(check).use { proxy ->
+            request.addOption("--proxy", proxy.url)
+            YoutubeDL.getInstance().execute(request, processId)
+        }
+        val parsed = MediaMetadata.parse(spotifyUrl, response.out)
+        val info = parsed.copy(title = track.display, url = search, hasVideo = false,
+            items = parsed.items.take(1).map { it.copy(title = track.display, kind = "audio") })
+        cache[spotifyUrl] = System.currentTimeMillis() to info
         return info
     }
     fun work(context: Context, id: String) = File(context.filesDir, "download-work/$id")
@@ -73,7 +100,15 @@ object Engine {
         val store = TaskStore.get(context)
         if (task.kind == "file") {
             onState(TaskState.DOWNLOADING)
-            val file = DirectDownload.fetch(context, task, task.url, control, onProgress)
+            val prefs = MobilePreferences(context)
+            val directory = work(context, task.id)
+            val file = SegmentedDownload.fetch(directory, task.fileName, task.url, control, prefs.connections, prefs.speedLimit,
+                { received, total ->
+                    val done = if (total > 0) minOf(received, total) else received   // overlapping retries can briefly count extra
+                    store.update(task.id, ContentValues().apply { put("bytes_done", done); put("total_bytes", total) })
+                    onProgress(if (total > 0) done.toFloat() / total * 98f else 0f)
+                },
+                { DirectDownload.fetch(context, task, task.url, control, onProgress) })
             control.check(); onState(TaskState.SAVING)
             val result = publish(context, task.id, 1, file, control)
             discard(context, task.id)
@@ -81,9 +116,11 @@ object Engine {
         }
         onState(TaskState.PROBING)
         val info = probe(context, task.url, task.id, control::check)
+        val spotify = Spotify.isTrackUrl(task.url)
+        val audioOnly = task.audioOnly || spotify
         store.update(task.id, ContentValues().apply { put("title", info.title) })
         val selected = task.selectedItems.split(',').mapNotNull { it.toIntOrNull() }.toSet()
-        val items = info.items.filter { (selected.isEmpty() || it.index in selected) && (!task.audioOnly || it.kind != "photo") }
+        val items = info.items.filter { (selected.isEmpty() || it.index in selected) && (!audioOnly || it.kind != "photo") }
         if (items.isEmpty()) throw TransferFailure("unsupported_media")
         val results = mutableListOf<SavedMedia>()
         items.forEachIndexed { position, item ->
@@ -105,12 +142,12 @@ object Engine {
                     addOption("--yes-playlist"); addOption("--playlist-items", item.index.toString())
                     addOption("--socket-timeout", "15"); addOption("--retries", "3"); addOption("--fragment-retries", "3")
                     addOption("--continue"); addOption("--no-cache-dir"); addOption("--no-warnings")
-                    addOption("-o", File(directory, "%(title).80s [%(id)s].%(ext)s").absolutePath)
+                    addOption("-o", File(directory, if (spotify) LinkUtils.safeFileName(info.title, "track").replace("%", "%%") + ".%(ext)s" else "%(title).80s [%(id)s].%(ext)s").absolutePath)
                     val rate = MobilePreferences(context).speedLimit
                     if (rate > 0) addOption("--limit-rate", rate.toString())
                     // Restrict every fallback to protocols that use the guarded native transport.
-                    addOption("-f", MediaOptions.guardedFormat(task.height, task.audioOnly || item.kind == "audio"))
-                    if (task.audioOnly || item.kind == "audio") { addOption("-x"); addOption("--audio-format", "m4a") }
+                    addOption("-f", MediaOptions.guardedFormat(task.height, audioOnly || item.kind == "audio"))
+                    if (audioOnly || item.kind == "audio") { addOption("-x"); addOption("--audio-format", "m4a") }
                     else addOption("--merge-output-format", "mp4")
                 }
                 SafeProxy(control::check).use { proxy ->
@@ -121,7 +158,7 @@ object Engine {
                 control.check(); onState(TaskState.MERGING)
                 val files = directory.listFiles().orEmpty().filter { it.isFile && it.length() > 0 &&
                     it.extension.lowercase() in setOf("mp4", "m4a", "mp3", "webm", "mkv", "opus", "ogg", "aac", "wav", "flac", "mov") }
-                val output = if (task.audioOnly || item.kind == "audio") files.singleOrNull { it.extension.equals("m4a", true) } else files.singleOrNull()
+                val output = if (audioOnly || item.kind == "audio") files.singleOrNull { it.extension.equals("m4a", true) } else files.singleOrNull()
                 output ?: throw TransferFailure("invalid_output")
             }
             control.check(); onState(TaskState.SAVING)
@@ -140,14 +177,16 @@ object Engine {
     /** Journal the pending URI before copying so an interrupted save can be cleaned. */
     private fun publish(context: Context, id: String, index: Int, file: File, control: TransferControl): SavedMedia {
         if (file.length() == 0L) throw TransferFailure("invalid_output")
+        if (android.os.Build.VERSION.SDK_INT < 29) return publishLegacy(context, id, index, file, control)
         ensureSpace(context.filesDir, file.length())
-        val name = LinkUtils.safeFileName(file.name)
+        val name = LinkUtils.safeFileName(Plugins.rename(PluginStore.active(context), file.name))
         val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "application/octet-stream"
         val images = mime.startsWith("image/")
         val collection = if (images) MediaStore.Images.Media.EXTERNAL_CONTENT_URI else MediaStore.Downloads.EXTERNAL_CONTENT_URI
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, name); put(MediaStore.MediaColumns.MIME_TYPE, mime)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, "${if (images) Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_DOWNLOADS}/Ratatoskr")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "${if (images) Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_DOWNLOADS}/Ratatoskr" +
+                if (images || !MobilePreferences(context).categoryFolders) "" else FileCategory.folder(name, mime).let { if (it.isEmpty()) "" else "/$it" })
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
         val resolver = context.contentResolver
@@ -182,6 +221,40 @@ object Engine {
             if (!published) { runCatching { resolver.delete(target, null, null) }; journal.delete() }
             throw error
         }
+    }
+    /** Android 8 and 9 have no per-app Downloads access: write into the public Downloads folder (the user
+     * allowed storage once) and register the file so other apps can open and share it. */
+    private fun publishLegacy(context: Context, id: String, index: Int, file: File, control: TransferControl): SavedMedia {
+        if (context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+            throw TransferFailure("storage_permission")
+        val name = LinkUtils.safeFileName(Plugins.rename(PluginStore.active(context), file.name))
+        val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "application/octet-stream"
+        val images = mime.startsWith("image/")
+        val root = File(Environment.getExternalStoragePublicDirectory(if (images) Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_DOWNLOADS), "Ratatoskr")
+        val category = if (images || !MobilePreferences(context).categoryFolders) "" else FileCategory.folder(name, mime)
+        val directory = if (category.isEmpty()) root else File(root, category)
+        if (!directory.isDirectory && !directory.mkdirs()) throw TransferFailure("cannot_write")
+        ensureSpace(directory, file.length())
+        var target = File(directory, name)
+        var copy = 1
+        while (target.exists()) { target = File(directory, name.substringBeforeLast('.', name) + " ($copy)" + name.substringAfterLast('.', "").let { if (it.isEmpty()) "" else ".$it" }); copy++ }
+        val temp = File(directory, target.name + ".ratatoskr-part")
+        try {
+            file.inputStream().use { input -> temp.outputStream().use { output ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) { control.check(); val count = input.read(buffer); if (count < 0) break; output.write(buffer, 0, count) }
+            } }
+            control.check()
+            if (!temp.renameTo(target)) throw TransferFailure("cannot_write")
+        } catch (error: Exception) { temp.delete(); throw error }
+        val values = ContentValues().apply {
+            @Suppress("DEPRECATION") put(MediaStore.MediaColumns.DATA, target.absolutePath)
+            put(MediaStore.MediaColumns.DISPLAY_NAME, target.name); put(MediaStore.MediaColumns.MIME_TYPE, mime); put(MediaStore.MediaColumns.SIZE, target.length())
+        }
+        val uri = context.contentResolver.insert(MediaStore.Files.getContentUri("external"), values) ?: throw TransferFailure("cannot_write")
+        val result = SavedMedia(uri.toString(), target.name, mime)
+        TaskStore.get(context).recordOutput(id, index, result)
+        return result
     }
     fun update(context: Context): Boolean { init(context); return YoutubeDL.getInstance().updateYoutubeDL(context, YoutubeDL.UpdateChannel.STABLE) != null }
 }

@@ -9,12 +9,12 @@ android {
 
     defaultConfig {
         applicationId = "app.ratatoskr.android"
-        minSdk = 29          // saving to Downloads needs no storage permission from here up
+        minSdk = 26          // Android 8; from Android 10 saving to Downloads needs no storage permission
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.1.1"
-        // yt-dlp and ffmpeg ship as native code; keep to the usual phone CPUs.
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+        versionCode = 6
+        versionName = "1.2.0"
+        resourceConfigurations += listOf("en", "fa")   // library strings in other languages are dead weight
+        // The CPUs shipped are chosen by the per-ABI splits below; abiFilters cannot be combined with them.
     }
 
     splits {
@@ -22,7 +22,7 @@ android {
             isEnable = true
             reset()
             include("arm64-v8a", "armeabi-v7a", "x86_64")
-            isUniversalApk = true
+            isUniversalApk = false   // one APK per CPU: each is about a third of the size of a universal one
         }
     }
 
@@ -71,6 +71,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     implementation("com.google.android.material:material:1.12.0")
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // yt-dlp (YouTube, Instagram and many more sites) and ffmpeg for Android.
     implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")

@@ -39,8 +39,10 @@ import {
 } from "../../utils/appearance";
 import { BRAND_THEMES, BRAND_THEME_SWATCHES } from "../../types/download";
 import { SHOW_WELCOME_EVENT } from "../../utils/appEvents";
+import { checkOnce, fromLocalInput, toLocalInput } from "../../utils/scheduleTime";
 import { UpdateSection } from "./UpdateSection";
 import { BrowserSection } from "./BrowserSection";
+import { PluginsSection } from "./PluginsSection";
 import { AfterDownloadSection } from "./AfterDownloadSection";
 import { BackupSection, DiagnosticsSection } from "./MaintenanceSections";
 import {
@@ -202,6 +204,12 @@ export function SettingsPage({
       group: "browser",
       prefixes: ["browser."],
       content: <BrowserSection onError={onError} />,
+    },
+    {
+      id: "section-plugins",
+      group: "system",
+      prefixes: ["plugins."],
+      content: <PluginsSection onError={onError} />,
     },
     {
       id: "section-9",
@@ -905,7 +913,9 @@ const COMPLETION_ACTIONS: CompletionAction[] = [
 
 type ScheduleDraft = {
   enabled: boolean;
-  days: "every" | "selected";
+  days: "every" | "selected" | "once";
+  onceStart: string;
+  onceEnd: string;
   weekdaysMask: number;
   start: string;
   end: string;
@@ -918,7 +928,9 @@ function draftFrom(schedule: QueueSchedule | null): ScheduleDraft {
   const end = schedule?.windowEndMinute ?? 7 * 60;
   return {
     enabled: schedule?.enabled ?? false,
-    days: schedule?.kind === "weekdays" ? "selected" : "every",
+    days: schedule?.kind === "once" ? "once" : schedule?.kind === "weekdays" ? "selected" : "every",
+    onceStart: schedule?.kind === "once" ? toLocalInput(schedule.startAt) : "",
+    onceEnd: schedule?.kind === "once" ? toLocalInput(schedule.stopAt) : "",
     weekdaysMask:
       schedule && schedule.weekdaysMask > 0 ? schedule.weekdaysMask : ALL_DAYS,
     start: formatMinuteOfDay(start),
@@ -955,6 +967,36 @@ function ScheduleEditor({
   );
 
   async function save() {
+    if (draft.days === "once") {
+      const check = checkOnce(draft.onceStart, draft.onceEnd);
+      if (check !== "ok") {
+        onError(t(check === "needsStart" ? "settings.onceNeedsStart" : "settings.onceEndBeforeStart"));
+        return;
+      }
+      setSaving(true);
+      try {
+        const saved = await invoke<QueueSchedule>("set_queue_schedule", {
+          queueId: queue.id,
+          enabled: draft.enabled,
+          kind: "once",
+          startAt: fromLocalInput(draft.onceStart),
+          stopAt: fromLocalInput(draft.onceEnd),
+          weekdaysMask: ALL_DAYS,
+          intervalSeconds: null,
+          completionAction: draft.completionAction,
+          preventSleep: draft.preventSleep,
+          updatedAt: Math.floor(Date.now() / 1000),
+          windowStartMinute: null,
+          windowEndMinute: null,
+        });
+        onSaved(saved);
+      } catch (reason) {
+        onError(t("settings.scheduleFailed", { reason: String(reason) }));
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
     const start = parseMinuteOfDay(draft.start);
     const end = parseMinuteOfDay(draft.end);
     if (start === null || end === null) {
@@ -1004,15 +1046,20 @@ function ScheduleEditor({
         <strong>{queue.name}</strong>
         <span className="settings-page__muted num">
           {draft.enabled
-            ? t(
-                draft.days === "every"
-                  ? "settings.runsEveryDay"
-                  : "settings.runsSelectedDays",
-                {
-                  start: draft.start,
-                  end: draft.end,
-                },
-              )
+            ? draft.days === "once"
+              ? t(draft.onceEnd ? "settings.runsOnceUntil" : "settings.runsOnce", {
+                  start: draft.onceStart.replace("T", " "),
+                  end: draft.onceEnd.replace("T", " "),
+                })
+              : t(
+                  draft.days === "every"
+                    ? "settings.runsEveryDay"
+                    : "settings.runsSelectedDays",
+                  {
+                    start: draft.start,
+                    end: draft.end,
+                  },
+                )
             : t("settings.notScheduled")}
         </span>
       </div>
@@ -1021,30 +1068,53 @@ function ScheduleEditor({
         className="settings-page__schedule-grid"
         aria-disabled={!draft.enabled}
       >
-        <label className="settings-page__field">
-          <span>{t("settings.from")}</span>
-          <input
-            id={`${idPrefix}-start`}
-            type="time"
-            dir="ltr"
-            value={draft.start}
-            onChange={(event) =>
-              setDraft({ ...draft, start: event.target.value })
-            }
-          />
-        </label>
-        <label className="settings-page__field">
-          <span>{t("settings.until")}</span>
-          <input
-            id={`${idPrefix}-end`}
-            type="time"
-            dir="ltr"
-            value={draft.end}
-            onChange={(event) =>
-              setDraft({ ...draft, end: event.target.value })
-            }
-          />
-        </label>
+        {draft.days === "once" ? (
+          <>
+            <label className="settings-page__field">
+              <span>{t("settings.startOn")}</span>
+              <input
+                id={`${idPrefix}-once-start`}
+                type="datetime-local"
+                dir="ltr"
+                value={draft.onceStart}
+                onChange={(event) => setDraft({ ...draft, onceStart: event.target.value })}
+              />
+            </label>
+            <label className="settings-page__field">
+              <span>{t("settings.stopOn")}</span>
+              <input
+                id={`${idPrefix}-once-end`}
+                type="datetime-local"
+                dir="ltr"
+                value={draft.onceEnd}
+                onChange={(event) => setDraft({ ...draft, onceEnd: event.target.value })}
+              />
+            </label>
+          </>
+        ) : (
+          <>
+            <label className="settings-page__field">
+              <span>{t("settings.from")}</span>
+              <input
+                id={`${idPrefix}-start`}
+                type="time"
+                dir="ltr"
+                value={draft.start}
+                onChange={(event) => setDraft({ ...draft, start: event.target.value })}
+              />
+            </label>
+            <label className="settings-page__field">
+              <span>{t("settings.until")}</span>
+              <input
+                id={`${idPrefix}-end`}
+                type="time"
+                dir="ltr"
+                value={draft.end}
+                onChange={(event) => setDraft({ ...draft, end: event.target.value })}
+              />
+            </label>
+          </>
+        )}
         <label className="settings-page__field">
           <span>{t("settings.days")}</span>
           <select
@@ -1059,6 +1129,7 @@ function ScheduleEditor({
           >
             <option value="every">{t("settings.everyDay")}</option>
             <option value="selected">{t("settings.selectedDays")}</option>
+            <option value="once">{t("settings.oneTime")}</option>
           </select>
         </label>
         <label className="settings-page__field">

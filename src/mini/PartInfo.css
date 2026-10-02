@@ -1,0 +1,68 @@
+.parts {
+  display: grid;
+  gap: 6px;
+}
+
+.parts__strip {
+  display: flex;
+  gap: 3px;
+  block-size: 8px;
+}
+
+.parts__block {
+  position: relative;
+  flex-basis: 0;
+  min-inline-size: 6px;
+  border-radius: 3px;
+  background: var(--surface-sunken, rgba(127, 127, 127, 0.22));
+  overflow: hidden;
+}
+
+.parts__block i {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  background: var(--accent);
+  transition: inline-size 0.4s ease;
+}
+
+.parts__block--completed i {
+  background: var(--success, #2fa84f);
+}
+
+.parts__block--downloading i {
+  background: var(--warning, #c9b02a);
+}
+
+.parts__toggle {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.parts__table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.parts__table th {
+  text-align: start;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.parts__table th,
+.parts__table td {
+  padding: 3px 6px;
+  border-block-end: 1px solid var(--border-subtle, rgba(127, 127, 127, 0.18));
+}

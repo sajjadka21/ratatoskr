@@ -6,6 +6,18 @@ import java.net.URLDecoder
 
 /** Pure helpers with no Android classes, so they run as plain unit tests. */
 object LinkUtils {
+    /** At most [limit] bytes of a stream as text; a bigger answer is cut off, never buffered whole. */
+    fun readText(stream: java.io.InputStream, limit: Int = 512 * 1024): String {
+        val out = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(16 * 1024)
+        while (out.size() < limit) {
+            val count = stream.read(buffer)
+            if (count < 0) break
+            out.write(buffer, 0, count)
+        }
+        return out.toString("UTF-8")
+    }
+
     private val urlRegex = Regex("""https?://[^\s<>"']+""", RegexOption.IGNORE_CASE)
     private const val TRAILING = ".,;:!?)]}»"
 
@@ -62,14 +74,14 @@ object LinkUtils {
     fun videoFormat(height: Int?): String =
         if (height == null || height <= 0) "bv*+ba/b" else "bv*[height<=$height]+ba/b[height<=$height]"
 
-    fun extractUrls(text: String?): List<String> = urlRegex.findAll(text.orEmpty())
+    fun extractUrls(text: String?, limit: Int = 50): List<String> = urlRegex.findAll(text.orEmpty())
         .map { match ->
             var value = if ('?' in match.value) match.value else match.value.trimEnd { c -> c in TRAILING }
             for ((closing, opening) in listOf(')' to '(', ']' to '[', '}' to '{')) {
                 while (value.endsWith(closing) && value.count { it == closing } > value.count { it == opening }) value = value.dropLast(1)
             }
             value
-        }.distinct().take(50).toList()
+        }.distinct().take(limit).toList()
 
     fun contentIdentity(url: String): String {
         val canonical = canonicalUrl(url)

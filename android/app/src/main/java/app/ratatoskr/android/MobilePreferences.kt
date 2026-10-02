@@ -24,6 +24,33 @@ class MobilePreferences(context: Context) {
     var concurrency: Int
         get() = prefs.getInt("concurrency", 1).coerceIn(1, 3)
         set(value) { prefs.edit().putInt("concurrency", value.coerceIn(1, 3)).apply() }
+    /** Connections used for one file; 1 keeps the single-stream path. */
+    var connections: Int
+        get() = prefs.getInt("connections", 4).coerceIn(1, 8)
+        set(value) { prefs.edit().putInt("connections", value.coerceIn(1, 8)).apply() }
+    /** Sort finished files into Video, Music, Archives... under Downloads/Ratatoskr. */
+    var categoryFolders: Boolean
+        get() = prefs.getBoolean("category_folders", true)
+        set(value) { prefs.edit().putBoolean("category_folders", value).apply() }
+    var watchClipboard: Boolean
+        get() = prefs.getBoolean("watch_clipboard", true)
+        set(value) { prefs.edit().putBoolean("watch_clipboard", value).apply() }
+    var disabledPlugins: Set<String>
+        get() = prefs.getStringSet("plugins_off", emptySet()) ?: emptySet()
+        set(value) { prefs.edit().putStringSet("plugins_off", value.toSet()).apply() }
+    var autoUpdateCheck: Boolean
+        get() = prefs.getBoolean("auto_update_check", true)
+        set(value) { prefs.edit().putBoolean("auto_update_check", value).apply() }
+    var lastUpdateCheck: Long
+        get() = prefs.getLong("last_update_check", 0)
+        set(value) { prefs.edit().putLong("last_update_check", value).apply() }
+    var skippedUpdate: String
+        get() = prefs.getString("skipped_update", "")!!
+        set(value) { prefs.edit().putString("skipped_update", value).apply() }
+    /** "Only download between…": a daily window that may pass midnight. */
+    var window: DownloadWindow
+        get() = DownloadWindow(prefs.getBoolean("window_on", false), prefs.getInt("window_start", 2 * 60).coerceIn(0, 1439), prefs.getInt("window_end", 7 * 60).coerceIn(0, 1439))
+        set(value) { prefs.edit().putBoolean("window_on", value.enabled).putInt("window_start", value.startMinute).putInt("window_end", value.endMinute).apply() }
     var speedLimit: Long
         get() = prefs.getLong("speed", 0).coerceAtLeast(0)
         set(value) { prefs.edit().putLong("speed", value.coerceAtLeast(0)).apply() }
@@ -45,6 +72,7 @@ object MobileNetwork {
         return NetworkSnapshot(caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
             caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED),
             caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI), manager.isActiveNetworkMetered,
-            !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING))
+            // The roaming capability only exists from Android 9; before that, assume not roaming.
+            android.os.Build.VERSION.SDK_INT >= 28 && !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING))
     }
 }

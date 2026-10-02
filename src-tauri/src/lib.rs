@@ -13,6 +13,7 @@ mod automation;
 mod browser_setup;
 mod clipboard_watch;
 mod mini;
+mod plugin_store;
 mod portable;
 mod tools;
 mod tray;
@@ -31,7 +32,7 @@ use dm_ipc::{
     NetworkSettingsResponse, QueueResponse, QueueRunnerEventResponse, QueueScheduleResponse,
     RuleExplanationResponse, TrafficSummaryResponse, TransferProgressResponse,
 };
-use dm_ipc::{DownloadChecksResponse, PostProcessSettingsResponse};
+use dm_ipc::{DownloadChecksResponse, DownloadPartResponse, PostProcessSettingsResponse};
 use dm_ipc::{EngineSettingsResponse, FfmpegStatusResponse, StreamVariantResponse};
 use dm_storage::Storage;
 use std::{
@@ -72,6 +73,8 @@ pub struct AppState {
     tray_menu: Mutex<Option<tray::TrayMenu>>,
     /// What happened to a restore that waited for this start; shown once.
     restore_outcome: Mutex<Option<RestoreOutcomeResponse>>,
+    /// The folder plugin files are kept in.
+    plugin_dir: std::path::PathBuf,
 }
 
 /// Publishes engine events to the UI and enforces the per-task event rate.
@@ -836,6 +839,85 @@ fn set_start_with_windows(enabled: bool) -> Result<bool, String> {
     let application = std::env::current_exe().map_err(|error| error.to_string())?;
     dm_system::autostart::set(&application, enabled).map_err(|error| error.to_string())?;
     Ok(dm_system::autostart::enabled(&application))
+}
+
+/// Loads the switched-on plugins into the download engine.
+fn apply_plugins(state: &AppState) {
+    let disabled = plugin_store::parse_disabled(
+        state
+            .storage
+            .get_setting(plugin_store::SETTING_DISABLED)
+            .ok()
+            .flatten(),
+    );
+    state
+        .downloads
+        .set_plugins(plugin_store::active(&state.plugin_dir, &disabled));
+}
+
+fn disabled_plugins(state: &AppState) -> std::collections::HashSet<String> {
+    plugin_store::parse_disabled(
+        state
+            .storage
+            .get_setting(plugin_store::SETTING_DISABLED)
+            .ok()
+            .flatten(),
+    )
+}
+
+#[tauri::command]
+fn list_plugins(state: State<'_, AppState>) -> Vec<plugin_store::InstalledPlugin> {
+    plugin_store::installed(&state.plugin_dir, &disabled_plugins(&state))
+}
+
+/// Adds a plugin from a file the user picked; refused with a reason if it is not valid.
+#[tauri::command]
+fn import_plugin(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<Vec<plugin_store::InstalledPlugin>, String> {
+    plugin_store::import(&state.plugin_dir, std::path::Path::new(&path))?;
+    apply_plugins(&state);
+    Ok(plugin_store::installed(
+        &state.plugin_dir,
+        &disabled_plugins(&state),
+    ))
+}
+
+#[tauri::command]
+fn remove_plugin(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Vec<plugin_store::InstalledPlugin>, String> {
+    plugin_store::remove(&state.plugin_dir, &id)?;
+    apply_plugins(&state);
+    Ok(plugin_store::installed(
+        &state.plugin_dir,
+        &disabled_plugins(&state),
+    ))
+}
+
+#[tauri::command]
+fn set_plugin_enabled(
+    state: State<'_, AppState>,
+    id: String,
+    enabled: bool,
+) -> Result<Vec<plugin_store::InstalledPlugin>, String> {
+    let mut disabled = disabled_plugins(&state);
+    if enabled {
+        disabled.remove(&id);
+    } else {
+        disabled.insert(id);
+    }
+    state
+        .storage
+        .set_setting(
+            plugin_store::SETTING_DISABLED,
+            &plugin_store::join_disabled(&disabled),
+        )
+        .map_err(|error| error.to_string())?;
+    apply_plugins(&state);
+    Ok(plugin_store::installed(&state.plugin_dir, &disabled))
 }
 
 #[tauri::command]
@@ -1707,6 +1789,29 @@ fn get_download_checks(
         .download_checks(&download_id)
         .map(download_checks_response)
         .map_err(|error| error.to_string())
+}
+
+/// The parts of a segmented download with how much each has received.
+#[tauri::command]
+fn get_download_parts(
+    state: State<'_, AppState>,
+    download_id: String,
+) -> Result<Vec<DownloadPartResponse>, String> {
+    state
+        .downloads
+        .download_segments(&download_id)
+        .map(|segments| segments.iter().map(part_response).collect())
+        .map_err(|error| error.to_string())
+}
+
+fn part_response(segment: &dm_common::DownloadSegment) -> DownloadPartResponse {
+    DownloadPartResponse {
+        index: segment.segment_index,
+        start: segment.start_byte,
+        total: segment.expected_bytes().unwrap_or(0),
+        downloaded: segment.downloaded_bytes,
+        status: segment.status.as_str().to_owned(),
+    }
 }
 
 /// Stores the checksum the download should have; an empty value forgets
@@ -3182,7 +3287,9 @@ pub fn run() {
                 automation: Automation::new(),
                 tray_menu: Mutex::new(None),
                 restore_outcome: Mutex::new(restore_outcome),
+                plugin_dir: plugin_store::folder(&app_data_dir),
             });
+            apply_plugins(&app.state::<AppState>());
 
             // A missing notification area (some Linux desktops) must not stop
             // the application from starting.
@@ -3416,6 +3523,11 @@ pub fn run() {
             check_database,
             check_connection,
             get_download_checks,
+            get_download_parts,
+            list_plugins,
+            import_plugin,
+            remove_plugin,
+            set_plugin_enabled,
             set_expected_checksum,
             run_post_process,
             get_post_process_settings,

@@ -359,3 +359,19 @@
 .mini__field--wide {
   grid-template-columns: auto 1fr;
 }
+
+.mini__resume {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.mini__yes {
+  color: var(--success, #2fa84f);
+}
+
+.mini__no {
+  color: var(--danger, #d4523f);
+}

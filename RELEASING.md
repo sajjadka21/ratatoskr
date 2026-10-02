@@ -42,7 +42,7 @@ For an already published preview, promote its verified assets with GitHub's
 release edit action rather than rebuilding/replacing binaries under the same
 version. A new version is required if the binaries change.
 
-Android now publishes a universal APK and three architecture APKs. The three
+Android publishes one APK per CPU (no universal APK, to keep downloads small); `Ratatoskr-android.apk` is the arm64 build. The three
 browser ZIPs are separate submission packages; marketplace approval and actual
 assigned extension IDs remain separate work. CI debug APKs are excluded from
 release asset collection.

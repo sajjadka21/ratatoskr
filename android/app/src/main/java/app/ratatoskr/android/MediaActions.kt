@@ -44,6 +44,7 @@ object MobileText {
         "not_found" -> R.string.error_removed
         "unsupported_media", "not_a_file", "invalid_output" -> R.string.error_unsupported
         "system_timeout" -> R.string.error_timeout
+        "storage_permission" -> R.string.error_storage
         "bad_link" -> R.string.bad_link
         "interrupted" -> R.string.error_interrupted
         "waiting_network", "network" -> R.string.error_network

@@ -48,16 +48,24 @@ class ShareActivity : MobileActivity() {
         setContentView(ScrollView(this).apply { addView(box) })
         model = ViewModelProvider(this)[ShareModel::class.java]
         val shared = if (intent?.action == Intent.ACTION_VIEW) {
-            LinkUtils.handoffUrl(intent?.dataString) ?: run { finishWith(R.string.bad_link); return }
+            // ratatoskr://add?url=… from our own pages, or a plain file link opened with "Open with Ratatoskr"
+            val data = intent?.dataString
+            (if (data?.startsWith("http", true) == true) data.takeIf { LinkUtils.isPublicHttpUrl(it) } else LinkUtils.handoffUrl(data))
+                ?: run { finishWith(R.string.bad_link); return }
         } else intent?.getStringExtra(Intent.EXTRA_TEXT)
         val text = shared ?: if (intent?.getBooleanExtra(EXTRA_FROM_CLIPBOARD, false) == true) clipboardText() else null
-        val urls = LinkUtils.extractUrls(text)
+        val urls = LinkPlan.parse(text)
         if (urls.isEmpty() || urls.any { !LinkUtils.isPublicHttpUrl(it) }) { finishWith(R.string.bad_link); return }
         val prefs = MobilePreferences(this)
+        // A Spotify track has one sensible outcome: its audio. No quality question.
+        if (urls.all { Spotify.isTrackUrl(it) }) { enqueue(urls, null, true); return }
         val allowed = TaskPolicy.mayRun(prefs.networkPolicy, MobileNetwork.snapshot(this), prefs.allowRoaming)
         if (prefs.quickDownload) { enqueue(urls, prefs.defaultHeight, prefs.defaultAudio); return }
+        // A plain file link needs no questions: no quality to choose, so skip the media probe.
+        if (urls.size == 1 && LinkPlan.classify(urls.first()) == LinkKind.FILE) { enqueue(urls, null, false); return }
         if (urls.size > 1 || !allowed) {
-            box.addView(label(if (!allowed) getString(R.string.waiting_network) else "${urls.size} · ${getString(R.string.add_links)}"))
+            val counts = LinkPlan.summarize(urls)
+            box.addView(label(if (!allowed) getString(R.string.waiting_network) else getString(R.string.links_summary, urls.size, counts.files, counts.media)))
             box.addView(button(getString(R.string.download_selected)) { enqueue(urls, prefs.defaultHeight, prefs.defaultAudio) })
             box.addView(button(getString(R.string.cancel)) { finish() }); return
         }
@@ -102,8 +110,10 @@ class ShareActivity : MobileActivity() {
         if (info.items.any { it.kind != "photo" }) choice(getString(R.string.audio_only), null, true)
         box.addView(button(getString(R.string.cancel)) { finish() })
     }
-    private fun enqueue(urls: List<String>, height: Int?, audio: Boolean, kind: String = "media") {
-        urls.forEach { DownloadService.start(this, it, height, audio, "", kind) }; finish()
+    private fun enqueue(urls: List<String>, height: Int?, audio: Boolean, kind: String? = null) {
+        if (kind == null) DownloadService.startMany(this, urls, height, audio)
+        else urls.forEach { DownloadService.start(this, it, height, audio, "", kind) }
+        finish()
     }
     private fun finishWith(message: Int) { Toast.makeText(this, message, Toast.LENGTH_LONG).show(); finish() }
     companion object { const val EXTRA_FROM_CLIPBOARD = "from_clipboard" }

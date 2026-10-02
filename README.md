@@ -56,6 +56,7 @@ engine, the database and the settings all live on your computer.
 - **Browser extension** for Chrome, Edge, Brave and Firefox: right-click
   *Download with Ratatoskr*, a video button on supported sites, optional takeover
   of browser downloads, optional login handover for a single download.
+- **Plugins** — small JSON rule files (rewrite a link, rename a file, per-site headers); data only, never code. See [docs/PLUGINS.md](docs/PLUGINS.md).
 - **Command line** — `tosk add <url>`, `tosk list`, `tosk pause-all`, …
 
 **Feels right**
@@ -89,11 +90,20 @@ are still verified against the public key built into the app.
 
 ### Android
 
-Download `Ratatoskr-android.apk` from the release and open it (allow installing
-from your browser when asked). Then, in YouTube or Instagram, press **Share →
-Ratatoskr**, pick a quality and the download continues in the background. See
+Download `Ratatoskr-android.apk` (64-bit ARM, right for nearly every phone; 32-bit
+and x86 builds are listed beside it) and open it (allow installing from your
+browser when asked). Then, in YouTube, Instagram or Spotify, press **Share →
+Ratatoskr** and the download continues in the background. Direct file links are
+split over up to 8 connections for speed; Spotify tracks are saved as audio
+found on YouTube (Spotify's own streams are DRM-protected). See
 [android/README.md](android/README.md). The Android app is a preview: it builds
-in CI but has had little real-device testing.
+in CI but has had little real-device testing. It needs Android 8 or later.
+
+On Android you can also paste many links at once (or `photo[01-20].jpg`), start a
+download at a set time or only between set hours, sort files into Video / Music /
+Archives folders, open a file link with *Open with Ratatoskr*, and add your own
+rules with [plugins](docs/PLUGINS.md). Updates ask first and are checked against
+their published SHA-256.
 
 ### Telegram bot (optional)
 

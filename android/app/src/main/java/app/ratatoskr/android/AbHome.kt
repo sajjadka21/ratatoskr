@@ -148,7 +148,7 @@ fun AbHome(
                     }) { Text(stringResource(title), color = if (selected) colors.primary else colors.onSurfaceVariant) }
                 }
                 Box {
-                    AbIconButton(ABDMIcons.Folder, stringResource(R.string.filter_category)) { filter = true }
+                    AbResourceButton(R.drawable.ic_filter, R.string.filter_category) { filter = true }
                     DropdownMenu(filter, { filter = false }) {
                         DropdownMenuItem(text = { Text(stringResource(R.string.filter_all)) }, onClick = { filter = false; onCategory(null) })
                         categories.forEach { (key, label) -> DropdownMenuItem(text = { Text(label) }, onClick = { filter = false; onCategory(key) }) }

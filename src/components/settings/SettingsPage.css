@@ -461,7 +461,8 @@
 
 .settings-page__inline-field input,
 .settings-page__field input,
-.settings-page__field select {
+.settings-page__field select,
+.settings-page__row-control select {
   height: 32px;
   padding: 0 9px;
   color: var(--text-primary);
@@ -478,7 +479,8 @@
 
 .settings-page__inline-field input:focus-visible,
 .settings-page__field input:focus-visible,
-.settings-page__field select:focus-visible {
+.settings-page__field select:focus-visible,
+.settings-page__row-control select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }

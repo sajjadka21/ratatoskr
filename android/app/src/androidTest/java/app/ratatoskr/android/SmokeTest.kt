@@ -121,8 +121,10 @@ class SmokeTest {
     private fun screenshot(name: String) {
         require(name.matches(Regex("[a-z-]+")))
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
-        automation.executeShellCommand("mkdir -p /sdcard/Download/ratatoskr-ui-review && screencap -p /sdcard/Download/ratatoskr-ui-review/$name.png").use {
-            android.os.ParcelFileDescriptor.AutoCloseInputStream(it).use { stream -> stream.readBytes() }
+        for (command in listOf("mkdir -p /sdcard/Download/ratatoskr-ui-review", "screencap -p /sdcard/Download/ratatoskr-ui-review/$name.png")) {
+            automation.executeShellCommand(command).use {
+                android.os.ParcelFileDescriptor.AutoCloseInputStream(it).use { stream -> stream.readBytes() }
+            }
         }
     }
 

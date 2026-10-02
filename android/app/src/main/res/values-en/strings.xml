@@ -45,7 +45,7 @@
     <string name="error_interrupted">The previous session was interrupted. Resume to continue.</string>
     <string name="error_network">The required network is unavailable. Check your connection.</string>
     <string name="error_retry">Download interrupted. Your partial files are kept; try again.</string>
-    <string name="active_jobs">Active downloads</string>
+    <string name="active_jobs">Active</string>
     <string name="history">History</string>
     <string name="empty_jobs">No downloads here yet. Share a link or paste one to start.</string>
     <string name="add_links">Add links</string>

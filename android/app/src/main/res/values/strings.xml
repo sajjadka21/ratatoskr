@@ -46,7 +46,7 @@
     <string name="error_interrupted">جلسهٔ قبلی قطع شده است. برای ادامه، دکمهٔ ادامه را بزنید.</string>
     <string name="error_network">شبکهٔ لازم در دسترس نیست. اتصال را بررسی کنید.</string>
     <string name="error_retry">دانلود قطع شد. فایل ناقص حفظ شده است؛ دوباره تلاش کنید.</string>
-    <string name="active_jobs">دانلودهای فعال</string>
+    <string name="active_jobs">فعال</string>
     <string name="history">تاریخچه</string>
     <string name="empty_jobs">هنوز دانلودی اینجا نیست. یک لینک را اشتراک‌گذاری یا وارد کنید.</string>
     <string name="add_links">افزودن لینک</string>

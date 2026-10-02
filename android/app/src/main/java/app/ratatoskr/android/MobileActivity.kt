@@ -37,6 +37,12 @@ abstract class MobileActivity : AppCompatActivity() {
             AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(prefs.language))
         appliedAppearance = listOf(prefs.mode, prefs.brand, prefs.language)
         super.onCreate(savedInstanceState)
+        window.statusBarColor = paper
+        window.navigationBarColor = paper
+        androidx.core.view.WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !dark
+            isAppearanceLightNavigationBars = !dark
+        }
     }
     private var appliedAppearance = emptyList<String>()
     override fun onResume() {

@@ -93,7 +93,7 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
             UiIcon(R.drawable.ui_pause, R.string.pause) { onSelection(R.string.pause) }
             UiIcon(R.drawable.ui_play, R.string.resume) { onSelection(R.string.resume) }
             UiIcon(R.drawable.ic_delete, R.string.remove) { onSelection(R.string.remove) }
-        } else if (!search) Text(stringResource(R.string.nav_downloads), Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 20.dp), fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Right)
+        } else if (!search) Text(stringResource(R.string.nav_downloads), Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 12.dp), fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Right)
         if (search) {
             BackHandler { search = false; onQuery("") }
             val focus = remember { FocusRequester() }
@@ -130,7 +130,7 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
                 val groups = listOf(rows.filter { it.task.state in TaskPolicy.inFlight }, rows.filter { it.task.state !in TaskPolicy.inFlight && it.task.state !in setOf(TaskState.COMPLETED, TaskState.CANCELLED) }, rows.filter { it.task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED) })
                 groups.forEachIndexed { index, group ->
                     if (group.isNotEmpty()) {
-                        item(key = "section-$index") { Text(stringResource(when(index) { 0 -> R.string.group_transferring; 2 -> R.string.group_completed; else -> R.string.pending_downloads }) + " (${java.text.NumberFormat.getIntegerInstance(LocalContext.current.resources.configuration.locales[0]).format(group.size)})", Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 8.dp), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Right) }
+                        item(key = "section-$index") { Text(stringResource(when(index) { 0 -> R.string.group_transferring; 2 -> R.string.group_completed; else -> R.string.pending_downloads }) + " (${java.text.NumberFormat.getIntegerInstance(LocalContext.current.resources.configuration.locales[0]).format(group.size)})", Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 12.dp, bottom = 4.dp), fontSize = 16.sp, lineHeight=22.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Right) }
                         items(group, key = { it.task.id }) { row -> if (index == 0) ActiveTransfer(row, state.selecting, actions) else FileRow(row, state.selecting, actions) }
                         if (index == 0) item(key = "network") { NetworkStatus() }
                     }
@@ -145,10 +145,10 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
     val c = MaterialTheme.colorScheme
     Box(Modifier.fillMaxWidth().height(88.dp)) {
         Box(Modifier.fillMaxSize().drawBehind {
-            val x=size.width/2;val y=16.dp.toPx();val r=34.dp.toPx();val shoulder=12.dp.toPx()
-            val p=Path().apply { moveTo(0f,y);lineTo(x-r-shoulder,y);cubicTo(x-r,y,x-r,y+r,x,y+r);cubicTo(x+r,y+r,x+r,y,x+r+shoulder,y);lineTo(size.width,y);lineTo(size.width,size.height);lineTo(0f,size.height);close() }
+            val x=size.width/2;val y=16.dp.toPx();val r=34.dp.toPx();val shoulder=12.dp.toPx();val depth=46.dp.toPx()
+            val p=Path().apply { moveTo(0f,y);lineTo(x-r-shoulder,y);cubicTo(x-r,y,x-r,y+depth,x,y+depth);cubicTo(x+r,y+depth,x+r,y,x+r+shoulder,y);lineTo(size.width,y);lineTo(size.width,size.height);lineTo(0f,size.height);close() }
             drawPath(p,c.surface)
-            val edge=Path().apply { moveTo(0f,y);lineTo(x-r-shoulder,y);cubicTo(x-r,y,x-r,y+r,x,y+r);cubicTo(x+r,y+r,x+r,y,x+r+shoulder,y);lineTo(size.width,y) }
+            val edge=Path().apply { moveTo(0f,y);lineTo(x-r-shoulder,y);cubicTo(x-r,y,x-r,y+depth,x,y+depth);cubicTo(x+r,y+depth,x+r,y,x+r+shoulder,y);lineTo(size.width,y) }
             drawPath(edge,c.outline.copy(alpha=.6f),style=androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
         })
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
@@ -158,8 +158,8 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
                 DockItem(R.drawable.ui_download, R.string.nav_downloads, c.primary, Modifier.weight(1f), onDownloads)
             }
         }
-        FilledIconButton(onClick=onAdd,modifier=Modifier.align(Alignment.TopCenter).size(56.dp),shape=CircleShape,
-            colors=IconButtonDefaults.filledIconButtonColors(containerColor=Gold,contentColor=Ink)) { Icon(painterResource(R.drawable.ui_plus), stringResource(R.string.add_links), Modifier.size(30.dp)) }
+        FilledIconButton(onClick=onAdd,modifier=Modifier.align(Alignment.TopCenter).size(56.dp).background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xffE2C78C),Color(0xffC5A361))),CircleShape).border(1.dp,Gold,CircleShape),shape=CircleShape,
+            colors=IconButtonDefaults.filledIconButtonColors(containerColor=Color.Transparent,contentColor=Ink)) { Icon(painterResource(R.drawable.ui_plus), stringResource(R.string.add_links), Modifier.size(30.dp),tint=Ink) }
     }
 }
 @Composable private fun DockItem(icon:Int,label:Int,tint:Color,modifier:Modifier,action:()->Unit) {
@@ -208,7 +208,7 @@ private fun kindIcon(task:MobileTask):Int {
                     Text(t.title.ifEmpty { t.fileName.ifEmpty { LinkPlan.host(t.url) } },fontSize=16.sp,lineHeight=22.sp,maxLines=2,overflow=TextOverflow.Ellipsis,style=MaterialTheme.typography.bodyLarge.copy(textDirection=TextDirection.Ltr),fontWeight=FontWeight.Medium)
                     val status=MobileText.state(LocalContext.current,t)
                     val size=if(t.state==TaskState.COMPLETED)Format.bytes(t.totalBytes.takeIf { it>0 }?:t.bytesDone) else row.stats
-                    Text(listOf(status,size).filter { it.isNotBlank() }.joinToString(" · "),fontSize=12.sp,lineHeight=18.sp,color=if(t.state==TaskState.FAILED)c.error else c.onSurfaceVariant,maxLines=2,overflow=TextOverflow.Ellipsis,style=MaterialTheme.typography.bodySmall.copy(textDirection=TextDirection.Content))
+                    Text(listOf("\u2067$status\u2069",size.takeIf { it.isNotBlank() }?.let { "\u2066$it\u2069" }.orEmpty()).filter { it.isNotBlank() }.joinToString(" · "),fontSize=12.sp,lineHeight=18.sp,color=if(t.state==TaskState.FAILED)c.error else c.onSurfaceVariant,maxLines=2,overflow=TextOverflow.Ellipsis,style=MaterialTheme.typography.bodySmall.copy(textDirection=TextDirection.Ltr))
                     if(t.error.isNotEmpty())Text(MobileText.error(LocalContext.current,t.error),color=c.error,fontSize=12.sp,maxLines=2,overflow=TextOverflow.Ellipsis)
                     if(row.schedule.isNotEmpty())Text(row.schedule,color=c.primary,fontSize=12.sp)
                 }
@@ -227,14 +227,14 @@ private fun kindIcon(task:MobileTask):Int {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable private fun ActiveTransfer(row:TaskRow,selecting:Boolean,actions:TaskActions) {
     val t=row.task;val c=MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp).clip(RoundedCornerShape(20.dp)).background(c.surface).border(1.dp,c.outline.copy(alpha=.45f),RoundedCornerShape(20.dp))
+    Column(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=0.dp).clip(RoundedCornerShape(20.dp)).background(c.surface).border(1.dp,c.outline.copy(alpha=.45f),RoundedCornerShape(20.dp))
         .combinedClickable(onClick={if(selecting)actions.toggle(t) else actions.details(t)},onLongClick={actions.toggle(t)}).padding(12.dp)) {
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
                 if(selecting)Checkbox(row.selected,{actions.toggle(t)}) else TransferAction(t,actions)
                 Column(Modifier.weight(1f).padding(horizontal=12.dp),horizontalAlignment=Alignment.End) {
                     Text(t.title.ifEmpty { t.fileName.ifEmpty { LinkPlan.host(t.url) } },fontSize=16.sp,maxLines=2,overflow=TextOverflow.Ellipsis,textAlign=TextAlign.End,style=MaterialTheme.typography.bodyLarge.copy(textDirection=TextDirection.Ltr))
-                    Text(LinkPlan.host(t.url),fontSize=13.sp,color=c.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
+                    Text(LinkPlan.host(t.url),fontSize=13.sp,lineHeight=18.sp,color=c.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
                 }
                 PreviewImage(row.thumbnail ?: t.uri.takeIf { it.isNotBlank() },t,Modifier.width(88.dp).height(64.dp))
             }
@@ -282,7 +282,7 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
     Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically) {
         Icon(painterResource(if(caps==null)R.drawable.ui_wifi_off else R.drawable.ui_wifi),null,Modifier.size(22.dp),tint=c.onSurfaceVariant)
-        Text(stringResource(if(caps==null)R.string.network_unavailable else if(wifi)R.string.connected_wifi else R.string.connected_mobile),Modifier.padding(start=8.dp),color=c.onSurfaceVariant,fontSize=13.sp)
+        Text(stringResource(if(caps==null)R.string.network_unavailable else if(wifi)R.string.connected_wifi else R.string.connected_mobile),Modifier.padding(start=8.dp),color=c.onSurfaceVariant,fontSize=13.sp,lineHeight=18.sp)
     }
     }
 }
@@ -325,7 +325,7 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
             Surface(Modifier.fillMaxWidth().padding(top=12.dp).clickable(onClick=onFolder),shape=Round,color=c.surface,border=BorderStroke(1.dp,c.outline.copy(alpha=.5f))) {
                 Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically) {
                     Icon(painterResource(R.drawable.ui_folder),null,Modifier.size(24.dp));Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) { Text(stringResource(R.string.save_location),fontSize=14.sp);Text(folder,fontSize=13.sp,color=c.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis) }
+                    Column(Modifier.weight(1f)) { Text(stringResource(R.string.save_location),fontSize=14.sp);Text(folder,fontSize=13.sp,lineHeight=18.sp,color=c.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis) }
                     Icon(painterResource(R.drawable.ui_chevron_right),null,Modifier.size(22.dp))
                 }
             }

@@ -28,7 +28,7 @@ class FaithfulDesignTest {
     private fun sample():List<TaskRow> {
         val image=File(context.cacheDir,"design-review-thumbnail.png")
         InstrumentationRegistry.getInstrumentation().context.assets.open("design-review-thumbnail.png").use { input -> image.outputStream().use { input.copyTo(it) } }
-        fun task(id:String,name:String,state:TaskState,size:Long)=MobileTask(id,"https://example.com/$name",name,state,kind="file",totalBytes=size,fileName=name)
+        fun task(id:String,name:String,state:TaskState,size:Long)=MobileTask(id,"https://example.com/${android.net.Uri.encode(name)}",name,state,kind="file",totalBytes=size,fileName=name)
         return listOf(
             TaskRow(task("review-video","Design course.mp4",TaskState.DOWNLOADING,1073741824).copy(progress=64,bytesDone=687194767,mime="video/mp4"),"640 MB / 1 GB · 8.4 MB/s · ۲ دقیقه باقی مانده","",thumbnail=android.net.Uri.fromFile(image).toString()),
             TaskRow(task("review-archive","Android Studio.zip",TaskState.PAUSED,1073741824).copy(bytesDone=268435456,progress=25),"256 MB / 1 GB",""),
@@ -53,10 +53,12 @@ class FaithfulDesignTest {
             for(mode in listOf("dark","light")) {
                 prefs.mode=mode
                 ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                    var addLabel="";var downloadLabel="";var openLabel=""
                     compose.onNodeWithText("Ratatoskr").assertIsDisplayed()
                     compose.waitUntil(10000) { runCatching { compose.onAllNodesWithText("دانلودها",substring=true).fetchSemanticsNodes().isNotEmpty() }.getOrDefault(false) }
                     compose.waitForIdle()
                     scenario.onActivity { activity ->
+                        addLabel=activity.getString(R.string.add_links);downloadLabel=activity.getString(R.string.download_action);openLabel=activity.getString(R.string.open_file)
                         val rows=sample()
                         activity.setContentView(ComposeView(activity).apply {
                             setContent { RatatoskrTheme(activity) {
@@ -71,11 +73,12 @@ class FaithfulDesignTest {
                     compose.waitUntil(10000) { runCatching { compose.onAllNodesWithText("Design course.mp4").fetchSemanticsNodes().isNotEmpty() }.getOrDefault(false) }
                     compose.onNodeWithText("Design course.mp4").assertIsDisplayed()
                     compose.onNodeWithText("Portfolio.pdf").assertIsDisplayed()
+                    compose.onNodeWithContentDescription(openLabel).assertIsDisplayed()
                     compose.waitUntil(5000) { compose.onAllNodesWithTag("download-preview",useUnmergedTree=true).fetchSemanticsNodes().isNotEmpty() }
                     capture("approved-home-$mode-fa")
                     if(mode=="dark") {
-                        compose.onNodeWithContentDescription(context.getString(R.string.add_links)).performClick()
-                        compose.onNodeWithText(context.getString(R.string.download_action)).assertIsDisplayed()
+                        compose.onNodeWithContentDescription(addLabel).performClick()
+                        compose.onNodeWithText(downloadLabel).assertIsDisplayed()
                         capture("approved-intake-dark-fa")
                     }
                 }

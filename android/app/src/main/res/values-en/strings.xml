@@ -210,7 +210,7 @@ Tap + to add a link.</string>
     <string name="sort_name">File name</string>
     <string name="sort_size">File size</string>
     <string name="filter_category">Category</string>
-    <string name="more_options">More options</string>
+    <string name="more_options">Download settings</string>
     <string name="pending_downloads">Waiting</string>
     <string name="new_download">New download</string>
     <string name="link_label">Download link</string>
@@ -257,4 +257,13 @@ Tap + to add a link.</string>
 <string name="select_queue">Choose or create a queue</string>
 <string name="existing_queues">Existing queues</string>
 <string name="queue_intake_hint">Choose an existing queue or enter a new name. Start the queue to download its items in order.</string>
+<string name="duplicate_title">This link already exists</string>
+<string name="duplicate_done">You have already downloaded this content.</string>
+<string name="duplicate_pending">This content is already in your download list.</string>
+<string name="duplicate_warning">Adding it again creates another copy and can use your data again.</string>
+<string name="duplicate_again">Add another copy</string>
+<string name="duplicate_view">View previous download</string>
+<string name="add_saved_feedback">Added to the list. Press Play on the row or queue to start.</string>
+<string name="add_started_feedback">Added to downloads.</string>
+<string name="intake_settings_hint">Date, time and audio-only download</string>
 </resources>

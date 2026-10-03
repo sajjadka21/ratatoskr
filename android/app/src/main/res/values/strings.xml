@@ -211,7 +211,7 @@
     <string name="sort_name">نام فایل</string>
     <string name="sort_size">حجم فایل</string>
     <string name="filter_category">دسته‌بندی</string>
-    <string name="more_options">گزینه‌های بیشتر</string>
+    <string name="more_options">تنظیمات دانلود</string>
     <string name="pending_downloads">در انتظار</string>
     <string name="new_download">دانلود جدید</string>
     <string name="link_label">لینک دانلود</string>
@@ -258,4 +258,13 @@
 <string name="select_queue">انتخاب یا ساخت صف</string>
 <string name="existing_queues">صف‌های موجود</string>
 <string name="queue_intake_hint">نام صف موجود را انتخاب کن یا نام تازه‌ای بنویس. دانلودها پس از شروع صف، پشت‌سرهم اجرا می‌شوند.</string>
+<string name="duplicate_title">این لینک تکراری است</string>
+<string name="duplicate_done">این محتوا را قبلاً دانلود کرده‌ای.</string>
+<string name="duplicate_pending">این محتوا از قبل در فهرست دانلودهایت هست.</string>
+<string name="duplicate_warning">افزودن دوباره، یک نسخهٔ دیگر می‌سازد و می‌تواند دوباره اینترنت مصرف کند.</string>
+<string name="duplicate_again">عمداً دوباره اضافه شود</string>
+<string name="duplicate_view">دیدن دانلود قبلی</string>
+<string name="add_saved_feedback">به فهرست افزوده شد. برای شروع، دکمهٔ پخشِ ردیف یا صف را بزن.</string>
+<string name="add_started_feedback">به دانلودها اضافه شد.</string>
+<string name="intake_settings_hint">تاریخ، ساعت و دانلود فقط صدا</string>
 </resources>

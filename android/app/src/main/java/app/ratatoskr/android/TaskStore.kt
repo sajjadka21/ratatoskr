@@ -60,7 +60,7 @@ class TaskStore internal constructor(context: Context, databaseName: String = "d
         val canonical = LinkUtils.canonicalUrl(url)
         val existing = list().firstOrNull { LinkUtils.contentIdentity(it.url) == LinkUtils.contentIdentity(canonical) && it.height == height && it.audioOnly == audio &&
             it.kind == kind && it.selectedItems == items && it.state !in setOf(TaskState.COMPLETED, TaskState.CANCELLED, TaskState.FAILED) }
-        if (existing != null) return existing
+        if (existing != null && !options.allowDuplicate) return existing
         val now = System.currentTimeMillis()
         val id = UUID.randomUUID().toString()
         val values = ContentValues().apply {

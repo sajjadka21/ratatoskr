@@ -29,6 +29,40 @@ class IntakeUiTest {
         for (command in listOf("mkdir -p /sdcard/Download/ratatoskr-ui-review", "screencap -p /sdcard/Download/ratatoskr-ui-review/$name.png"))
             automation.executeShellCommand(command).use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).use { stream -> stream.readBytes() } }
     }
+    @Test fun floatingAddAcceptsIncompletePasteThenSavesAndCanBeReopened() {
+        prepare()
+        val url = "https://example.com/floating-${UUID.randomUUID()}.mp4"
+        ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java)).use { scenario ->
+            compose.onNodeWithContentDescription(context.getString(R.string.add_links)).performClick()
+            // Exercise intermediate input as well as a complete pasted URL, with the keyboard open.
+            compose.onNode(hasSetTextAction()).performTextInput("https://")
+            compose.waitForIdle()
+            compose.onNode(hasSetTextAction()).performTextReplacement("https://example")
+            compose.waitForIdle()
+            compose.onNode(hasSetTextAction()).performTextReplacement(url)
+            compose.onNodeWithText("Add", useUnmergedTree = true).performScrollTo().performClick()
+            compose.waitUntil(10000) { TaskStore.get(context).list().any { it.url == url } }
+            val task = TaskStore.get(context).list().first { it.url == url }
+            try {
+                assertEquals(TaskState.SAVED, task.state)
+                assertFalse(MobileRuntime.busy(task.id))
+                compose.onNodeWithText(TaskQuery.name(task)).assertIsDisplayed()
+                scenario.recreate()
+                compose.onNodeWithText(TaskQuery.name(task)).assertIsDisplayed()
+                compose.onNodeWithContentDescription(context.getString(R.string.add_links)).performClick()
+                compose.onNode(hasSetTextAction()).performTextReplacement(url)
+                compose.onNodeWithText(context.getString(R.string.duplicate_pending)).assertExists()
+                capture("floating-add-duplicate-warning")
+                compose.onNodeWithText("Add", useUnmergedTree = true).performScrollTo().performClick()
+                androidx.test.espresso.Espresso.onView(androidx.test.espresso.matcher.ViewMatchers.withText(context.getString(R.string.duplicate_title)))
+                    .check(androidx.test.espresso.assertion.ViewAssertions.matches(androidx.test.espresso.matcher.ViewMatchers.isDisplayed()))
+                assertEquals(1, TaskStore.get(context).list().count { it.url == url })
+                androidx.test.espresso.Espresso.onView(androidx.test.espresso.matcher.ViewMatchers.withText(context.getString(R.string.duplicate_again))).perform(androidx.test.espresso.action.ViewActions.click())
+                compose.waitUntil(10000) { TaskStore.get(context).list().count { it.url == url } == 2 }
+                assertTrue(TaskStore.get(context).list().filter { it.url == url }.all { it.state == TaskState.SAVED })
+            } finally { TaskStore.get(context).list().filter { it.url == url }.forEach { TaskStore.get(context).remove(it.id) } }
+        }
+    }
     @Test fun pasteCanSaveWithoutProbeAndNamedQueueSurvivesRecreation() {
         prepare()
         val url = "https://example.com/series-${UUID.randomUUID()}.mp4"

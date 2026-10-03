@@ -3,7 +3,7 @@ package app.ratatoskr.android
 enum class IntakeMode { NOW, SAVE, QUEUE, SCHEDULE }
 
 /** Persist the chosen action together with the job, before any executor can see it. */
-data class IntakeOptions(val mode: IntakeMode = IntakeMode.NOW, val startAt: Long = 0, val groupName: String = "") {
+data class IntakeOptions(val mode: IntakeMode = IntakeMode.NOW, val startAt: Long = 0, val groupName: String = "", val allowDuplicate: Boolean = false) {
     val initialState get() = if (mode in setOf(IntakeMode.SAVE, IntakeMode.QUEUE)) TaskState.SAVED else TaskState.QUEUED
     fun validate(now: Long = System.currentTimeMillis()) {
         require(groupName.trim().length <= 80) { "group_too_long" }

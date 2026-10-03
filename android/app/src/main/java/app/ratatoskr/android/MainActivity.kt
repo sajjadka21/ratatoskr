@@ -100,7 +100,8 @@ class MainActivity : MobileActivity(), TaskActions {
                             onClose = { addPrefill = null }, onPaste = ::clipboardText, onDownload = ::downloadLinks,
                             folder = folderLabel.ifEmpty { MobilePreferences(this@MainActivity).saveTree.takeIf { it.isNotEmpty() }?.let { android.net.Uri.parse(it).lastPathSegment?.substringAfterLast(':') }.orEmpty().ifEmpty { "Downloads/Ratatoskr" } },
                             onFolder = { chooseDownloadFolder.launch(null) }, onSubmit = ::submitLinks,
-                            groups = TaskStore.get(this@MainActivity).list().map { it.groupName }.filter { it.isNotEmpty() }.distinct()) }
+                            groups = TaskStore.get(this@MainActivity).list().map { it.groupName }.filter { it.isNotEmpty() }.distinct(),
+                            previousTasks = TaskStore.get(this@MainActivity).list()) }
                     }
                 }
             }
@@ -357,14 +358,34 @@ class MainActivity : MobileActivity(), TaskActions {
 
     private fun addLinks(prefill: String = "") { addPrefill = prefill }
 
+    private fun showAllDownloads() {
+        history = false; query = ""; category = null; formatFilter = null; dateFrom = 0; dateUntil = 0; sortOrder = 0; selection.clear()
+    }
+
     private fun downloadLinks(text: String, audio: Boolean): Boolean = submitLinks(text, audio, IntakeOptions())
 
     private fun submitLinks(text: String, audio: Boolean, options: IntakeOptions): Boolean {
         val urls = LinkPlan.parse(text)
         if (urls.isEmpty() || urls.any { !LinkUtils.isPublicHttpUrl(it) } || runCatching { options.validate() }.isFailure) return false
+        val identities = urls.map { LinkUtils.contentIdentity(it) }.toSet()
+        val previous = TaskStore.get(this).list().filter { LinkUtils.contentIdentity(it.url) in identities }.sortedByDescending { it.createdAt }
+        if (previous.isNotEmpty() && !options.allowDuplicate) {
+            val old = previous.first()
+            val message = getString(if (previous.any { it.state == TaskState.COMPLETED }) R.string.duplicate_done else R.string.duplicate_pending) +
+                "\n\n" + previous.take(3).joinToString("\n") { TaskQuery.name(it) + " · " + MobileText.state(this, it) + " · " + MobileDates.format(this, it.createdAt) } +
+                "\n\n" + getString(R.string.duplicate_warning)
+            addPrefill = null
+            AlertDialog.Builder(this).setTitle(R.string.duplicate_title).setMessage(message)
+                .setPositiveButton(R.string.duplicate_again) { _, _ -> submitLinks(text, audio, options.copy(allowDuplicate = true)) }
+                .setNeutralButton(R.string.duplicate_view) { _, _ -> showAllDownloads(); render(); details(old) }
+                .setNegativeButton(R.string.cancel) { _, _ -> addPrefill = text }.show()
+            return true
+        }
         val prefs = MobilePreferences(this)
         val result = runCatching { DownloadService.startMany(this, urls, prefs.defaultHeight, audio, options) }
         if (result.isFailure) { Toast.makeText(this, R.string.error_retry, Toast.LENGTH_LONG).show(); return false }
-        addPrefill = null; render(); return true
+        addPrefill = null; showAllDownloads(); render()
+        Toast.makeText(this, if (options.initialState == TaskState.SAVED) R.string.add_saved_feedback else R.string.add_started_feedback, Toast.LENGTH_LONG).show()
+        return true
     }
 }

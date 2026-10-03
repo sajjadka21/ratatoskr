@@ -300,7 +300,7 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun AbEnterUrl(prefill:String,defaultAudio:Boolean,onClose:()->Unit,onPaste:()->String,onDownload:(String,Boolean)->Boolean,folder:String="Downloads/Ratatoskr",onFolder:()->Unit={},onSubmit:((String,Boolean,IntakeOptions)->Boolean)?=null,groups:List<String> = emptyList()) {
+@Composable fun AbEnterUrl(prefill:String,defaultAudio:Boolean,onClose:()->Unit,onPaste:()->String,onDownload:(String,Boolean)->Boolean,folder:String="Downloads/Ratatoskr",onFolder:()->Unit={},onSubmit:((String,Boolean,IntakeOptions)->Boolean)?=null,groups:List<String> = emptyList(),previousTasks:List<MobileTask> = emptyList()) {
     var text by rememberSaveable { mutableStateOf(prefill) };var audio by rememberSaveable { mutableStateOf(defaultAudio) }
     var more by rememberSaveable { mutableStateOf(defaultAudio) };var invalid by rememberSaveable { mutableStateOf(false) }
     val urls=remember(text){LinkPlan.parse(text)};val counts=remember(urls){LinkPlan.summarize(urls)};val c=MaterialTheme.colorScheme
@@ -328,6 +328,16 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
                     leadingIcon={TextButton(onClick={val pasted=onPaste();if(pasted.isNotBlank())text=if(text.isBlank())pasted else "$text\n$pasted"}) { Icon(painterResource(R.drawable.ui_clipboard),stringResource(R.string.paste_clipboard),Modifier.size(18.dp));Spacer(Modifier.width(6.dp));Text(stringResource(R.string.paste_short),fontSize=12.sp) } })
             }
             if(invalid && (urls.isEmpty() || urls.any { !LinkUtils.isPublicHttpUrl(it) }))Text(stringResource(R.string.bad_link),color=c.error,fontSize=13.sp)
+            // Editing and pasting can temporarily produce incomplete or invalid URLs.
+            // They must never throw during composition and leave the modal unresponsive.
+            val previous = remember(urls, previousTasks) { val ids = urls.mapNotNull { runCatching { LinkUtils.contentIdentity(it) }.getOrNull() }.toSet(); previousTasks.filter { runCatching { LinkUtils.contentIdentity(it.url) in ids }.getOrDefault(false) }.sortedByDescending { it.createdAt } }
+            if (previous.isNotEmpty()) Surface(Modifier.fillMaxWidth().padding(top=12.dp), shape=Round, color=c.primary.copy(alpha=.08f), border=BorderStroke(1.dp,c.primary.copy(alpha=.35f))) {
+                Column(Modifier.padding(14.dp)) {
+                    Text(stringResource(if(previous.any { it.state==TaskState.COMPLETED }) R.string.duplicate_done else R.string.duplicate_pending), fontWeight=FontWeight.SemiBold, color=c.primary)
+                    previous.take(2).forEach { Text(TaskQuery.name(it) + " · " + MobileText.state(activity,it), fontSize=13.sp, maxLines=2, overflow=TextOverflow.Ellipsis) }
+                    Text(stringResource(R.string.duplicate_warning),fontSize=12.sp,color=c.onSurfaceVariant)
+                }
+            }
             if(urls.isNotEmpty()) {
                 val name=Uri.parse(urls.first()).lastPathSegment?.takeIf { it.contains('.') }.orEmpty()
                 Surface(Modifier.fillMaxWidth().padding(top=12.dp),shape=Round,color=c.surface,border=BorderStroke(1.dp,c.outline.copy(alpha=c.outline.alpha*.8f))) {
@@ -352,7 +362,7 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
             }
             Surface(Modifier.fillMaxWidth().padding(top=12.dp).clickable{more=!more}.semantics { stateDescription=if(more)"expanded" else "collapsed" },shape=Round,color=c.surface,border=BorderStroke(1.dp,c.outline.copy(alpha=c.outline.alpha*.8f))) {
                 Row(Modifier.padding(horizontal=14.dp).heightIn(min=52.dp),verticalAlignment=Alignment.CenterVertically) {
-                    Text(stringResource(R.string.more_options),Modifier.weight(1f),fontSize=16.sp);Icon(painterResource(R.drawable.ui_chevron_down),null,Modifier.size(20.dp))
+                    Icon(painterResource(R.drawable.ui_settings),null,Modifier.size(20.dp),tint=c.primary); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text(stringResource(R.string.more_options),fontSize=15.sp); Text(stringResource(R.string.intake_settings_hint),fontSize=12.sp,color=c.onSurfaceVariant) };Icon(painterResource(R.drawable.ui_chevron_down),null,Modifier.size(20.dp))
                 }
             }
             AnimatedVisibility(more) { Column {

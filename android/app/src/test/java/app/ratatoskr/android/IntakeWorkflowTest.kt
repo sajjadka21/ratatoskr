@@ -13,6 +13,22 @@ import java.util.UUID
 @Config(sdk = [29])
 @SQLiteMode(SQLiteMode.Mode.NATIVE)
 class IntakeWorkflowTest {
+    @Test fun intentionalDuplicateCreatesAnotherHeldTaskWithoutChangingTheOriginal() {
+        val context = RuntimeEnvironment.getApplication()
+        val database = "duplicates-${UUID.randomUUID()}.db"
+        TaskStore(context, database).use { store ->
+            val url = "https://example.com/episode.mp4"
+            val saved = IntakeOptions(IntakeMode.SAVE)
+            val original = store.enqueue(url, null, false, "Episode", "file", options = saved)
+            assertEquals(original.id, store.enqueue(url, null, false, "Episode", "file", options = saved).id)
+            val repeated = store.enqueue(url, null, false, "Episode", "file", options = saved.copy(allowDuplicate = true))
+            assertNotEquals(original.id, repeated.id)
+            assertEquals(2, store.list().size)
+            assertTrue(store.list().all { it.state == TaskState.SAVED })
+            assertFalse(store.begin(original.id)); assertFalse(store.begin(repeated.id))
+        }
+        context.deleteDatabase(database)
+    }
     @Test fun heldAndScheduledJobsSurviveReopenWithoutStartingEarly() {
         val context = RuntimeEnvironment.getApplication()
         val database = "intake-${UUID.randomUUID()}.db"

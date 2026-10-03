@@ -118,7 +118,7 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
                 }
             }
         }
-        HorizontalDivider(color = colors.outline.copy(alpha = .5f))
+        HorizontalDivider(color = colors.outline.copy(alpha = colors.outline.alpha * .8f))
         if (state.clipboard.isNotEmpty()) Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.clipboard_many, LinkPlan.parse(state.clipboard).size), Modifier.weight(1f), fontSize = 13.sp)
             TextButton(onClick = { onClipboard(true) }) { Text(stringResource(R.string.paste_short)) }
@@ -149,7 +149,7 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
             val p=Path().apply { moveTo(0f,y);lineTo(x-r-shoulder,y);cubicTo(x-r,y,x-r,y+depth,x,y+depth);cubicTo(x+r,y+depth,x+r,y,x+r+shoulder,y);lineTo(size.width,y);lineTo(size.width,size.height);lineTo(0f,size.height);close() }
             drawPath(p,c.surface)
             val edge=Path().apply { moveTo(0f,y);lineTo(x-r-shoulder,y);cubicTo(x-r,y,x-r,y+depth,x,y+depth);cubicTo(x+r,y+depth,x+r,y,x+r+shoulder,y);lineTo(size.width,y) }
-            drawPath(edge,c.outline.copy(alpha=.6f),style=androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+            drawPath(edge,c.outline.copy(alpha=c.outline.alpha*.8f),style=androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
         })
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(66.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -199,7 +199,7 @@ private fun kindIcon(task:MobileTask):Int {
 @Composable private fun FileRow(row:TaskRow,selecting:Boolean,actions:TaskActions) {
     val t=row.task;val c=MaterialTheme.colorScheme;var menu by remember { mutableStateOf(false) }
     Column(Modifier.padding(horizontal=12.dp).fillMaxWidth().combinedClickable(onClick={if(selecting)actions.toggle(t) else actions.details(t)},onLongClick={actions.toggle(t)}).background(if(row.selected)c.primary.copy(alpha=.1f) else Color.Transparent)) {
-        HorizontalDivider(color=c.outline.copy(alpha=.5f))
+        HorizontalDivider(color=c.outline.copy(alpha=c.outline.alpha*.8f))
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             Row(Modifier.fillMaxWidth().padding(vertical=10.dp),verticalAlignment=Alignment.CenterVertically) {
                 if(selecting)Checkbox(row.selected,{actions.toggle(t)}) else TransferAction(t,actions)
@@ -227,7 +227,7 @@ private fun kindIcon(task:MobileTask):Int {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable private fun ActiveTransfer(row:TaskRow,selecting:Boolean,actions:TaskActions) {
     val t=row.task;val c=MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=0.dp).clip(RoundedCornerShape(20.dp)).background(c.surface).border(1.dp,c.outline.copy(alpha=.45f),RoundedCornerShape(20.dp))
+    Column(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=0.dp).clip(RoundedCornerShape(20.dp)).background(c.surface).border(1.dp,c.outline.copy(alpha=c.outline.alpha*.6f),RoundedCornerShape(20.dp))
         .combinedClickable(onClick={if(selecting)actions.toggle(t) else actions.details(t)},onLongClick={actions.toggle(t)}).padding(12.dp)) {
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
@@ -309,7 +309,7 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
             if(invalid)Text(stringResource(R.string.bad_link),color=c.error,fontSize=13.sp)
             if(urls.isNotEmpty()) {
                 val name=Uri.parse(urls.first()).lastPathSegment?.takeIf { it.contains('.') }.orEmpty()
-                Surface(Modifier.fillMaxWidth().padding(top=12.dp),shape=Round,color=c.surface,border=BorderStroke(1.dp,c.outline.copy(alpha=.5f))) {
+                Surface(Modifier.fillMaxWidth().padding(top=12.dp),shape=Round,color=c.surface,border=BorderStroke(1.dp,c.outline.copy(alpha=c.outline.alpha*.8f))) {
                     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                         Row(Modifier.padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
                             val type=name.substringAfterLast('.',"").uppercase(java.util.Locale.ROOT)
@@ -322,14 +322,14 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
                     }
                 }
             }
-            Surface(Modifier.fillMaxWidth().padding(top=12.dp).clickable(onClick=onFolder),shape=Round,color=c.surface,border=BorderStroke(1.dp,c.outline.copy(alpha=.5f))) {
+            Surface(Modifier.fillMaxWidth().padding(top=12.dp).clickable(onClick=onFolder),shape=Round,color=c.surface,border=BorderStroke(1.dp,c.outline.copy(alpha=c.outline.alpha*.8f))) {
                 Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically) {
                     Icon(painterResource(R.drawable.ui_folder),null,Modifier.size(24.dp));Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) { Text(stringResource(R.string.save_location),fontSize=14.sp);Text(folder,fontSize=13.sp,lineHeight=18.sp,color=c.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis) }
                     Icon(painterResource(R.drawable.ui_chevron_right),null,Modifier.size(22.dp))
                 }
             }
-            Surface(Modifier.fillMaxWidth().padding(top=12.dp).clickable{more=!more}.semantics { stateDescription=if(more)"expanded" else "collapsed" },shape=Round,color=c.surface,border=BorderStroke(1.dp,c.outline.copy(alpha=.5f))) {
+            Surface(Modifier.fillMaxWidth().padding(top=12.dp).clickable{more=!more}.semantics { stateDescription=if(more)"expanded" else "collapsed" },shape=Round,color=c.surface,border=BorderStroke(1.dp,c.outline.copy(alpha=c.outline.alpha*.8f))) {
                 Row(Modifier.padding(horizontal=14.dp).heightIn(min=52.dp),verticalAlignment=Alignment.CenterVertically) {
                     Text(stringResource(R.string.more_options),Modifier.weight(1f),fontSize=16.sp);Icon(painterResource(R.drawable.ui_chevron_down),null,Modifier.size(20.dp))
                 }

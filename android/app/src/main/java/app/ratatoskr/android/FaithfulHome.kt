@@ -356,7 +356,16 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
             }
             if(mode==IntakeMode.QUEUE.name || more) {
                 OutlinedTextField(group,{group=it.take(80)},Modifier.fillMaxWidth().padding(top=12.dp),singleLine=true,shape=Round,label={Text(stringResource(R.string.group_name))},placeholder={Text(stringResource(R.string.group_hint))},
-                    trailingIcon={if(groups.isNotEmpty())Box { UiIcon(R.drawable.ui_chevron_down,R.string.group_name){groupMenu=true};DropdownMenu(groupMenu,{groupMenu=false}) { groups.forEach { name -> DropdownMenuItem(text={Text(name)},onClick={group=name;groupMenu=false}) } } })
+                    trailingIcon = {
+                        if (groups.isNotEmpty()) Box {
+                            UiIcon(R.drawable.ui_chevron_down, R.string.group_name) { groupMenu = true }
+                            DropdownMenu(groupMenu, { groupMenu = false }) {
+                                groups.forEach { name ->
+                                    DropdownMenuItem(text = { Text(name) }, onClick = { group = name; groupMenu = false })
+                                }
+                            }
+                        }
+                    })
             }
             if(mode==IntakeMode.SCHEDULE.name) OutlinedButton(onClick={MobileDates.choose(activity,if(startAt>System.currentTimeMillis())startAt else System.currentTimeMillis()+3_600_000){startAt=it;invalid=false}},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)) { Text(if(startAt>0)MobileDates.format(activity,startAt) else stringResource(R.string.choose_date_time)) }
             if(invalid && mode==IntakeMode.SCHEDULE.name && startAt<=System.currentTimeMillis())Text(stringResource(R.string.schedule_invalid),color=c.error,fontSize=13.sp)

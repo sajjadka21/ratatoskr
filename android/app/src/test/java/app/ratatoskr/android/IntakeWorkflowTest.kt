@@ -20,7 +20,7 @@ class IntakeWorkflowTest {
         val saved = store.enqueue("https://example.com/episode01.mp4", null, false, "Episode 1", "file", options = IntakeOptions(IntakeMode.QUEUE, groupName = "Series"))
         val time = System.currentTimeMillis() + 3_600_000
         val scheduled = store.enqueue("https://example.com/episode02.mp4", null, false, "Episode 2", "file", options = IntakeOptions(IntakeMode.SCHEDULE, time, "Series"))
-        assertFalse(store.begin(saved.id)); store.close()
+        assertFalse(store.begin(saved.id)); assertFalse(store.begin(scheduled.id)); store.close()
         TaskStore(context, database).use { reopened ->
             reopened.recover()
             assertEquals(TaskState.SAVED, reopened.get(saved.id)!!.state)
@@ -77,6 +77,7 @@ class IntakeWorkflowTest {
         }
     }
     @Test fun extensionlessFilesSkipExtractionAndFallbackCannotLoop() {
+        assertEquals("Video", TaskFilter.categoryOf(MobileTask("pending", "https://example.com/episode.mp4", "", TaskState.SAVED, kind="file")))
         assertEquals(LinkKind.FILE, LinkPlan.classify("https://example.com/download/123"))
         assertEquals(LinkKind.MEDIA, LinkPlan.classify("https://example.com/stream.m3u8"))
         assertTrue(LinkPlan.mayTryMedia("https://example.com/watch/123", "not_a_file"))

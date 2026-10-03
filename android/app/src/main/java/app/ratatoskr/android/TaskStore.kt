@@ -86,7 +86,7 @@ class TaskStore internal constructor(context: Context, databaseName: String = "d
     }
     @Synchronized fun begin(id: String): Boolean {
         val current = get(id) ?: return false
-        if (current.state !in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK)) return false
+        if (current.state !in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) || !Schedule.isDue(current.startAt, System.currentTimeMillis())) return false
         state(id, TaskState.PROBING)
         return true
     }

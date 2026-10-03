@@ -35,8 +35,10 @@ class IntakeUiTest {
         val reel = "https://www.instagram.com/reel/Dd_Rx17K9K3/"
         ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java).putExtra(Intent.EXTRA_TEXT, first)).use { scenario ->
             compose.onNode(hasSetTextAction()).assertTextContains(first)
-            scenario.onActivity { it.onNewIntent(Intent(context, MainActivity::class.java).putExtra(Intent.EXTRA_TEXT, reel)) }
-            compose.onNode(hasSetTextAction()).assertTextContains(reel)
+            scenario.onActivity { activity -> activity.startActivity(Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra(Intent.EXTRA_TEXT, reel)) }
+            compose.waitUntil(10000) { runCatching { compose.onNode(hasSetTextAction()).assertTextContains(reel); true }.getOrDefault(false) }
             compose.onNodeWithContentDescription(context.getString(R.string.cancel)).performClick()
             scenario.recreate()
             compose.onAllNodesWithText(context.getString(R.string.new_download)).assertCountEquals(0)

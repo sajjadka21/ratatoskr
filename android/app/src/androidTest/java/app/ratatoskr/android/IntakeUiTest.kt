@@ -34,10 +34,9 @@ class IntakeUiTest {
         val url = "https://example.com/series-${UUID.randomUUID()}.mp4"
         val group = "Series ${UUID.randomUUID().toString().take(6)}"
         ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java).putExtra(Intent.EXTRA_TEXT, url)).use { scenario ->
-            compose.onNodeWithText("Action: Download").performClick()
-            compose.onNodeWithText("Add to queue").performClick()
+            compose.onNodeWithText("Queue").performScrollTo().performClick()
             compose.onNodeWithText("Group / series name").performTextInput(group)
-            compose.onNodeWithText("Add to queue").performScrollTo().performClick()
+            compose.onNodeWithText("Add to queue").performClick()
             compose.waitUntil(10000) { TaskStore.get(context).list().any { it.url == url } }
             val task = TaskStore.get(context).list().first { it.url == url }
             try {
@@ -55,8 +54,7 @@ class IntakeUiTest {
         prepare()
         val url = "https://example.com/scheduled-${UUID.randomUUID()}.zip"
         ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java).putExtra(Intent.EXTRA_TEXT, url)).use {
-            compose.onNodeWithText("Action: Download").performClick()
-            compose.onNodeWithText("Schedule").performClick()
+            compose.onNodeWithText(context.getString(R.string.more_options)).performScrollTo().performClick()
             compose.onNodeWithText("Choose date and time").performScrollTo().performClick()
             androidx.test.espresso.Espresso.onView(androidx.test.espresso.matcher.ViewMatchers.withText("Persian (Jalali)"))
                 .check(androidx.test.espresso.assertion.ViewAssertions.matches(androidx.test.espresso.matcher.ViewMatchers.isDisplayed()))

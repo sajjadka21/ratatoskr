@@ -47,6 +47,8 @@ class IntakeWorkflowTest {
         assertThrows(IllegalArgumentException::class.java) { IntakeOptions(IntakeMode.SCHEDULE, 99).validate(100) }
         assertThrows(IllegalArgumentException::class.java) { IntakeOptions(IntakeMode.QUEUE).validate() }
         assertEquals(TaskState.SAVED, IntakeOptions(IntakeMode.SAVE).initialState)
+        IntakeOptions(IntakeMode.QUEUE, 200, "Series").validate(100)
+        assertThrows(IllegalArgumentException::class.java) { IntakeOptions(IntakeMode.QUEUE, 99, "Series").validate(100) }
     }
     @Test fun filtersCombineNamesFormatsAndInclusiveLocalDates() {
         val tasks = listOf(

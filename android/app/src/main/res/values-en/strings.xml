@@ -252,4 +252,9 @@ Tap + to add a link.</string>
     <string-array name="persian_months"><item>فروردین</item><item>اردیبهشت</item><item>خرداد</item><item>تیر</item><item>مرداد</item><item>شهریور</item><item>مهر</item><item>آبان</item><item>آذر</item><item>دی</item><item>بهمن</item><item>اسفند</item></string-array>
 <string name="intake_action">Action</string>
 <string name="filters_active">Filters are active</string>
+<string name="queue_action">Queue</string>
+<string name="add_to_list">Add</string>
+<string name="select_queue">Choose or create a queue</string>
+<string name="existing_queues">Existing queues</string>
+<string name="queue_intake_hint">Choose an existing queue or enter a new name. Start the queue to download its items in order.</string>
 </resources>

@@ -79,7 +79,7 @@ class FaithfulDesignTest {
                     capture("approved-home-$mode-fa")
                     if(mode=="dark") {
                         compose.onNodeWithContentDescription(addLabel).performClick()
-                        compose.onNodeWithText(downloadLabel).assertIsDisplayed()
+                        compose.onNodeWithContentDescription(downloadLabel).assertIsDisplayed()
                         capture("approved-intake-dark-fa")
                     }
                 }

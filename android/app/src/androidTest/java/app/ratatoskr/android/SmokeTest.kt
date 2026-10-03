@@ -95,7 +95,7 @@ class SmokeTest {
             onView(withText(R.string.section_network)).check(matches(isDisplayed()))
             androidx.test.espresso.Espresso.pressBack()
             compose.onNodeWithContentDescription(context.getString(R.string.add_links)).performClick()
-            compose.onNodeWithText(context.getString(R.string.download_action)).assertIsDisplayed()
+            compose.onNodeWithContentDescription(context.getString(R.string.download_action)).assertIsDisplayed()
             compose.onNodeWithText(context.getString(R.string.file_download)).assertDoesNotExist()
             screenshot("add-link-single-action")
         }

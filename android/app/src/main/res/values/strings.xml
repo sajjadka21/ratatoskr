@@ -253,4 +253,9 @@
     <string-array name="persian_months"><item>فروردین</item><item>اردیبهشت</item><item>خرداد</item><item>تیر</item><item>مرداد</item><item>شهریور</item><item>مهر</item><item>آبان</item><item>آذر</item><item>دی</item><item>بهمن</item><item>اسفند</item></string-array>
 <string name="intake_action">اقدام</string>
 <string name="filters_active">فیلتر فعال است</string>
+<string name="queue_action">صف</string>
+<string name="add_to_list">افزودن</string>
+<string name="select_queue">انتخاب یا ساخت صف</string>
+<string name="existing_queues">صف‌های موجود</string>
+<string name="queue_intake_hint">نام صف موجود را انتخاب کن یا نام تازه‌ای بنویس. دانلودها پس از شروع صف، پشت‌سرهم اجرا می‌شوند.</string>
 </resources>

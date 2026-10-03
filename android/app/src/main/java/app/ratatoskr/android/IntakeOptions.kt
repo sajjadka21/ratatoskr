@@ -8,8 +8,8 @@ data class IntakeOptions(val mode: IntakeMode = IntakeMode.NOW, val startAt: Lon
     fun validate(now: Long = System.currentTimeMillis()) {
         require(groupName.trim().length <= 80) { "group_too_long" }
         require(mode != IntakeMode.QUEUE || groupName.isNotBlank()) { "group_required" }
-        require(mode != IntakeMode.SCHEDULE || startAt > now) { "schedule_past" }
-        require(mode == IntakeMode.SCHEDULE || startAt == 0L) { "invalid_schedule" }
+        require((mode != IntakeMode.SCHEDULE && startAt == 0L) || startAt > now) { "schedule_past" }
+        require(mode in setOf(IntakeMode.SCHEDULE, IntakeMode.QUEUE) || startAt == 0L) { "invalid_schedule" }
     }
 }
 

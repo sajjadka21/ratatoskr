@@ -304,11 +304,15 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
     var text by rememberSaveable { mutableStateOf(prefill) };var audio by rememberSaveable { mutableStateOf(defaultAudio) }
     var more by rememberSaveable { mutableStateOf(defaultAudio) };var invalid by rememberSaveable { mutableStateOf(false) }
     val urls=remember(text){LinkPlan.parse(text)};val counts=remember(urls){LinkPlan.summarize(urls)};val c=MaterialTheme.colorScheme
-    var mode by rememberSaveable { mutableStateOf(IntakeMode.NOW.name) }; var modeMenu by remember { mutableStateOf(false) }
+    var queueDialog by rememberSaveable { mutableStateOf(false) }
     var group by rememberSaveable { mutableStateOf("") }; var startAt by rememberSaveable { mutableLongStateOf(0) }
     var groupMenu by remember { mutableStateOf(false) }
     val activity = LocalContext.current as MobileActivity
-    val modeLabels = listOf(R.string.download_action, R.string.add_only, R.string.add_queue, R.string.schedule)
+    fun submit(mode: IntakeMode): Boolean {
+        val options = IntakeOptions(mode, if (mode in setOf(IntakeMode.SCHEDULE, IntakeMode.QUEUE)) startAt else 0, if (mode == IntakeMode.QUEUE) group.trim() else "")
+        invalid = runCatching { options.validate(); if (onSubmit != null) !onSubmit(text, audio, options) else !onDownload(text, audio) }.getOrDefault(true)
+        return !invalid
+    }
     val focus=remember { FocusRequester() }
     ModalBottomSheet(sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),onDismissRequest=onClose,containerColor=c.surface,shape=RoundedCornerShape(topStart=28.dp,topEnd=28.dp),dragHandle={BottomSheetDefaults.DragHandle()},contentWindowInsets={WindowInsets(0,0,0,0)}) {
         LaunchedEffect(Unit){if(prefill.isEmpty())focus.requestFocus()}
@@ -346,30 +350,6 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
                     Icon(painterResource(R.drawable.ui_chevron_right),null,Modifier.size(22.dp))
                 }
             }
-            Box(Modifier.fillMaxWidth().padding(top=12.dp)) {
-                OutlinedButton(onClick={modeMenu=true},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=Round) {
-                    Text(stringResource(R.string.intake_action) + ": " + stringResource(modeLabels[IntakeMode.valueOf(mode).ordinal]),Modifier.weight(1f)); Icon(painterResource(R.drawable.ui_chevron_down),null,Modifier.size(20.dp))
-                }
-                DropdownMenu(modeMenu,{modeMenu=false}) {
-                    IntakeMode.entries.forEach { item -> DropdownMenuItem(text={Text(stringResource(modeLabels[item.ordinal]))},onClick={mode=item.name;modeMenu=false;invalid=false}) }
-                }
-            }
-            if(mode==IntakeMode.QUEUE.name || more) {
-                OutlinedTextField(group,{group=it.take(80)},Modifier.fillMaxWidth().padding(top=12.dp),singleLine=true,shape=Round,label={Text(stringResource(R.string.group_name))},placeholder={Text(stringResource(R.string.group_hint))},
-                    trailingIcon = {
-                        if (groups.isNotEmpty()) Box {
-                            UiIcon(R.drawable.ui_chevron_down, R.string.group_name) { groupMenu = true }
-                            DropdownMenu(groupMenu, { groupMenu = false }) {
-                                groups.forEach { name ->
-                                    DropdownMenuItem(text = { Text(name) }, onClick = { group = name; groupMenu = false })
-                                }
-                            }
-                        }
-                    })
-            }
-            if(mode==IntakeMode.SCHEDULE.name) OutlinedButton(onClick={MobileDates.choose(activity,if(startAt>System.currentTimeMillis())startAt else System.currentTimeMillis()+3_600_000){startAt=it;invalid=false}},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)) { Text(if(startAt>0)MobileDates.format(activity,startAt) else stringResource(R.string.choose_date_time)) }
-            if(invalid && mode==IntakeMode.SCHEDULE.name && startAt<=System.currentTimeMillis())Text(stringResource(R.string.schedule_invalid),color=c.error,fontSize=13.sp)
-            if(invalid && mode==IntakeMode.QUEUE.name && group.isBlank())Text(stringResource(R.string.group_required),color=c.error,fontSize=13.sp)
             Surface(Modifier.fillMaxWidth().padding(top=12.dp).clickable{more=!more}.semantics { stateDescription=if(more)"expanded" else "collapsed" },shape=Round,color=c.surface,border=BorderStroke(1.dp,c.outline.copy(alpha=c.outline.alpha*.8f))) {
                 Row(Modifier.padding(horizontal=14.dp).heightIn(min=52.dp),verticalAlignment=Alignment.CenterVertically) {
                     Text(stringResource(R.string.more_options),Modifier.weight(1f),fontSize=16.sp);Icon(painterResource(R.drawable.ui_chevron_down),null,Modifier.size(20.dp))
@@ -377,11 +357,51 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
             }
             AnimatedVisibility(more) { Column {
                 Row(Modifier.clickable{audio=!audio},verticalAlignment=Alignment.CenterVertically) { Checkbox(audio,{audio=it});Text(stringResource(R.string.audio_only_all),fontSize=14.sp) }
+                OutlinedButton(onClick = { MobileDates.choose(activity, if (startAt > System.currentTimeMillis()) startAt else System.currentTimeMillis() + 3_600_000) { startAt = it; invalid = false } }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = Round) {
+                    Icon(painterResource(R.drawable.ui_clock), null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.choose_date_time))
+                }
                 Text(stringResource(R.string.pattern_hint),fontSize=12.sp,color=c.onSurfaceVariant)
             } }
             Text(stringResource(R.string.automatic_hint),Modifier.fillMaxWidth().padding(top=12.dp,bottom=20.dp),fontSize=12.sp,color=c.onSurfaceVariant,textAlign=TextAlign.Right)
-            Button(onClick={val options=IntakeOptions(IntakeMode.valueOf(mode),if(mode==IntakeMode.SCHEDULE.name)startAt else 0,group.trim()); invalid=runCatching{options.validate();if(onSubmit!=null) !onSubmit(text,audio,options) else !onDownload(text,audio)}.getOrDefault(true)},enabled=text.isNotBlank(),modifier=Modifier.fillMaxWidth().heightIn(min=56.dp),shape=Round,
-                colors=ButtonDefaults.buttonColors(containerColor=Gold,contentColor=Ink)) { Icon(painterResource(R.drawable.ui_download),null,Modifier.size(24.dp));Spacer(Modifier.width(12.dp));Text(stringResource(modeLabels[IntakeMode.valueOf(mode).ordinal]),fontSize=20.sp,fontWeight=FontWeight.SemiBold) }
+            if (startAt > 0) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.scheduled_for, MobileDates.format(activity, startAt)), Modifier.weight(1f), color = c.primary, fontSize = 13.sp)
+                UiIcon(R.drawable.ui_x, R.string.schedule_clear) { startAt = 0; invalid = false }
+            }
+            if (invalid && startAt > 0 && startAt <= System.currentTimeMillis()) Text(stringResource(R.string.schedule_invalid), color = c.error, fontSize = 13.sp)
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(onClick = { if (urls.isEmpty() || urls.any { !LinkUtils.isPublicHttpUrl(it) }) invalid = true else queueDialog = true }, enabled = text.isNotBlank(), modifier = Modifier.weight(1f).heightIn(min = 56.dp), shape = Round) {
+                        Icon(painterResource(R.drawable.ui_list), null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.queue_action))
+                    }
+                    FilledIconButton(onClick = { submit(if (startAt > 0) IntakeMode.SCHEDULE else IntakeMode.NOW) }, enabled = text.isNotBlank(), modifier = Modifier.size(64.dp), shape = CircleShape,
+                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = Gold, contentColor = Ink)) {
+                        Icon(painterResource(R.drawable.ui_download), stringResource(R.string.download_action), Modifier.size(30.dp))
+                    }
+                    OutlinedButton(onClick = { submit(IntakeMode.SAVE) }, enabled = text.isNotBlank(), modifier = Modifier.weight(1f).heightIn(min = 56.dp), shape = Round) {
+                        Icon(painterResource(R.drawable.ui_plus), null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.add_to_list))
+                    }
+                }
+            }
         }
     }
+    if (queueDialog) AlertDialog(onDismissRequest = { queueDialog = false },
+        title = { Text(stringResource(R.string.select_queue)) },
+        text = {
+            Column {
+                if (groups.isNotEmpty()) Box {
+                    TextButton(onClick = { groupMenu = true }) { Text(stringResource(R.string.existing_queues)); Icon(painterResource(R.drawable.ui_chevron_down), null, Modifier.size(20.dp)) }
+                    DropdownMenu(groupMenu, { groupMenu = false }) {
+                        groups.forEach { name -> DropdownMenuItem(text = { Text(name) }, onClick = { group = name; groupMenu = false }) }
+                    }
+                }
+                OutlinedTextField(group, { group = it.take(80); invalid = false }, Modifier.fillMaxWidth(), singleLine = true, shape = Round,
+                    label = { Text(stringResource(R.string.group_name)) }, placeholder = { Text(stringResource(R.string.group_hint)) }, isError = invalid && group.isBlank())
+                Text(stringResource(R.string.queue_intake_hint), Modifier.padding(top = 8.dp), fontSize = 13.sp, color = c.onSurfaceVariant)
+                if (invalid && group.isBlank()) Text(stringResource(R.string.group_required), color = c.error, fontSize = 13.sp)
+                if (startAt > 0) Text(stringResource(R.string.scheduled_for, MobileDates.format(activity, startAt)), fontSize = 13.sp, color = c.primary)
+            }
+        },
+        confirmButton = { TextButton(onClick = { if (submit(IntakeMode.QUEUE)) queueDialog = false }) { Text(stringResource(R.string.add_queue)) } },
+        dismissButton = { TextButton(onClick = { queueDialog = false }) { Text(stringResource(R.string.cancel)) } }, containerColor = c.surface)
 }

@@ -31,7 +31,7 @@ class ShareModel : ViewModel() {
                 val info = withContext(Dispatchers.IO) { Engine.probe(context.applicationContext, url, process) }
                 selected.addAll(info.items.map { it.index }); ShareProbe.Ready(info)
             } catch (error: CancellationException) { throw error }
-            catch (error: Exception) { ShareProbe.Failed(if (error is TransferFailure) error.code else "unsupported_media") }
+            catch (error: Exception) { ShareProbe.Failed(DownloadService.errorCode(error)) }
         }
     }
     override fun onCleared() { Engine.cancel(process); super.onCleared() }
@@ -56,6 +56,10 @@ class ShareActivity : MobileActivity() {
         val text = shared ?: if (intent?.getBooleanExtra(EXTRA_FROM_CLIPBOARD, false) == true) clipboardText() else null
         val urls = LinkPlan.parse(text)
         if (urls.isEmpty() || urls.any { !LinkUtils.isPublicHttpUrl(it) }) { finishWith(R.string.bad_link); return }
+        if (!intent.getBooleanExtra("choose-media-items", false)) {
+            startActivity(Intent(this, MainActivity::class.java).putExtra(Intent.EXTRA_TEXT, urls.joinToString("\n")))
+            finish(); return
+        }
         val prefs = MobilePreferences(this)
         // A Spotify track has one sensible outcome: its audio. No quality question.
         if (urls.all { Spotify.isTrackUrl(it) }) { enqueue(urls, null, true); return }

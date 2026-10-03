@@ -41,6 +41,7 @@ android {
         }
     }
     buildTypes {
+        debug { applicationIdSuffix = ".localreview" }
         release {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("release")

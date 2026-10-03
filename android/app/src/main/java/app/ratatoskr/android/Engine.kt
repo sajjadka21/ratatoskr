@@ -21,6 +21,7 @@ object Engine {
     fun cachedThumbnail(url: String): String? = cache[url]?.second?.items?.firstOrNull()?.thumbnail
     @Synchronized fun init(context: Context) {
         if (ready) return
+        BundledMediaEngine.install(context.applicationContext)
         YoutubeDL.getInstance().init(context.applicationContext)
         FFmpeg.getInstance().init(context.applicationContext)
         ready = true
@@ -33,7 +34,7 @@ object Engine {
         val request = YoutubeDLRequest(canonical).apply {
             addOption("--dump-single-json"); addOption("--skip-download"); addOption("--ignore-no-formats-error")
             addOption("--yes-playlist"); addOption("--playlist-end", "51"); addOption("--no-warnings")
-            addOption("--socket-timeout", "15"); addOption("--no-cache-dir")
+            addOption("--socket-timeout", "10"); addOption("--retries", "1"); addOption("--extractor-retries", "1"); addOption("--no-cache-dir")
         }
         val response = SafeProxy(check).use { proxy ->
             request.addOption("--proxy", proxy.url)
@@ -59,7 +60,7 @@ object Engine {
         val search = "ytsearch1:${track.query}"
         val request = YoutubeDLRequest(search).apply {
             addOption("--dump-single-json"); addOption("--skip-download"); addOption("--ignore-no-formats-error")
-            addOption("--no-warnings"); addOption("--socket-timeout", "15"); addOption("--no-cache-dir")
+            addOption("--no-warnings"); addOption("--socket-timeout", "10"); addOption("--retries", "1"); addOption("--extractor-retries", "1"); addOption("--no-cache-dir")
         }
         val response = SafeProxy(check).use { proxy ->
             request.addOption("--proxy", proxy.url)
@@ -98,7 +99,10 @@ object Engine {
     }
 
     fun download(context: Context, task: MobileTask, control: TransferControl,
-                 onState: (TaskState) -> Unit, onProgress: (Float) -> Unit): List<SavedMedia> {
+                 onState: (TaskState) -> Unit, onProgress: (Float) -> Unit): List<SavedMedia> = downloadAttempt(context, task, control, onState, onProgress, true)
+
+    private fun downloadAttempt(context: Context, task: MobileTask, control: TransferControl,
+                 onState: (TaskState) -> Unit, onProgress: (Float) -> Unit, allowFallback: Boolean): List<SavedMedia> {
         val store = TaskStore.get(context)
         if (task.kind == "file") {
             control.check()
@@ -110,13 +114,18 @@ object Engine {
             onState(TaskState.DOWNLOADING)
             val prefs = MobilePreferences(context)
             val directory = work(context, task.id)
-            val file = SegmentedDownload.fetch(directory, task.fileName, task.url, control, prefs.connections, prefs.speedLimit,
+            val file = try { SegmentedDownload.fetch(directory, task.fileName, task.url, control, prefs.connections, prefs.speedLimit,
                 { received, total ->
                     val done = if (total > 0) minOf(received, total) else received   // overlapping retries can briefly count extra
                     store.update(task.id, ContentValues().apply { put("bytes_done", done); put("total_bytes", total) })
                     onProgress(if (total > 0) done.toFloat() / total * 98f else 0f)
                 },
                 { DirectDownload.fetch(context, task, task.url, control, onProgress) })
+            } catch (error: Exception) {
+                if (allowFallback && LinkPlan.mayTryMedia(task.url, DownloadService.errorCode(error)))
+                    return downloadAttempt(context, task.copy(kind = "media"), control, onState, onProgress, false)
+                throw error
+            }
             control.check(); onState(TaskState.SAVING)
             val result = publish(context, task.id, 1, file, control)
             discard(context, task.id)
@@ -126,8 +135,8 @@ object Engine {
         val info = try { probe(context, task.url, task.id, control::check) }
         catch (error: Exception) {
             control.check()
-            if (LinkPlan.mayTryFile(task.url, DownloadService.errorCode(error)))
-                return download(context, task.copy(kind = "file"), control, onState, onProgress)
+            if (allowFallback && LinkPlan.mayTryFile(task.url, DownloadService.errorCode(error)))
+                return downloadAttempt(context, task.copy(kind = "file"), control, onState, onProgress, false)
             throw error
         }
         val spotify = Spotify.isTrackUrl(task.url)

@@ -14,6 +14,7 @@ import androidx.recyclerview.widget.RecyclerView
 data class TaskRow(val task: MobileTask, val stats: String, val schedule: String, val selected: Boolean = false, val thumbnail: String? = null)
 
 interface TaskActions {
+    fun group(name: String, start: Boolean) {}
     /** True while some downloads are selected; a tap then selects instead of opening the details. */
     val selecting: Boolean
     fun toggle(task: MobileTask)

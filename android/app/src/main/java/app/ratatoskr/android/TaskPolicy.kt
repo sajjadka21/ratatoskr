@@ -1,6 +1,6 @@
 package app.ratatoskr.android
 
-enum class TaskState { QUEUED, PROBING, DOWNLOADING, MERGING, SAVING, PAUSED, WAITING_NETWORK, NEEDS_SELECTION, FAILED, COMPLETED, CANCELLED }
+enum class TaskState { SAVED, QUEUED, PROBING, DOWNLOADING, MERGING, SAVING, PAUSED, WAITING_NETWORK, NEEDS_SELECTION, FAILED, COMPLETED, CANCELLED }
 enum class NetworkPolicy { ANY, WIFI_ONLY, UNMETERED }
 data class NetworkSnapshot(val connected: Boolean, val wifi: Boolean, val metered: Boolean, val roaming: Boolean = false)
 

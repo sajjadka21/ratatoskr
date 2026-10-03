@@ -25,15 +25,17 @@ object LinkPlan {
     fun extension(url: String): String = runCatching { URI(url).path.substringAfterLast('/').substringAfterLast('.', "").lowercase() }.getOrDefault("")
 
     /** Media sites go to the video engine; a path ending in a known file type is a plain file;
-     * anything else is tried by the video engine (it also understands many direct links). */
+     * extensionless endpoints try HTTP first; HTML can fall back once to the media engine. */
     fun classify(url: String): LinkKind = when {
         isMediaHost(url) -> LinkKind.MEDIA
-        extension(url) in fileExtensions -> LinkKind.FILE
-        else -> LinkKind.MEDIA
+        extension(url) in setOf("m3u8", "mpd") -> LinkKind.MEDIA
+        else -> LinkKind.FILE
     }
 
     /** Only unsupported generic pages may fall back to guarded HTTP. Never
      * reinterpret authentication, network or media-site failures as a file. */
+    fun mayTryMedia(url: String, errorCode: String) = !isMediaHost(url) && extension(url) !in fileExtensions && errorCode == "not_a_file"
+
     fun mayTryFile(url: String, errorCode: String) = !isMediaHost(url) && errorCode == "unsupported_media"
 
     /** Every link in the text, with `[1-10]` / `[01-10]` ranges in an address expanded. */

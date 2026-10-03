@@ -55,7 +55,7 @@ private val Gold = Color(0xffD6B778)
 @Composable
 fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery: (String) -> Unit,
     onHistory: (Boolean) -> Unit, onMenu: (Int) -> Unit, onCategory: (String?) -> Unit,
-    categories: List<Pair<String, String>>, onSort: (Int) -> Unit, onClipboard: (Boolean) -> Unit, onSelection: (Int) -> Unit) {
+    categories: List<Pair<String, String>>, onSort: (Int) -> Unit, onClipboard: (Boolean) -> Unit, onSelection: (Int) -> Unit, onFilter: (() -> Unit)? = null) {
     var search by rememberSaveable { mutableStateOf(state.query.isNotEmpty()) }
     var active by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
@@ -77,7 +77,7 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
                             listOf(R.string.paste, R.string.pause_all, R.string.resume_all, R.string.clear_finished, R.string.select_all, R.string.plugins).forEach { title ->
                                 DropdownMenuItem(text = { Text(stringResource(title)) }, onClick = { menu = false; onMenu(title) })
                             }
-                            listOf(R.string.sort_newest, R.string.sort_oldest, R.string.sort_name, R.string.sort_size).forEachIndexed { index, title ->
+                            listOf(R.string.sort_newest, R.string.sort_oldest, R.string.sort_name, R.string.sort_size, R.string.sort_format).forEachIndexed { index, title ->
                                 DropdownMenuItem(text = { Text(stringResource(title)) }, onClick = { menu = false; onSort(index) })
                             }
                         }
@@ -111,13 +111,14 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
                 }
             }
             Box {
-                UiIcon(R.drawable.ui_filter, R.string.filter_category) { filter = true }
+                UiIcon(R.drawable.ui_filter, R.string.filter_category) { if (onFilter != null) onFilter() else filter = true }
                 DropdownMenu(filter, { filter = false }) {
                     DropdownMenuItem(text = { Text(stringResource(R.string.filter_all)) }, onClick = { filter = false; onCategory(null) })
                     categories.forEach { (key, label) -> DropdownMenuItem(text = { Text(label) }, onClick = { filter = false; onCategory(key) }) }
                 }
             }
         }
+        if (state.filtersActive) Text(stringResource(R.string.filters_active), Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), color = colors.primary, fontSize = 12.sp)
         HorizontalDivider(color = colors.outline.copy(alpha = colors.outline.alpha * .8f))
         if (state.clipboard.isNotEmpty()) Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.clipboard_many, LinkPlan.parse(state.clipboard).size), Modifier.weight(1f), fontSize = 13.sp)
@@ -127,7 +128,18 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
         Box(Modifier.weight(1f)) {
             if (rows.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(stringResource(R.string.empty_jobs), Modifier.padding(24.dp), color = colors.onSurfaceVariant) }
             else LazyColumn(Modifier.fillMaxSize().semantics { contentDescription = "downloads-list" }, contentPadding = PaddingValues(bottom = 12.dp)) {
-                val groups = listOf(rows.filter { it.task.state in TaskPolicy.inFlight }, rows.filter { it.task.state !in TaskPolicy.inFlight && it.task.state !in setOf(TaskState.COMPLETED, TaskState.CANCELLED) }, rows.filter { it.task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED) })
+                val ungrouped = rows.filter { it.task.groupName.isEmpty() }
+                rows.filter { it.task.groupName.isNotEmpty() }.groupBy { it.task.groupName }.forEach { (name, members) ->
+                    item(key = "named-$name") {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(name + " (${members.size})", Modifier.weight(1f), fontWeight = FontWeight.SemiBold, color = colors.primary)
+                            val running = members.any { it.task.state in TaskPolicy.inFlight || it.task.state in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) }
+                            UiIcon(if (running) R.drawable.ui_pause else R.drawable.ui_play, if (running) R.string.pause else R.string.resume) { actions.group(name, !running) }
+                        }
+                    }
+                    items(members, key = { it.task.id }) { row -> if (row.task.state in TaskPolicy.inFlight) ActiveTransfer(row, state.selecting, actions) else FileRow(row, state.selecting, actions) }
+                }
+                val groups = listOf(ungrouped.filter { it.task.state in TaskPolicy.inFlight }, ungrouped.filter { it.task.state !in TaskPolicy.inFlight && it.task.state !in setOf(TaskState.COMPLETED, TaskState.CANCELLED) }, ungrouped.filter { it.task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED) })
                 groups.forEachIndexed { index, group ->
                     if (group.isNotEmpty()) {
                         item(key = "section-$index") { Text(stringResource(when(index) { 0 -> R.string.group_transferring; 2 -> R.string.group_completed; else -> R.string.pending_downloads }) + " (${java.text.NumberFormat.getIntegerInstance(LocalContext.current.resources.configuration.locales[0]).format(group.size)})", Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 12.dp, bottom = 4.dp), fontSize = 16.sp, lineHeight=22.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Right) }
@@ -170,7 +182,7 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
 }
 @Composable private fun TransferAction(task:MobileTask,actions:TaskActions) {
     val c=MaterialTheme.colorScheme
-    val resume=task.state in setOf(TaskState.PAUSED,TaskState.FAILED,TaskState.WAITING_NETWORK)
+    val resume=task.state in setOf(TaskState.SAVED,TaskState.PAUSED,TaskState.FAILED,TaskState.WAITING_NETWORK)
     val waiting=task.state in setOf(TaskState.QUEUED,TaskState.NEEDS_SELECTION,TaskState.CANCELLED)
     val complete=task.state==TaskState.COMPLETED
     val tint=when { complete -> Color(0xff65BB86); task.state==TaskState.FAILED -> c.error; waiting -> c.onSurfaceVariant; else -> c.primary }
@@ -288,10 +300,15 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun AbEnterUrl(prefill:String,defaultAudio:Boolean,onClose:()->Unit,onPaste:()->String,onDownload:(String,Boolean)->Boolean,folder:String="Downloads/Ratatoskr",onFolder:()->Unit={}) {
+@Composable fun AbEnterUrl(prefill:String,defaultAudio:Boolean,onClose:()->Unit,onPaste:()->String,onDownload:(String,Boolean)->Boolean,folder:String="Downloads/Ratatoskr",onFolder:()->Unit={},onSubmit:((String,Boolean,IntakeOptions)->Boolean)?=null,groups:List<String> = emptyList()) {
     var text by rememberSaveable { mutableStateOf(prefill) };var audio by rememberSaveable { mutableStateOf(defaultAudio) }
     var more by rememberSaveable { mutableStateOf(defaultAudio) };var invalid by rememberSaveable { mutableStateOf(false) }
     val urls=remember(text){LinkPlan.parse(text)};val counts=remember(urls){LinkPlan.summarize(urls)};val c=MaterialTheme.colorScheme
+    var mode by rememberSaveable { mutableStateOf(IntakeMode.NOW.name) }; var modeMenu by remember { mutableStateOf(false) }
+    var group by rememberSaveable { mutableStateOf("") }; var startAt by rememberSaveable { mutableLongStateOf(0) }
+    var groupMenu by remember { mutableStateOf(false) }
+    val activity = LocalContext.current as MobileActivity
+    val modeLabels = listOf(R.string.download_action, R.string.add_only, R.string.add_queue, R.string.schedule)
     val focus=remember { FocusRequester() }
     ModalBottomSheet(sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),onDismissRequest=onClose,containerColor=c.surface,shape=RoundedCornerShape(topStart=28.dp,topEnd=28.dp),dragHandle={BottomSheetDefaults.DragHandle()},contentWindowInsets={WindowInsets(0,0,0,0)}) {
         LaunchedEffect(Unit){if(prefill.isEmpty())focus.requestFocus()}
@@ -306,7 +323,7 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
                     placeholder={Text("https://",fontSize=14.sp)},textStyle=MaterialTheme.typography.bodyLarge.copy(textDirection=TextDirection.Ltr),
                     leadingIcon={TextButton(onClick={val pasted=onPaste();if(pasted.isNotBlank())text=if(text.isBlank())pasted else "$text\n$pasted"}) { Icon(painterResource(R.drawable.ui_clipboard),stringResource(R.string.paste_clipboard),Modifier.size(18.dp));Spacer(Modifier.width(6.dp));Text(stringResource(R.string.paste_short),fontSize=12.sp) } })
             }
-            if(invalid)Text(stringResource(R.string.bad_link),color=c.error,fontSize=13.sp)
+            if(invalid && (urls.isEmpty() || urls.any { !LinkUtils.isPublicHttpUrl(it) }))Text(stringResource(R.string.bad_link),color=c.error,fontSize=13.sp)
             if(urls.isNotEmpty()) {
                 val name=Uri.parse(urls.first()).lastPathSegment?.takeIf { it.contains('.') }.orEmpty()
                 Surface(Modifier.fillMaxWidth().padding(top=12.dp),shape=Round,color=c.surface,border=BorderStroke(1.dp,c.outline.copy(alpha=c.outline.alpha*.8f))) {
@@ -329,6 +346,21 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
                     Icon(painterResource(R.drawable.ui_chevron_right),null,Modifier.size(22.dp))
                 }
             }
+            Box(Modifier.fillMaxWidth().padding(top=12.dp)) {
+                OutlinedButton(onClick={modeMenu=true},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=Round) {
+                    Text(stringResource(R.string.intake_action) + ": " + stringResource(modeLabels[IntakeMode.valueOf(mode).ordinal]),Modifier.weight(1f)); Icon(painterResource(R.drawable.ui_chevron_down),null,Modifier.size(20.dp))
+                }
+                DropdownMenu(modeMenu,{modeMenu=false}) {
+                    IntakeMode.entries.forEach { item -> DropdownMenuItem(text={Text(stringResource(modeLabels[item.ordinal]))},onClick={mode=item.name;modeMenu=false;invalid=false}) }
+                }
+            }
+            if(mode==IntakeMode.QUEUE.name || more) {
+                OutlinedTextField(group,{group=it.take(80)},Modifier.fillMaxWidth().padding(top=12.dp),singleLine=true,shape=Round,label={Text(stringResource(R.string.group_name))},placeholder={Text(stringResource(R.string.group_hint))},
+                    trailingIcon={if(groups.isNotEmpty())Box { UiIcon(R.drawable.ui_chevron_down,R.string.group_name){groupMenu=true};DropdownMenu(groupMenu,{groupMenu=false}) { groups.forEach { name -> DropdownMenuItem(text={Text(name)},onClick={group=name;groupMenu=false}) } } })
+            }
+            if(mode==IntakeMode.SCHEDULE.name) OutlinedButton(onClick={MobileDates.choose(activity,if(startAt>System.currentTimeMillis())startAt else System.currentTimeMillis()+3_600_000){startAt=it;invalid=false}},modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)) { Text(if(startAt>0)MobileDates.format(activity,startAt) else stringResource(R.string.choose_date_time)) }
+            if(invalid && mode==IntakeMode.SCHEDULE.name && startAt<=System.currentTimeMillis())Text(stringResource(R.string.schedule_invalid),color=c.error,fontSize=13.sp)
+            if(invalid && mode==IntakeMode.QUEUE.name && group.isBlank())Text(stringResource(R.string.group_required),color=c.error,fontSize=13.sp)
             Surface(Modifier.fillMaxWidth().padding(top=12.dp).clickable{more=!more}.semantics { stateDescription=if(more)"expanded" else "collapsed" },shape=Round,color=c.surface,border=BorderStroke(1.dp,c.outline.copy(alpha=c.outline.alpha*.8f))) {
                 Row(Modifier.padding(horizontal=14.dp).heightIn(min=52.dp),verticalAlignment=Alignment.CenterVertically) {
                     Text(stringResource(R.string.more_options),Modifier.weight(1f),fontSize=16.sp);Icon(painterResource(R.drawable.ui_chevron_down),null,Modifier.size(20.dp))
@@ -339,8 +371,8 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
                 Text(stringResource(R.string.pattern_hint),fontSize=12.sp,color=c.onSurfaceVariant)
             } }
             Text(stringResource(R.string.automatic_hint),Modifier.fillMaxWidth().padding(top=12.dp,bottom=20.dp),fontSize=12.sp,color=c.onSurfaceVariant,textAlign=TextAlign.Right)
-            Button(onClick={invalid=!onDownload(text,audio)},enabled=text.isNotBlank(),modifier=Modifier.fillMaxWidth().heightIn(min=56.dp),shape=Round,
-                colors=ButtonDefaults.buttonColors(containerColor=Gold,contentColor=Ink)) { Icon(painterResource(R.drawable.ui_download),null,Modifier.size(24.dp));Spacer(Modifier.width(12.dp));Text(stringResource(R.string.download_action),fontSize=20.sp,fontWeight=FontWeight.SemiBold) }
+            Button(onClick={val options=IntakeOptions(IntakeMode.valueOf(mode),if(mode==IntakeMode.SCHEDULE.name)startAt else 0,group.trim()); invalid=runCatching{options.validate();if(onSubmit!=null) !onSubmit(text,audio,options) else !onDownload(text,audio)}.getOrDefault(true)},enabled=text.isNotBlank(),modifier=Modifier.fillMaxWidth().heightIn(min=56.dp),shape=Round,
+                colors=ButtonDefaults.buttonColors(containerColor=Gold,contentColor=Ink)) { Icon(painterResource(R.drawable.ui_download),null,Modifier.size(24.dp));Spacer(Modifier.width(12.dp));Text(stringResource(modeLabels[IntakeMode.valueOf(mode).ordinal]),fontSize=20.sp,fontWeight=FontWeight.SemiBold) }
         }
     }
 }

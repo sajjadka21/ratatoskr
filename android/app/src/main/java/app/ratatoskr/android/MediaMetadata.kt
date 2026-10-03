@@ -26,14 +26,17 @@ object MediaMetadata {
             val item = if (entries == null) root else entries.optJSONObject(position) ?: error("unsupported_media")
             val formats = item.optJSONArray("formats")
             val rows = (0 until (formats?.length() ?: 0)).mapNotNull { formats?.optJSONObject(it) }
-            val video = rows.any { it.optString("vcodec").let { codec -> codec.isNotEmpty() && codec != "none" } }
-            val audio = rows.any { it.optString("acodec").let { codec -> codec.isNotEmpty() && codec != "none" } }
+            val direct = LinkUtils.isPublicHttpUrl(item.optString("url"))
+            val videoExts = setOf("mp4", "webm", "mkv", "mov", "m4v")
+            val audioExts = setOf("m4a", "mp3", "aac", "opus", "ogg", "wav", "flac")
+            val video = (direct && item.optString("ext") in videoExts) || rows.any { it.optString("vcodec").let { codec -> codec.isNotEmpty() && codec != "none" } || (it.optString("vcodec").isEmpty() && it.optString("ext") in videoExts && LinkUtils.isPublicHttpUrl(it.optString("url"))) }
+            val audio = (direct && item.optString("ext") in audioExts) || rows.any { it.optString("acodec").let { codec -> codec.isNotEmpty() && codec != "none" } }
             val thumbs = item.optJSONArray("thumbnails")
             val candidates = (0 until (thumbs?.length() ?: 0)).mapNotNull { thumbs?.optJSONObject(it) }
                 .filter { LinkUtils.isPublicHttpUrl(it.optString("url")) }
             val image = candidates.maxByOrNull { it.optLong("width").coerceAtLeast(0) * it.optLong("height").coerceAtLeast(0) }
             val thumbnail = image?.optString("url") ?: item.optString("thumbnail").takeIf { LinkUtils.isPublicHttpUrl(it) }
-            val kind = when { video -> "video"; audio -> "audio"; instagram && image != null && rows.isEmpty() -> "photo"; else -> error("unsupported_media") }
+            val kind = when { video -> "video"; audio -> "audio"; instagram && image != null && rows.isEmpty() && item.optString("ext") !in videoExts && item.optString("ext") !in audioExts -> "photo"; else -> error("unsupported_media") }
             MediaItem(position + 1, item.optString("title", root.optString("title")).take(300), kind,
                 LinkUtils.offeredHeights(rows.map { it.optInt("height").takeIf { height -> height > 0 } }),
                 if (kind == "photo") image!!.getString("url") else null, thumbnail)

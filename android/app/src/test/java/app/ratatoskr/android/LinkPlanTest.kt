@@ -11,7 +11,7 @@ class LinkPlanTest {
         assertEquals(LinkKind.MEDIA, LinkPlan.classify("https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT"))
         assertEquals(LinkKind.FILE, LinkPlan.classify("https://cdn.example.org/files/Setup.EXE?token=1"))
         assertEquals(LinkKind.FILE, LinkPlan.classify("https://example.org/a/book.pdf"))
-        assertEquals(LinkKind.MEDIA, LinkPlan.classify("https://example.org/watch/123"))
+        assertEquals(LinkKind.FILE, LinkPlan.classify("https://example.org/watch/123"))
     }
     @Test fun lookalikeHostsAreNotMedia() {
         assertEquals(LinkKind.FILE, LinkPlan.classify("https://evilyoutube.com/x.zip"))

@@ -66,7 +66,7 @@ class MainActivity : MobileActivity(), TaskActions {
         super.onCreate(savedInstanceState)
         history = savedInstanceState?.getBoolean("history") ?: false
         query = savedInstanceState?.getString("query").orEmpty()
-        addPrefill = savedInstanceState?.getString("add-prefill") ?: intent.getStringExtra(Intent.EXTRA_TEXT)
+        addPrefill = if (savedInstanceState != null) savedInstanceState.getString("add-prefill") else intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
         formatFilter = savedInstanceState?.getString("format-filter")
         dateFrom = savedInstanceState?.getLong("date-from") ?: 0L
         dateUntil = savedInstanceState?.getLong("date-until") ?: 0L
@@ -122,6 +122,14 @@ class MainActivity : MobileActivity(), TaskActions {
         outState.putInt("sortOrder", sortOrder); outState.putString("category", category)
         outState.putString("add-prefill", addPrefill); outState.putString("dismissed-link", dismissedLink)
         outState.putStringArrayList("selection", ArrayList(selection)); super.onSaveInstanceState(outState)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()?.let { text ->
+            addPrefill = text
+        }
     }
 
     /** One short first-run explanation, with the one setting that decides whether downloads survive in the background. */

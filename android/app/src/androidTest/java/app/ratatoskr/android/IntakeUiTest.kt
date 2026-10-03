@@ -29,6 +29,23 @@ class IntakeUiTest {
         for (command in listOf("mkdir -p /sdcard/Download/ratatoskr-ui-review", "screencap -p /sdcard/Download/ratatoskr-ui-review/$name.png"))
             automation.executeShellCommand(command).use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).use { stream -> stream.readBytes() } }
     }
+    @Test fun instagramShareUpdatesOpenIntakeAndDoesNotReturnAfterDismissAndRecreation() {
+        prepare()
+        val first = "https://example.com/old.zip"
+        val reel = "https://www.instagram.com/reel/Dd_Rx17K9K3/"
+        ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java).putExtra(Intent.EXTRA_TEXT, first)).use { scenario ->
+            compose.onNode(hasSetTextAction()).assertTextContains(first)
+            scenario.onActivity { it.onNewIntent(Intent(context, MainActivity::class.java).putExtra(Intent.EXTRA_TEXT, reel)) }
+            compose.onNode(hasSetTextAction()).assertTextContains(reel)
+            compose.onNodeWithContentDescription(context.getString(R.string.cancel)).performClick()
+            scenario.recreate()
+            compose.onAllNodesWithText(context.getString(R.string.new_download)).assertCountEquals(0)
+            // The real share entry receives a caption, not only a bare URL.
+            scenario.onActivity { activity -> activity.startActivity(Intent(context, ShareActivity::class.java).setAction(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, "Watch this: $reel")) }
+            compose.waitUntil(10000) { runCatching { compose.onNode(hasSetTextAction()).assertTextContains(reel); true }.getOrDefault(false) }
+            capture("instagram-share-intake")
+        }
+    }
     @Test fun floatingAddAcceptsIncompletePasteThenSavesAndCanBeReopened() {
         prepare()
         val url = "https://example.com/floating-${UUID.randomUUID()}.mp4"

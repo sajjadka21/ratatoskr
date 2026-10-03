@@ -301,7 +301,7 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun AbEnterUrl(prefill:String,defaultAudio:Boolean,onClose:()->Unit,onPaste:()->String,onDownload:(String,Boolean)->Boolean,folder:String="Downloads/Ratatoskr",onFolder:()->Unit={},onSubmit:((String,Boolean,IntakeOptions)->Boolean)?=null,groups:List<String> = emptyList(),previousTasks:List<MobileTask> = emptyList()) {
-    var text by rememberSaveable { mutableStateOf(prefill) };var audio by rememberSaveable { mutableStateOf(defaultAudio) }
+    var text by rememberSaveable(prefill) { mutableStateOf(prefill) };var audio by rememberSaveable { mutableStateOf(defaultAudio) }
     var more by rememberSaveable { mutableStateOf(defaultAudio) };var invalid by rememberSaveable { mutableStateOf(false) }
     val urls=remember(text){LinkPlan.parse(text)};val counts=remember(urls){LinkPlan.summarize(urls)};val c=MaterialTheme.colorScheme
     var queueDialog by rememberSaveable { mutableStateOf(false) }

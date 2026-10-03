@@ -52,12 +52,14 @@ class ShareActivity : MobileActivity() {
             val data = intent?.dataString
             (if (data?.startsWith("http", true) == true) data.takeIf { LinkUtils.isPublicHttpUrl(it) } else LinkUtils.handoffUrl(data))
                 ?: run { finishWith(R.string.bad_link); return }
-        } else intent?.getStringExtra(Intent.EXTRA_TEXT)
+        } else intent?.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
         val text = shared ?: if (intent?.getBooleanExtra(EXTRA_FROM_CLIPBOARD, false) == true) clipboardText() else null
         val urls = LinkPlan.parse(text)
         if (urls.isEmpty() || urls.any { !LinkUtils.isPublicHttpUrl(it) }) { finishWith(R.string.bad_link); return }
         if (!intent.getBooleanExtra("choose-media-items", false)) {
-            startActivity(Intent(this, MainActivity::class.java).putExtra(Intent.EXTRA_TEXT, urls.joinToString("\n")))
+            startActivity(Intent(this, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra(Intent.EXTRA_TEXT, urls.joinToString("\n")))
             finish(); return
         }
         val prefs = MobilePreferences(this)

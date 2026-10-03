@@ -18,6 +18,14 @@ interface TaskActions {
     /** True while some downloads are selected; a tap then selects instead of opening the details. */
     val selecting: Boolean
     fun toggle(task: MobileTask)
+    fun tap(task: MobileTask) {
+        when (RowTapPolicy.action(task.state, selecting)) {
+            RowTapAction.SELECT -> toggle(task)
+            RowTapAction.RESUME -> command(task, DownloadService.ACTION_RESUME)
+            RowTapAction.OPEN -> open(task)
+            RowTapAction.DETAILS -> details(task)
+        }
+    }
     fun details(task: MobileTask)
     fun command(task: MobileTask, action: String)
     fun open(task: MobileTask)
@@ -57,7 +65,7 @@ class TaskAdapter(private val activity: MobileActivity, private val actions: Tas
         val progress = ProgressBar(a, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100; progressTintList = android.content.res.ColorStateList.valueOf(a.accent)
             progressBackgroundTintList = android.content.res.ColorStateList.valueOf(a.accent and 0x33FFFFFF)
-            layoutParams = LinearLayout.LayoutParams(-1, a.dp(4)).apply { topMargin = a.dp(8) }
+            layoutParams = LinearLayout.LayoutParams(-1, a.dp(8)).apply { topMargin = a.dp(8) }
         }
         val stats = TextView(a).apply { textSize = 12f; setTextColor(a.muted); setPadding(0, a.dp(6), 0, 0) }
         val error = TextView(a).apply { textSize = 12f; setTextColor(a.danger); setPadding(0, a.dp(4), 0, 0) }
@@ -69,7 +77,7 @@ class TaskAdapter(private val activity: MobileActivity, private val actions: Tas
     override fun onBindViewHolder(h: Holder, position: Int) {
         val a = activity
         val row = getItem(position); val task = row.task
-        h.card.setOnClickListener { if (actions.selecting) actions.toggle(task) else actions.details(task) }
+        h.card.setOnClickListener { actions.tap(task) }
         h.card.setOnLongClickListener { actions.toggle(task); true }
         h.card.background = a.rounded(a.surface, 14, if (row.selected) a.accent else null).also { if (row.selected) (it as android.graphics.drawable.GradientDrawable).setStroke(a.dp(2), a.accent) }
         h.badge.setImageResource(if (row.selected) R.drawable.ic_kind_check else badgeFor(task))

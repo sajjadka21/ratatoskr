@@ -38,6 +38,8 @@ class BrowserActivity : MobileActivity() {
         box.addView(bar, LinearLayout.LayoutParams(-1, dp(3)))
 
         web = WebView(this).apply {
+            isVerticalScrollBarEnabled = false
+            isHorizontalScrollBarEnabled = false
             settings.javaScriptEnabled = true; settings.domStorageEnabled = true
             settings.allowFileAccess = false; settings.allowContentAccess = false; settings.setSupportMultipleWindows(false)
             webViewClient = object : WebViewClient() {

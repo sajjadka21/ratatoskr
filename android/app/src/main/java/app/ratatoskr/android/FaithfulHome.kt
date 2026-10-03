@@ -65,19 +65,20 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
     Column(Modifier.fillMaxSize().background(colors.background)) {
         if (!search) CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             BoxWithConstraints(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 12.dp)) {
-                val brandWidth = (maxWidth - 152.dp).coerceAtLeast(120.dp)
+                val brandWidth = (maxWidth - 200.dp).coerceAtLeast(90.dp)
                 Row(Modifier.align(Alignment.CenterEnd).widthIn(max = brandWidth), verticalAlignment = Alignment.CenterVertically) {
                     Image(painterResource(R.drawable.brand_squirrel), null, Modifier.size(34.dp), colorFilter=androidx.compose.ui.graphics.ColorFilter.tint(colors.primary))
                     Text("Ratatoskr", Modifier.padding(start = 8.dp), color = colors.primary, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines=1, overflow=TextOverflow.Ellipsis)
                 }
                 Row(Modifier.align(Alignment.CenterStart), verticalAlignment = Alignment.CenterVertically) {
+                    UiIcon(R.drawable.ui_power, R.string.exit_app) { onMenu(R.string.exit_app) }
                     Box {
                         UiIcon(R.drawable.ui_ellipsis_vertical, R.string.menu) { menu = true }
                         DropdownMenu(menu, { menu = false }) {
                             listOf(R.string.paste, R.string.pause_all, R.string.resume_all, R.string.clear_finished, R.string.select_all, R.string.plugins).forEach { title ->
                                 DropdownMenuItem(text = { Text(stringResource(title)) }, onClick = { menu = false; onMenu(title) })
                             }
-                            listOf(R.string.sort_newest, R.string.sort_oldest, R.string.sort_name, R.string.sort_size, R.string.sort_format).forEachIndexed { index, title ->
+                            listOf(R.string.sort_newest, R.string.sort_oldest, R.string.sort_name, R.string.sort_size, R.string.sort_format, R.string.sort_manual).forEachIndexed { index, title ->
                                 DropdownMenuItem(text = { Text(stringResource(title)) }, onClick = { menu = false; onSort(index) })
                             }
                         }
@@ -90,9 +91,6 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
         if (state.selecting) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             UiIcon(R.drawable.ui_x, R.string.cancel) { onSelection(R.string.cancel) }
             Text(stringResource(R.string.selected_count, state.selectionCount), Modifier.weight(1f))
-            UiIcon(R.drawable.ui_pause, R.string.pause) { onSelection(R.string.pause) }
-            UiIcon(R.drawable.ui_play, R.string.resume) { onSelection(R.string.resume) }
-            UiIcon(R.drawable.ic_delete, R.string.remove) { onSelection(R.string.remove) }
         } else if (!search) Text(stringResource(R.string.nav_downloads), Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 12.dp), fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Right)
         if (search) {
             BackHandler { search = false; onQuery("") }
@@ -119,6 +117,10 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
             }
         }
         if (state.filtersActive) Text(stringResource(R.string.filters_active), Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), color = colors.primary, fontSize = 12.sp)
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { onMenu(R.string.create_queue) }) { Icon(painterResource(R.drawable.ui_plus), null, Modifier.size(18.dp)); Text(stringResource(R.string.create_queue)) }
+            state.namedQueues.filter { name -> rows.none { it.task.groupName == name } }.forEach { name -> Text(name, Modifier.padding(horizontal = 12.dp), color = colors.primary) }
+        }
         HorizontalDivider(color = colors.outline.copy(alpha = colors.outline.alpha * .8f))
         if (state.clipboard.isNotEmpty()) Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.clipboard_many, LinkPlan.parse(state.clipboard).size), Modifier.weight(1f), fontSize = 13.sp)
@@ -149,7 +151,33 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
                 }
             }
         }
-        if (!search) TransferDock(onAdd, { active = false; onHistory(false) }, { onMenu(R.string.settings) })
+        if (state.selecting) SelectionTools(state, onSelection)
+        else if (!search) TransferDock(onAdd, { active = false; onHistory(false) }, { onMenu(R.string.settings) })
+    }
+}
+
+@Composable private fun SelectionTools(state: AbHomeState, onAction: (Int) -> Unit) {
+    val selected = state.rows.filter { it.selected }.map { it.task }
+    val single = selected.singleOrNull()
+    val editable = single != null && single.state !in TaskPolicy.inFlight && single.state !in setOf(TaskState.COMPLETED, TaskState.CANCELLED)
+    val buttons = listOf(
+        Triple(R.drawable.ui_play, R.string.resume, selected.any { RowTapPolicy.action(it.state, false) == RowTapAction.RESUME }),
+        Triple(R.drawable.ui_pause, R.string.pause, selected.any { it.state in TaskPolicy.inFlight }),
+        Triple(R.drawable.ui_info, R.string.task_details, single != null),
+        Triple(R.drawable.ui_edit, R.string.change_link, editable),
+        Triple(R.drawable.ui_up, R.string.selection_up, editable),
+        Triple(R.drawable.ui_down, R.string.selection_down, editable),
+        Triple(R.drawable.ic_retry, R.string.selection_repeat, selected.isNotEmpty()),
+        Triple(R.drawable.ic_delete, R.string.remove, selected.isNotEmpty())
+    )
+    Surface(tonalElevation = 3.dp, shadowElevation = 6.dp, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    buttons.forEach { (icon, label, enabled) ->
+                        IconButton(onClick = { onAction(label) }, enabled = enabled, modifier = Modifier.size(48.dp)) {
+                            Icon(painterResource(icon), stringResource(label), Modifier.size(24.dp), tint = if (label == R.string.remove) MaterialTheme.colorScheme.error else LocalContentColor.current)
+                        }
+                    }
+        }
     }
 }
 
@@ -210,7 +238,7 @@ private fun kindIcon(task:MobileTask):Int {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable private fun FileRow(row:TaskRow,selecting:Boolean,actions:TaskActions) {
     val t=row.task;val c=MaterialTheme.colorScheme;var menu by remember { mutableStateOf(false) }
-    Column(Modifier.padding(horizontal=12.dp).fillMaxWidth().combinedClickable(onClick={if(selecting)actions.toggle(t) else actions.details(t)},onLongClick={actions.toggle(t)}).background(if(row.selected)c.primary.copy(alpha=.1f) else Color.Transparent)) {
+    Column(Modifier.padding(horizontal=12.dp).fillMaxWidth().combinedClickable(onClick={actions.tap(t)},onLongClick={actions.toggle(t)}).background(if(row.selected)c.primary.copy(alpha=.1f) else Color.Transparent)) {
         HorizontalDivider(color=c.outline.copy(alpha=c.outline.alpha*.8f))
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             Row(Modifier.fillMaxWidth().padding(vertical=10.dp),verticalAlignment=Alignment.CenterVertically) {
@@ -240,7 +268,7 @@ private fun kindIcon(task:MobileTask):Int {
 @Composable private fun ActiveTransfer(row:TaskRow,selecting:Boolean,actions:TaskActions) {
     val t=row.task;val c=MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=0.dp).clip(RoundedCornerShape(20.dp)).background(c.surface).border(1.dp,c.outline.copy(alpha=c.outline.alpha*.6f),RoundedCornerShape(20.dp))
-        .combinedClickable(onClick={if(selecting)actions.toggle(t) else actions.details(t)},onLongClick={actions.toggle(t)}).padding(12.dp)) {
+        .combinedClickable(onClick={actions.tap(t)},onLongClick={actions.toggle(t)}).padding(12.dp)) {
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
                 if(selecting)Checkbox(row.selected,{actions.toggle(t)}) else TransferAction(t,actions)
@@ -251,9 +279,10 @@ private fun kindIcon(task:MobileTask):Int {
                 PreviewImage(row.thumbnail ?: t.uri.takeIf { it.isNotBlank() },t,Modifier.width(88.dp).height(64.dp))
             }
             Row(Modifier.fillMaxWidth().padding(top=8.dp),verticalAlignment=Alignment.CenterVertically) {
-                Text("${t.progress.coerceIn(0,100)}%",fontSize=20.sp,fontWeight=FontWeight.Medium,modifier=Modifier.width(46.dp))
-                if(t.state==TaskState.PROBING || t.totalBytes<=0)LinearProgressIndicator(Modifier.weight(1f).height(6.dp).clip(CircleShape),color=c.primary,trackColor=c.onSurfaceVariant.copy(alpha=.2f))
-                else LinearProgressIndicator(progress={t.progress.coerceIn(0,100)/100f},modifier=Modifier.weight(1f).height(6.dp).clip(CircleShape),color=c.primary,trackColor=c.onSurfaceVariant.copy(alpha=.2f))
+                val fraction = TransferProgress.fraction(t)
+                Text(fraction?.let { "${(it*100).toInt()}%" } ?: "—",fontSize=20.sp,fontWeight=FontWeight.Medium,modifier=Modifier.width(52.dp))
+                if(fraction == null)LinearProgressIndicator(Modifier.weight(1f).height(8.dp).clip(CircleShape),color=c.primary,trackColor=c.onSurfaceVariant.copy(alpha=.2f))
+                else LinearProgressIndicator(progress={fraction},modifier=Modifier.weight(1f).height(8.dp).clip(CircleShape),color=c.primary,trackColor=c.onSurfaceVariant.copy(alpha=.2f))
             }
             val parts=row.stats.split(" · ");val speed=parts.firstOrNull { it.endsWith("/s") }.orEmpty();val eta=parts.drop(1).firstOrNull { !it.endsWith("/s") }.orEmpty()
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) { Text(speed,fontSize=13.sp,lineHeight=18.sp,color=c.onSurfaceVariant);Text(eta.ifEmpty { if(t.state!=TaskState.DOWNLOADING)MobileText.state(LocalContext.current,t) else "" },fontSize=13.sp,lineHeight=18.sp,color=c.onSurfaceVariant) }
@@ -308,6 +337,14 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
     var group by rememberSaveable { mutableStateOf("") }; var startAt by rememberSaveable { mutableLongStateOf(0) }
     var groupMenu by remember { mutableStateOf(false) }
     val activity = LocalContext.current as MobileActivity
+    val destinationTree = MobilePreferences(activity).saveTree
+    val folderFiles by produceState<FolderFileInspection?>(null, urls, destinationTree) {
+        value = null
+        if (urls.isNotEmpty()) {
+            kotlinx.coroutines.delay(350)
+            value = withContext(Dispatchers.IO) { ExistingFiles.inspect(activity, urls) }
+        }
+    }
     fun submit(mode: IntakeMode): Boolean {
         val options = IntakeOptions(mode, if (mode in setOf(IntakeMode.SCHEDULE, IntakeMode.QUEUE)) startAt else 0, if (mode == IntakeMode.QUEUE) group.trim() else "")
         invalid = runCatching { options.validate(); if (onSubmit != null) !onSubmit(text, audio, options) else !onDownload(text, audio) }.getOrDefault(true)
@@ -335,8 +372,18 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
                 Column(Modifier.padding(14.dp)) {
                     Text(stringResource(if(previous.any { it.state==TaskState.COMPLETED }) R.string.duplicate_done else R.string.duplicate_pending), fontWeight=FontWeight.SemiBold, color=c.primary)
                     previous.take(2).forEach { Text(TaskQuery.name(it) + " · " + MobileText.state(activity,it), fontSize=13.sp, maxLines=2, overflow=TextOverflow.Ellipsis) }
-                    Text(stringResource(R.string.duplicate_warning),fontSize=12.sp,color=c.onSurfaceVariant)
+                    Text(stringResource(R.string.duplicate_history_hint),fontSize=12.sp,color=c.onSurfaceVariant)
                 }
+            }
+            folderFiles?.let { result ->
+                if (result.matches.isNotEmpty()) Surface(Modifier.fillMaxWidth().padding(top = 12.dp), shape = Round, color = c.surfaceVariant) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text(stringResource(R.string.folder_existing), fontWeight = FontWeight.SemiBold)
+                        result.matches.take(4).forEach { Text(it, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.Ltr)) }
+                        Text(stringResource(R.string.folder_name_hint), fontSize = 12.sp, color = c.onSurfaceVariant)
+                    }
+                }
+                if (result.limited) Text(stringResource(R.string.folder_access_limited), Modifier.padding(top = 8.dp), fontSize = 12.sp, color = c.onSurfaceVariant)
             }
             if(urls.isNotEmpty()) {
                 val name=Uri.parse(urls.first()).lastPathSegment?.takeIf { it.contains('.') }.orEmpty()
@@ -384,8 +431,8 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
                     OutlinedButton(onClick = { if (urls.isEmpty() || urls.any { !LinkUtils.isPublicHttpUrl(it) }) invalid = true else queueDialog = true }, enabled = text.isNotBlank(), modifier = Modifier.weight(1f).heightIn(min = 56.dp), shape = Round) {
                         Icon(painterResource(R.drawable.ui_list), null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.queue_action))
                     }
-                    FilledIconButton(onClick = { submit(if (startAt > 0) IntakeMode.SCHEDULE else IntakeMode.NOW) }, enabled = text.isNotBlank(), modifier = Modifier.size(64.dp), shape = CircleShape,
-                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = Gold, contentColor = Ink)) {
+                    FilledIconButton(onClick = { submit(if (startAt > 0) IntakeMode.SCHEDULE else IntakeMode.NOW) }, enabled = text.isNotBlank(), modifier = Modifier.size(64.dp).then(if (previous.isNotEmpty()) Modifier.border(3.dp, c.error, CircleShape) else Modifier), shape = CircleShape,
+                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = if (previous.isNotEmpty()) c.error else Gold, contentColor = if (previous.isNotEmpty()) Color.White else Ink)) {
                         Icon(painterResource(R.drawable.ui_download), stringResource(R.string.download_action), Modifier.size(30.dp))
                     }
                     OutlinedButton(onClick = { submit(IntakeMode.SAVE) }, enabled = text.isNotBlank(), modifier = Modifier.weight(1f).heightIn(min = 56.dp), shape = Round) {

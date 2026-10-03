@@ -67,6 +67,7 @@
   flex-direction: column;
   gap: 16px;
   overflow-y: auto;
+  scrollbar-width: none;
 }
 
 .details__hero {
@@ -556,3 +557,5 @@
 .details__disclosure[open] > summary::after { content: "−"; }
 .details__disclosure > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
 .details__disclosure[open] > summary { margin-bottom: 10px; color: var(--text-primary); }
+
+.details__body::-webkit-scrollbar { display: none; }

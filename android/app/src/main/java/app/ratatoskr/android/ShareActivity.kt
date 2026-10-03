@@ -45,7 +45,7 @@ class ShareActivity : MobileActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         box = column().apply { setPadding(dp(20), dp(20), dp(20), dp(16)); setBackgroundColor(paper) }
-        setContentView(ScrollView(this).apply { addView(box) })
+        setContentView(ScrollView(this).apply { isVerticalScrollBarEnabled = false; isHorizontalScrollBarEnabled = false; addView(box) })
         model = ViewModelProvider(this)[ShareModel::class.java]
         val shared = if (intent?.action == Intent.ACTION_VIEW) {
             // ratatoskr://add?url=… from our own pages, or a plain file link opened with "Open with Ratatoskr"

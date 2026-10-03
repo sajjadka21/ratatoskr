@@ -7,6 +7,7 @@ edition = "2024"
 dm-common = { version = "0.1.0", path = "../dm-common" }
 dm-storage = { version = "0.1.0", path = "../dm-storage" }
 dm-system = { version = "0.1.0", path = "../dm-system" }
+dirs = "6"
 aes = "0.8"
 cbc = "0.1"
 http = "1"

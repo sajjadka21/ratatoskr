@@ -210,4 +210,12 @@ describe("IPC contract", () => {
     expect(published.length).toBeGreaterThan(0);
     expect(unique(listened)).toEqual(unique(published));
   });
+
+  it("dispatches floating-window creation away from synchronous Windows IPC handlers", () => {
+    // WebviewWindowBuilder documents a WebView2 deadlock for synchronous commands.
+    // Keep this at the native command boundary, which JS cannot type-check.
+    for (const command of ["add_dropped_links", "set_drop_box", "open_download_window"]) {
+      expect(rust).toMatch(new RegExp(`async fn ${command}\\(`));
+    }
+  });
 });

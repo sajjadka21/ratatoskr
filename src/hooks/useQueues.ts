@@ -139,6 +139,10 @@ export function useQueues({
     ]);
   }
 
+  async function setQueueLimits(queueId: string, maxConcurrent: number, maxConcurrentPerHost: number | null) {
+    upsertQueues([await invoke<DownloadQueue>("set_queue_limits", { queueId, maxConcurrent, maxConcurrentPerHost })]);
+  }
+
   async function stopQueue(queueId: string) {
     const queue = await invoke<DownloadQueue>("stop_queue", { queueId });
     upsertQueues([queue]);
@@ -182,6 +186,7 @@ export function useQueues({
     startQueue,
     stopQueue,
     setQueueEnabled,
+    setQueueLimits,
     reorderQueue,
     moveQueuedDownload,
     removeFromQueue,

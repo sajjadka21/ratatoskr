@@ -2,7 +2,7 @@ import { Pause, Play, RotateCcw, Trash2, X, XCircle } from "lucide-react";
 
 import { useI18n } from "../../i18n/I18n";
 import type { MessageKey } from "../../i18n/messages";
-import type { DownloadPriority, DownloadQueue } from "../../types/download";
+import type { DownloadQueue } from "../../types/download";
 
 import "./BulkActionBar.css";
 
@@ -13,7 +13,6 @@ type BulkActionBarProps = {
   queues: DownloadQueue[];
   onAction: (action: BulkAction) => void;
   onQueue: (queueId: string) => void;
-  onPriority: (priority: DownloadPriority) => void;
   onClear: () => void;
 };
 
@@ -26,9 +25,7 @@ const ACTIONS: Array<{ action: BulkAction; icon: typeof Play }> = [
   { action: "remove", icon: Trash2 },
 ];
 
-const PRIORITIES: DownloadPriority[] = ["very_high", "high", "normal", "low"];
-
-export function BulkActionBar({ count, queues, onAction, onQueue, onPriority, onClear }: BulkActionBarProps) {
+export function BulkActionBar({ count, queues, onAction, onQueue, onClear }: BulkActionBarProps) {
   const { t, fmt } = useI18n();
 
   return (
@@ -47,17 +44,6 @@ export function BulkActionBar({ count, queues, onAction, onQueue, onPriority, on
           {queues.map((queue) => (
             <option key={queue.id} value={queue.id}>
               {queue.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="bulk-action-bar__select">
-        <span>{t("bulk.priority")}</span>
-        <select value="" onChange={(event) => event.target.value && onPriority(event.target.value as DownloadPriority)}>
-          <option value="">{t("bulk.set")}</option>
-          {PRIORITIES.map((priority) => (
-            <option key={priority} value={priority}>
-              {t(`priority.${priority}` as MessageKey)}
             </option>
           ))}
         </select>

@@ -21,16 +21,15 @@ object MobileDates {
     }.timeInMillis
     fun nextDay(instant: Long) = calendar(false, dayStart(instant)).apply { add(Calendar.DATE, 1) }.timeInMillis
     fun format(context: android.content.Context, instant: Long): String {
-        val persian = MobilePreferences(context).language == "fa"
+        val persian = MobilePreferences(context).calendarType == "persian"
         val cal = calendar(persian, instant)
         return cal.getDateTimeFormat(android.icu.text.DateFormat.MEDIUM, android.icu.text.DateFormat.SHORT,
             ULocale(if (persian) "fa_IR@calendar=persian" else "en_US")).format(java.util.Date(instant))
     }
     fun choose(activity: MobileActivity, initial: Long = System.currentTimeMillis() + 3_600_000,
         dateOnly: Boolean = false, onChosen: (Long) -> Unit) {
-        val labels = arrayOf(activity.getString(R.string.calendar_persian), activity.getString(R.string.calendar_gregorian))
-        AlertDialog.Builder(activity).setTitle(R.string.choose_calendar).setItems(labels) { _, index ->
-            val persian = index == 0
+        run {
+            val persian = MobilePreferences(activity).calendarType == "persian"
             val cal = calendar(persian, initial)
             fun complete(year: Int, month: Int, day: Int) {
                 fun save(hour: Int, minute: Int) {
@@ -64,6 +63,6 @@ object MobileDates {
                 AlertDialog.Builder(activity).setTitle(R.string.calendar_persian).setView(box).setNegativeButton(R.string.cancel, null)
                     .setPositiveButton(android.R.string.ok) { _, _ -> box.clearFocus(); complete(year.value, month.value - 1, day.value) }.show()
             }
-        }.setNegativeButton(R.string.cancel, null).show()
+        }
     }
 }

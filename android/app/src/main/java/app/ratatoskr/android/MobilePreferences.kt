@@ -6,6 +6,12 @@ import android.net.NetworkCapabilities
 
 class MobilePreferences(context: Context) {
     private val prefs = context.getSharedPreferences("download_preferences", Context.MODE_PRIVATE)
+    var namedQueues: Set<String>
+        get() = prefs.getStringSet("named_queues", emptySet())?.toSet().orEmpty()
+        set(value) { prefs.edit().putStringSet("named_queues", value.toSet()).apply() }
+    var calendarType: String
+        get() = prefs.getString("calendar", if (language == "fa") "persian" else "gregorian")!!
+        set(value) { prefs.edit().putString("calendar", value).apply() }
     var networkPolicy: NetworkPolicy
         get() = runCatching { NetworkPolicy.valueOf(prefs.getString("network", NetworkPolicy.ANY.name)!!) }.getOrDefault(NetworkPolicy.ANY)
         set(value) { prefs.edit().putString("network", value.name).apply() }
@@ -15,6 +21,9 @@ class MobilePreferences(context: Context) {
     var quickDownload: Boolean
         get() = prefs.getBoolean("quick", false)
         set(value) { prefs.edit().putBoolean("quick", value).apply() }
+    var failureVibration: Boolean
+        get() = prefs.getBoolean("failure_vibration", true)
+        set(value) { prefs.edit().putBoolean("failure_vibration", value).apply() }
     var defaultHeight: Int?
         get() = prefs.getInt("height", 0).takeIf { it > 0 }
         set(value) { prefs.edit().putInt("height", value ?: 0).apply() }

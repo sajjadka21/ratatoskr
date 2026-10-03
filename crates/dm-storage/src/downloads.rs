@@ -220,12 +220,6 @@ impl Storage {
             "{DOWNLOAD_SELECT}
              WHERE queue_id = ?1 AND status = 'queued'
              ORDER BY
-                CASE priority
-                    WHEN 'very_high' THEN 0
-                    WHEN 'high' THEN 1
-                    WHEN 'normal' THEN 2
-                    WHEN 'low' THEN 3
-                END,
                 queue_position ASC,
                 id ASC"
         );

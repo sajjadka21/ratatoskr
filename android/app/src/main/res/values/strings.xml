@@ -155,6 +155,10 @@
     <string name="version_line">نسخه‌ی %1$s</string>
     <string name="language">زبان</string>
     <string name="notification_channel_done">پایان دانلود</string>
+    <string name="failure_channel">خطاهای دانلود</string>
+    <string name="failure_notice_title">مشکل در دانلود</string>
+    <string name="failure_notice_count">%1$d خطای جدید</string>
+    <string name="failure_vibration">لرزش هنگام خطای دانلود</string>
     <string name="filter_all">همه</string>
     <string name="cat_video">ویدیو</string>
     <string name="cat_music">موسیقی</string>
@@ -261,10 +265,21 @@
 <string name="duplicate_title">این لینک تکراری است</string>
 <string name="duplicate_done">این محتوا را قبلاً دانلود کرده‌ای.</string>
 <string name="duplicate_pending">این محتوا از قبل در فهرست دانلودهایت هست.</string>
-<string name="duplicate_warning">افزودن دوباره، یک نسخهٔ دیگر می‌سازد و می‌تواند دوباره اینترنت مصرف کند.</string>
+<string name="duplicate_warning">این هشدار از سابقهٔ راتاتوسکر می‌آید. اگر ادامه بدهی دوباره دانلود می‌شود و فایل همنام با شمارهٔ تازه ذخیره خواهد شد.</string>
+<string name="duplicate_history_hint">این بررسی بر اساس سابقهٔ راتاتوسکر است. اگر نام فایل در پوشهٔ مقصد موجود باشد، نسخهٔ تازه با شماره ذخیره می‌شود.</string>
 <string name="duplicate_again">عمداً دوباره اضافه شود</string>
 <string name="duplicate_view">دیدن دانلود قبلی</string>
 <string name="add_saved_feedback">به فهرست افزوده شد. برای شروع، دکمهٔ پخشِ ردیف یا صف را بزن.</string>
 <string name="add_started_feedback">به دانلودها اضافه شد.</string>
 <string name="intake_settings_hint">تاریخ، ساعت و دانلود فقط صدا</string>
+    <string name="selection_up">انتقال به بالای صف</string>
+    <string name="selection_down">انتقال به پایین صف</string>
+    <string name="selection_repeat">دانلود یک نسخهٔ دیگر</string>
+    <string name="folder_existing">فایلی با نام یکسان یا مشابه در پوشه‌ات وجود دارد.</string>
+    <string name="folder_name_hint">این فقط تشابه نام است؛ محتوا مقایسه نشده. دانلود مجاز است و فایل موجود بازنویسی نمی‌شود.</string>
+    <string name="folder_access_limited">بررسی فقط فایل‌های قابل‌دسترسی را شامل می‌شود. برای بررسی پوشهٔ موردنظرت، آن را از «مسیر ذخیره» انتخاب کن.</string>
+    <string name="sort_manual">ترتیب دستی</string>
+    <string name="exit_app">خروج کامل و توقف دانلودها</string>
+    <string name="create_queue">ساخت صف</string>
+    <string name="calendar_filter">تقویم</string>
 </resources>

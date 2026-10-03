@@ -704,3 +704,22 @@ var(--bg-elevated);
 .video-picker__list .video-picker__note {
   flex: 1 1 240px;
 }
+
+/* Independent, named actions: later and queues stay discoverable. */
+.add-download-modal__split { gap: 8px; }
+.add-download-modal__split .add-download-modal__submit { border-radius: 9px; }
+.add-download-modal__dropdown-toggle { width: auto; padding: 0 12px; display: inline-flex; gap: 7px; align-items: center; color: var(--text-primary); background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: 9px; font: inherit; font-size: 12px; }
+.add-download-modal__dropdown-toggle:hover:not(:disabled) { background: var(--bg-surface-hover); border-color: var(--accent); }
+.add-download-modal__duplicate { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--accent); border-radius: 12px; background: color-mix(in srgb, var(--accent) 8%, var(--bg-surface)); font-size: 13px; line-height: 1.7; }
+.add-download-modal__duplicate strong { color: var(--accent); }
+.add-download-modal__duplicate-names { direction: ltr; text-align: start; overflow-wrap: anywhere; }
+.add-download-modal__duplicate label { display: flex; gap: 9px; align-items: start; cursor: pointer; }
+.add-download-modal__duplicate input { margin-top: 5px; accent-color: var(--accent); }
+.add-download-modal__duplicate-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.add-download-modal__duplicate-actions button { min-height: 36px; padding: 7px 10px; color: var(--text-primary); background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: 8px; cursor: pointer; font: inherit; font-size: 12px; }
+.add-download-modal__duplicate-actions button[aria-pressed="true"] { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+.add-download-modal__footer { flex-wrap: wrap; }
+.add-download-modal__folder-inspection { display: grid; gap: 6px; color: var(--text-secondary); font-size: 12px; overflow-wrap: anywhere; }
+.add-download-modal__folder-inspection:has(strong) { padding: 12px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--bg-surface); }
+.add-download-modal__folder-inspection div { display: grid; gap: 2px; }
+.add-download-modal__folder-inspection small { color: var(--text-muted); }

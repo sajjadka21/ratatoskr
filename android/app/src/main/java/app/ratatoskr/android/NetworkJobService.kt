@@ -39,6 +39,7 @@ class NetworkJobService : JobService() {
     override fun onCreate() {
         super.onCreate(); store = taskStoreProvider(this); prefs = MobilePreferences(this); MobileRuntime.initialize(store)
         getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("downloads", getString(R.string.notification_channel), NotificationManager.IMPORTANCE_LOW))
+        FailureNotifications.ensureChannels(this)
         getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(callback)
     }
     override fun onStartJob(params: JobParameters): Boolean {
@@ -92,7 +93,11 @@ class NetworkJobService : JobService() {
                     val current = store.get(task.id)!!
                     if (current.state == TaskState.PAUSED && (current.error == "chunk_restart" || resumed)) store.state(task.id, if (allowed()) TaskState.QUEUED else TaskState.WAITING_NETWORK)
                     if (current.state == TaskState.CANCELLED) withContext(NonCancellable + ioDispatcher) { discardTransfer(this@NetworkJobService, task.id) }
-                    notifyTask(store.get(task.id)!!)
+                    val finished = store.get(task.id)!!
+                    if (finished.state == TaskState.FAILED) {
+                        getSystemService(NotificationManager::class.java).cancel(task.notificationId)
+                        FailureNotifications.publish(this@NetworkJobService, finished)
+                    } else notifyTask(finished)
                 }
             }
             if (!stopped && run == generation) {

@@ -43,6 +43,7 @@ class DownloadService : Service() {
         // A finished (or failed) download makes a sound, unlike the quiet progress notification.
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(DONE_CHANNEL, getString(R.string.notification_channel_done), NotificationManager.IMPORTANCE_DEFAULT))
+        FailureNotifications.ensureChannels(this)
         getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)
         // The download window closes at a time of day, not when the network changes, so look again now and then.
         scope.launch { while (isActive) { delay(30_000); networkChanged() } }
@@ -118,7 +119,11 @@ class DownloadService : Service() {
                     MobileRuntime.release(task.id)
                     if (pendingResume.remove(task.id) && !shuttingDown && store.get(task.id)?.state in setOf(TaskState.SAVED, TaskState.PAUSED, TaskState.FAILED, TaskState.WAITING_NETWORK)) store.state(task.id, TaskState.QUEUED)
                     if (store.get(task.id)?.state == TaskState.CANCELLED) withContext(NonCancellable + ioDispatcher) { discardTransfer(this@DownloadService, task.id) }
-                    getSystemService(NotificationManager::class.java).notify(task.notificationId, notification(store.get(task.id)))
+                    val finished = store.get(task.id)
+                    if (finished?.state == TaskState.FAILED) {
+                        getSystemService(NotificationManager::class.java).cancel(task.notificationId)
+                        FailureNotifications.publish(this@DownloadService, finished)
+                    } else getSystemService(NotificationManager::class.java).notify(task.notificationId, notification(finished))
                     schedule()
                 }
             }

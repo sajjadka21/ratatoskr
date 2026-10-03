@@ -95,12 +95,22 @@ class MainActivity : MobileActivity(), TaskActions {
                                 R.string.pause -> applyToSelection(DownloadService.ACTION_PAUSE)
                                 R.string.resume -> applyToSelection(DownloadService.ACTION_RESUME)
                                 R.string.remove -> removeSelection()
+                                R.string.task_details -> selectedTasks().singleOrNull()?.let { details(it) }
+                                R.string.change_link -> selectedTasks().singleOrNull()?.let { changeLink(it) }
+                                R.string.selection_up, R.string.selection_down -> selectedTasks().singleOrNull()?.let {
+                                    TaskStore.get(this@MainActivity).move(it.id, action == R.string.selection_up)
+                                    sortOrder = 5; render()
+                                }
+                                R.string.selection_repeat -> {
+                                    addPrefill = selectedTasks().joinToString("\n") { it.url }
+                                    selection.clear(); render()
+                                }
                             } })
                         addPrefill?.let { prefill -> AbEnterUrl(prefill, MobilePreferences(this@MainActivity).defaultAudio,
                             onClose = { addPrefill = null }, onPaste = ::clipboardText, onDownload = ::downloadLinks,
                             folder = folderLabel.ifEmpty { MobilePreferences(this@MainActivity).saveTree.takeIf { it.isNotEmpty() }?.let { android.net.Uri.parse(it).lastPathSegment?.substringAfterLast(':') }.orEmpty().ifEmpty { "Downloads/Ratatoskr" } },
                             onFolder = { chooseDownloadFolder.launch(null) }, onSubmit = ::submitLinks,
-                            groups = TaskStore.get(this@MainActivity).list().map { it.groupName }.filter { it.isNotEmpty() }.distinct(),
+                            groups = (MobilePreferences(this@MainActivity).namedQueues + TaskStore.get(this@MainActivity).list().map { it.groupName }.filter { it.isNotEmpty() }).sorted(),
                             previousTasks = TaskStore.get(this@MainActivity).list()) }
                     }
                 }
@@ -144,6 +154,18 @@ class MainActivity : MobileActivity(), TaskActions {
 
     private fun menuAction(action: Int) {
         when (action) {
+            R.string.create_queue -> {
+                val input = EditText(this).apply { hint = getString(R.string.group_name); maxLines = 1 }
+                AlertDialog.Builder(this).setTitle(R.string.create_queue).setView(input).setNegativeButton(R.string.cancel, null)
+                    .setPositiveButton(android.R.string.ok) { _, _ ->
+                        val name = input.text.toString().trim().take(80)
+                        if (name.isNotEmpty()) { val prefs = MobilePreferences(this); prefs.namedQueues = prefs.namedQueues + name; render() }
+                    }.show()
+            }
+            R.string.exit_app -> {
+                MobileExit.stop(this)
+                finishAndRemoveTask()
+            }
             R.string.browser -> startActivity(Intent(this, BrowserActivity::class.java))
             R.string.paste -> addLinks(clipboardText())
             R.string.pause_all -> forEach(TaskPolicy.inFlight + TaskState.QUEUED + TaskState.WAITING_NETWORK, DownloadService.ACTION_PAUSE)
@@ -163,7 +185,7 @@ class MainActivity : MobileActivity(), TaskActions {
         val open = Schedule.now(MobilePreferences(this).window)
         selection.retainAll(all.map { it.id }.toSet())
         val shown = TaskQuery.apply(all.filter { !history || it.state in finished }, query, sortOrder, category, formatFilter, dateFrom, dateUntil)
-        homeState = homeState.copy(rows = shown.map { task ->
+        homeState = homeState.copy(namedQueues = MobilePreferences(this).namedQueues.sorted(), rows = shown.map { task ->
             if (task.state !in TaskPolicy.inFlight) meter.forget(task.id)
             val label = when {
                 task.startAt > now -> getString(R.string.scheduled_for, MobileDates.format(this, task.startAt))
@@ -270,7 +292,11 @@ class MainActivity : MobileActivity(), TaskActions {
         fun untilLabel() = getString(R.string.date_until) + if (until > 0) ": " + MobileDates.format(this, until - 1) else ""
         fromButton = button(fromLabel()) { MobileDates.choose(this, if (from > 0) from else System.currentTimeMillis(), dateOnly = true) { from = MobileDates.dayStart(it); (fromButton as TextView).text = fromLabel() } }
         untilButton = button(untilLabel()) { MobileDates.choose(this, if (until > 0) until - 1 else System.currentTimeMillis(), dateOnly = true) { until = MobileDates.nextDay(it); (untilButton as TextView).text = untilLabel() } }
-        box.addView(fromButton); box.addView(untilButton)
+        box.addView(button(getString(R.string.calendar_filter)) {
+            val dates = column().apply { setPadding(dp(16), dp(8), dp(16), dp(8)); addView(fromButton); addView(untilButton) }
+            AlertDialog.Builder(this).setTitle(R.string.calendar_filter).setView(dates).setPositiveButton(android.R.string.ok) { _, _ -> dates.removeAllViews() }
+                .setOnDismissListener { dates.removeAllViews() }.show()
+        })
         box.addView(button(getString(R.string.filter_apply)) {
             if (from > 0 && until > 0 && from >= until) { Toast.makeText(this, R.string.date_range_invalid, Toast.LENGTH_LONG).show(); return@button }
             query = name.text.toString(); sortOrder = sort.selectedItemPosition
@@ -347,7 +373,7 @@ class MainActivity : MobileActivity(), TaskActions {
             if (task.startAt > 0) act(R.string.schedule_clear) { TaskStore.get(this).schedule(task.id, 0); DownloadService.wake(this); render() }
         }
         box.addView(actions)
-        sheet.setContentView(ScrollView(this).apply { addView(box) })
+        sheet.setContentView(ScrollView(this).apply { isVerticalScrollBarEnabled = false; isHorizontalScrollBarEnabled = false; addView(box) })
         sheet.show()
     }
 

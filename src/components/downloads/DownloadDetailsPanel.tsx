@@ -285,7 +285,7 @@ export function DownloadDetailsPanel({
           </Property>
           {current.queueId ? (
             <Property label={t("details.queue")}>
-              {queueName ?? current.queueId} · {t(`priority.${current.priority}` as MessageKey)}
+              {queueName ?? current.queueId}
             </Property>
           ) : null}
           <Property label={t("details.added")}>

@@ -25,6 +25,7 @@ object TaskQuery {
         val shown = tasks.filter { (query.isBlank() || name(it).contains(query.trim(), true)) && TaskFilter.matches(it, category) &&
             (format.isNullOrEmpty() || extension(it) == format) && (from == 0L || it.createdAt >= from) && (until == 0L || it.createdAt < until) }
         return when (sort) {
+            5 -> shown.sortedWith(compareBy<MobileTask> { it.queuePosition }.thenBy { it.id })
             1 -> shown.sortedWith(compareBy<MobileTask> { it.createdAt }.thenBy { it.id })
             2 -> shown.sortedWith(compareBy<MobileTask> { name(it).lowercase(java.util.Locale.ROOT) }.thenBy { it.id })
             3 -> shown.sortedWith(compareByDescending<MobileTask> { it.totalBytes }.thenBy { it.id })

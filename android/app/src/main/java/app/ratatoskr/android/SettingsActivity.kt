@@ -43,7 +43,7 @@ class SettingsActivity : MobileActivity() {
         super.onCreate(savedInstanceState)
         prefs = MobilePreferences(this)
         val viewport = FrameLayout(this).apply { setBackgroundColor(paper) }
-        val root = ScrollView(this).also { settingsScroll = it }
+        val root = ScrollView(this).also { it.isVerticalScrollBarEnabled = false; it.isHorizontalScrollBarEnabled = false; settingsScroll = it }
         viewport.addView(root, FrameLayout.LayoutParams(-1, -1))
         val page = column().apply { setPadding(dp(16), dp(8), dp(16), dp(24)) }
         root.addView(page)
@@ -68,6 +68,7 @@ class SettingsActivity : MobileActivity() {
         // --- downloads
         page.addView(section(R.string.section_downloads))
         page.addView(card {
+            toggle(R.string.failure_vibration, prefs.failureVibration) { prefs.failureVibration = it }
             slider(R.string.connections_value, 1, 8, prefs.connections) { prefs.connections = it }
             slider(R.string.parallel_value, 1, 3, prefs.concurrency) { prefs.concurrency = it; wake() }
             val limits = (listOf(0L, 256L, 512L, 1024L, 2048L, 5120L).map { it * 1024 } + prefs.speedLimit).distinct().sorted()
@@ -106,6 +107,11 @@ class SettingsActivity : MobileActivity() {
             choice(R.string.language, listOf(getString(R.string.theme_system), "فارسی", "English"), languages.indexOf(prefs.language).coerceAtLeast(0)) {
                 prefs.language = languages[it]; AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(prefs.language))
             }
+        })
+
+        // --- updates and plugins
+        page.addView(card {
+            choice(R.string.choose_calendar, listOf(getString(R.string.calendar_persian), getString(R.string.calendar_gregorian)), if (prefs.calendarType == "persian") 0 else 1) { prefs.calendarType = if (it == 0) "persian" else "gregorian" }
         })
 
         // --- updates and plugins

@@ -28,7 +28,7 @@ pub use backup::{
 pub use checks::DownloadChecks;
 pub use traffic::{TrafficScope, TrafficTotals};
 
-const LATEST_SCHEMA_VERSION: i32 = 15;
+const LATEST_SCHEMA_VERSION: i32 = 16;
 
 const MIGRATION_V1: &str = r#"
 BEGIN IMMEDIATE;
@@ -97,7 +97,7 @@ CREATE TABLE queues (
     state TEXT NOT NULL DEFAULT 'stopped'
         CHECK (state IN ('running', 'stopped')),
     sort_order INTEGER NOT NULL,
-    max_concurrent INTEGER NOT NULL DEFAULT 3
+    max_concurrent INTEGER NOT NULL DEFAULT 1
         CHECK (max_concurrent > 0),
     max_concurrent_per_host INTEGER
         CHECK (max_concurrent_per_host IS NULL OR max_concurrent_per_host > 0),
@@ -125,8 +125,8 @@ VALUES (
     1,
     'stopped',
     0,
-    3,
-    2,
+    1,
+    1,
     'normal',
     unixepoch(),
     unixepoch()
@@ -402,6 +402,14 @@ COMMIT;
 /// What was checked or done after a download finished: its checksum, a
 /// virus scan, archive extraction and the user's command.
 /// A speed limit chosen for one download, apart from the global one.
+const MIGRATION_V16: &str = r#"
+BEGIN IMMEDIATE;
+UPDATE queues SET max_concurrent = 1, max_concurrent_per_host = 1
+WHERE id = 'default' AND max_concurrent = 3 AND max_concurrent_per_host = 2;
+PRAGMA user_version = 16;
+COMMIT;
+"#;
+
 const MIGRATION_V15: &str = r#"
 BEGIN IMMEDIATE;
 
@@ -745,6 +753,11 @@ fn run_migrations(connection: &Connection) -> Result<()> {
 
     if version == 14 {
         connection.execute_batch(MIGRATION_V15)?;
+    }
+
+    let version: i32 = connection.query_row("PRAGMA user_version;", [], |row| row.get(0))?;
+    if version == 15 {
+        connection.execute_batch(MIGRATION_V16)?;
     }
 
     Ok(())

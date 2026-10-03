@@ -154,6 +154,10 @@ Tap + to add a link.</string>
     <string name="version_line">Version %1$s</string>
     <string name="language">Language</string>
     <string name="notification_channel_done">Download finished</string>
+    <string name="failure_channel">Download errors</string>
+    <string name="failure_notice_title">Download problem</string>
+    <string name="failure_notice_count">%1$d new errors</string>
+    <string name="failure_vibration">Vibrate when a download fails</string>
     <string name="filter_all">All</string>
     <string name="cat_video">Video</string>
     <string name="cat_music">Music</string>
@@ -260,10 +264,21 @@ Tap + to add a link.</string>
 <string name="duplicate_title">This link already exists</string>
 <string name="duplicate_done">You have already downloaded this content.</string>
 <string name="duplicate_pending">This content is already in your download list.</string>
-<string name="duplicate_warning">Adding it again creates another copy and can use your data again.</string>
+<string name="duplicate_warning">This warning comes from the Ratatoskr history. Continuing downloads it again; a same-name file gets a numbered copy.</string>
+<string name="duplicate_history_hint">This check uses the Ratatoskr download history. If the destination already has that filename, the new file gets a numbered name.</string>
 <string name="duplicate_again">Add another copy</string>
 <string name="duplicate_view">View previous download</string>
 <string name="add_saved_feedback">Added to the list. Press Play on the row or queue to start.</string>
 <string name="add_started_feedback">Added to downloads.</string>
 <string name="intake_settings_hint">Date, time and audio-only download</string>
+    <string name="selection_up">Move up in queue</string>
+    <string name="selection_down">Move down in queue</string>
+    <string name="selection_repeat">Download another copy</string>
+    <string name="folder_existing">A file with the same or a similar name is already in your folder.</string>
+    <string name="folder_name_hint">This is a name hint; contents were not compared. You can download; existing files will not be overwritten.</string>
+    <string name="folder_access_limited">Only accessible files are checked. To check your chosen destination, select it using Save location.</string>
+    <string name="sort_manual">Manual order</string>
+    <string name="exit_app">Exit and pause downloads</string>
+    <string name="create_queue">Create queue</string>
+    <string name="calendar_filter">Calendar</string>
 </resources>

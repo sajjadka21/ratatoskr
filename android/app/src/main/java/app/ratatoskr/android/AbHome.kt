@@ -48,6 +48,7 @@ data class AbHomeState(
     val rows: List<TaskRow> = emptyList(), val selecting: Boolean = false, val selectionCount: Int = 0,
     val history: Boolean = false, val query: String = "", val summary: String = "",
     val clipboard: String = "", val category: String? = null, val filtersActive: Boolean = false,
+    val namedQueues: List<String> = emptyList(),
 )
 
 @Composable

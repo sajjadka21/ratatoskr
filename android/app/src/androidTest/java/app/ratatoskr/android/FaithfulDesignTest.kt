@@ -1,6 +1,7 @@
 package app.ratatoskr.android
 
 import android.content.Context
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
@@ -63,7 +64,7 @@ class FaithfulDesignTest {
                         activity.setContentView(ComposeView(activity).apply {
                             setContent { RatatoskrTheme(activity) {
                                 var intake by remember { mutableStateOf(false) }
-                                Surface(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars),color=androidx.compose.material3.MaterialTheme.colorScheme.background) {
+                                Surface(Modifier.fillMaxSize().background(androidx.compose.material3.MaterialTheme.colorScheme.background).windowInsetsPadding(WindowInsets.systemBars),color=androidx.compose.material3.MaterialTheme.colorScheme.background) {
                                     AbHome(AbHomeState(rows=rows),actions,onAdd={intake=true},onQuery={},onHistory={},onMenu={},onCategory={},categories=emptyList(),onSort={},onClipboard={},onSelection={})
                                     if(intake)AbEnterUrl("https://example.com/design.zip",false,onClose={intake=false},onPaste={""},onDownload={_,_->true})
                                 }

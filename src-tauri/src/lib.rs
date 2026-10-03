@@ -60,6 +60,31 @@ const SCHEDULE_POLL_INTERVAL: Duration = Duration::from_secs(15);
 const DOWNLOAD_TASK_EVENT: &str = "download-task-event";
 const QUEUE_RUNNER_EVENT: &str = "queue-runner-event";
 
+#[tauri::command]
+async fn inspect_existing_files(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    urls: Vec<String>,
+    directory: Option<String>,
+) -> Result<dm_core::existing_files::FolderInspection, String> {
+    if urls.len() > 200 {
+        return Err("too many links to inspect".into());
+    }
+    let downloads = state.downloads.clone();
+    let fallback = app
+        .path()
+        .download_dir()
+        .map_err(|_| "download directory is unavailable")?;
+    let directory = directory.map(std::path::PathBuf::from);
+    tauri::async_runtime::spawn_blocking(move || {
+        downloads
+            .inspect_existing_files(&urls, directory.as_deref(), &fallback)
+            .map_err(|_| "folder inspection unavailable".to_owned())
+    })
+    .await
+    .map_err(|_| "folder inspection interrupted".to_owned())?
+}
+
 pub struct AppState {
     core: CoreService,
     storage: Arc<Storage>,
@@ -565,6 +590,20 @@ fn start_queue(
 }
 
 #[tauri::command]
+fn set_queue_limits(
+    state: State<'_, AppState>,
+    queue_id: String,
+    max_concurrent: u32,
+    max_concurrent_per_host: Option<u32>,
+) -> Result<QueueResponse, String> {
+    state
+        .queues
+        .set_queue_limits(&queue_id, max_concurrent, max_concurrent_per_host)
+        .map(queue_response)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn set_queue_enabled(
     state: State<'_, AppState>,
     queue_id: String,
@@ -842,6 +881,16 @@ fn set_start_with_windows(enabled: bool) -> Result<bool, String> {
 }
 
 const CLOSE_REQUESTED_EVENT: &str = "close-requested";
+
+#[tauri::command]
+fn request_close_confirmation(app: AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window is unavailable".to_owned())?;
+    window
+        .emit(CLOSE_REQUESTED_EVENT, ())
+        .map_err(|error| error.to_string())
+}
 
 /// True when closing the app would stop something: a transfer in progress or waiting, or an enabled schedule.
 fn has_background_work(state: &AppState) -> bool {
@@ -2925,7 +2974,11 @@ fn get_drop_box(state: State<'_, AppState>) -> bool {
 }
 
 #[tauri::command]
-fn set_drop_box(app: AppHandle, state: State<'_, AppState>, enabled: bool) -> Result<bool, String> {
+async fn set_drop_box(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<bool, String> {
     state
         .storage
         .set_setting(
@@ -2940,14 +2993,18 @@ fn set_drop_box(app: AppHandle, state: State<'_, AppState>, enabled: bool) -> Re
 /// Links dropped on the drop box (or pasted into it): they open where
 /// copied links do, the small add window or the main window's Add dialog.
 #[tauri::command]
-fn add_dropped_links(app: AppHandle, state: State<'_, AppState>, text: String) -> usize {
+async fn add_dropped_links(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    text: String,
+) -> Result<usize, String> {
     let links: Vec<String> = dm_core::linkgrabber::extract_links(&text)
         .into_iter()
         .map(|link| link.url)
         .take(500)
         .collect();
     if links.is_empty() {
-        return 0;
+        return Ok(0);
     }
     let count = links.len();
     if mini::compact(&state.storage) {
@@ -2956,7 +3013,7 @@ fn add_dropped_links(app: AppHandle, state: State<'_, AppState>, text: String) -
         tray::show_main_window(&app);
         let _ = app.emit(clipboard_watch::CLIPBOARD_LINKS_EVENT, links);
     }
-    count
+    Ok(count)
 }
 
 /// Opens the progress window of a download started from the add window.
@@ -3545,6 +3602,7 @@ pub fn run() {
             start_queue,
             stop_queue,
             set_queue_enabled,
+            set_queue_limits,
             list_queue_schedules,
             set_queue_schedule,
             list_categories,
@@ -3602,6 +3660,8 @@ pub fn run() {
             get_close_action,
             set_close_action,
             resolve_close,
+            request_close_confirmation,
+            inspect_existing_files,
             import_plugin,
             remove_plugin,
             set_plugin_enabled,

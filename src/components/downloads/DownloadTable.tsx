@@ -30,7 +30,9 @@ import { Sparkline } from "../common/Sparkline";
 
 import "./DownloadTable.css";
 
-export type SortKey = "added" | "name" | "progress" | "speed" | "size";
+export const downloadDate = (item: DownloadListItem) => item.completedAt ?? item.startedAt ?? item.createdAt;
+
+export type SortKey = "date" | "added" | "name" | "progress" | "speed" | "size";
 export type SortState = { key: SortKey; descending: boolean };
 
 const ROW_HEIGHT = 56;
@@ -57,6 +59,7 @@ type DownloadTableProps = {
   empty: ReactNode;
   onSort: (key: SortKey) => void;
   onSelect: (item: DownloadListItem, index: number, event: SyntheticEvent) => void;
+  onDetails: (item: DownloadListItem) => void;
   onAction: (item: DownloadListItem, action: TaskAction) => void;
   onContextMenu: (item: DownloadListItem, x: number, y: number) => void;
 };
@@ -77,6 +80,7 @@ export function DownloadTable({
   empty,
   onSort,
   onSelect,
+  onDetails,
   onAction,
   onContextMenu,
 }: DownloadTableProps) {
@@ -119,6 +123,7 @@ export function DownloadTable({
     { key: "progress", label: "table.progress", className: "" },
     { key: "speed", label: "table.speed", className: "" },
     { key: null, label: "table.remaining", className: "" },
+    { key: "date", label: "table.date", className: "" },
     { key: null, label: "table.status", className: "" },
   ];
 
@@ -174,6 +179,7 @@ export function DownloadTable({
                   queueName={item.queueId ? queueNames.get(item.queueId) : undefined}
                   nowSeconds={item.status.toLowerCase() === "retrying" ? nowSeconds : 0}
                   onSelect={onSelect}
+                  onDetails={onDetails}
                   onAction={onAction}
                   onContextMenu={onContextMenu}
                 />
@@ -197,6 +203,7 @@ type RowProps = {
   queueName?: string;
   nowSeconds: number;
   onSelect: DownloadTableProps["onSelect"];
+  onDetails: DownloadTableProps["onDetails"];
   onAction: DownloadTableProps["onAction"];
   onContextMenu: DownloadTableProps["onContextMenu"];
 };
@@ -212,6 +219,7 @@ const DownloadTableRow = memo(function DownloadTableRow({
   queueName,
   nowSeconds,
   onSelect,
+  onDetails,
   onAction,
   onContextMenu,
 }: RowProps) {
@@ -280,9 +288,10 @@ const DownloadTableRow = memo(function DownloadTableRow({
       onClick={(event) => onSelect(item, index, event)}
       onContextMenu={openMenu}
       onKeyDown={(event: KeyboardEvent) => {
-        if (event.key === "Enter") {
+        if (event.key === "Enter" && event.target === event.currentTarget) {
           event.preventDefault();
-          onSelect(item, index, event);
+          event.stopPropagation();
+          onDetails(item);
         }
       }}
     >
@@ -299,7 +308,7 @@ const DownloadTableRow = memo(function DownloadTableRow({
           {size ? <span className="num">{size}</span> : null}
           {queueName ? (
             <span className="download-table__chip">
-              {queueName} · {t(`priority.${item.priority}` as MessageKey)}
+              {queueName}
             </span>
           ) : null}
           {connections ? <span className="download-table__chip download-table__chip--accent num">{connections}</span> : null}
@@ -339,6 +348,10 @@ const DownloadTableRow = memo(function DownloadTableRow({
         {remaining ?? ""}
       </span>
 
+      <span role="gridcell" className="download-table__cell download-table__cell--date" title={fmt.date(downloadDate(item))}>
+        {fmt.date(downloadDate(item))}
+      </span>
+
       <span role="gridcell" className="download-table__cell">
         <span className={`status-pill status-pill--${status}`}>
           <span className="status-pill__dot" />
@@ -364,11 +377,11 @@ const DownloadTableRow = memo(function DownloadTableRow({
         <button
           type="button"
           className="download-table__more"
-          aria-label={t("table.actions")}
+          aria-label={t("table.details")}
+          title={t("table.details")}
           onClick={(event) => {
             event.stopPropagation();
-            const rect = event.currentTarget.getBoundingClientRect();
-            onContextMenu(item, rect.left, rect.bottom + 6);
+            onDetails(item);
           }}
         >
           <MoreHorizontal size={16} />

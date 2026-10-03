@@ -110,6 +110,31 @@ impl Storage {
             .ok_or_else(|| StorageError::QueueNotFound(id))
     }
 
+    pub fn set_queue_limits(
+        &self,
+        id: &str,
+        max_concurrent: u32,
+        max_concurrent_per_host: Option<u32>,
+        updated_at: i64,
+    ) -> Result<QueueRecord> {
+        if max_concurrent == 0 || max_concurrent_per_host == Some(0) {
+            return Err(StorageError::InvalidQueueConfiguration(
+                "queue concurrency must be greater than zero".to_owned(),
+            ));
+        }
+        let connection = self.connection()?;
+        let changed = connection.execute(
+            "UPDATE queues SET max_concurrent = ?2, max_concurrent_per_host = ?3, updated_at = ?4 WHERE id = ?1;",
+            params![id, i64::from(max_concurrent), max_concurrent_per_host.map(i64::from), updated_at],
+        )?;
+        drop(connection);
+        if changed == 0 {
+            return Err(StorageError::QueueNotFound(id.to_owned()));
+        }
+        self.get_queue(id)?
+            .ok_or_else(|| StorageError::QueueNotFound(id.to_owned()))
+    }
+
     pub fn set_queue_state(
         &self,
         id: &str,
@@ -458,6 +483,90 @@ mod tests {
     }
 
     #[test]
+    fn queue_limits_persist_and_invalid_edits_leave_the_queue_intact() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("downloads.db");
+        let storage = Storage::open(&path).unwrap();
+        let initial = storage.get_queue("default").unwrap().unwrap();
+        assert_eq!(initial.max_concurrent, 1);
+        assert_eq!(initial.max_concurrent_per_host, Some(1));
+        storage
+            .set_queue_limits("default", 4, Some(2), 1000)
+            .unwrap();
+        assert!(
+            storage
+                .set_queue_limits("default", 0, Some(1), 1001)
+                .is_err()
+        );
+        assert!(
+            storage
+                .set_queue_limits("default", 4, Some(0), 1001)
+                .is_err()
+        );
+        assert!(matches!(
+            storage.set_queue_limits("missing", 1, None, 1001),
+            Err(StorageError::QueueNotFound(_))
+        ));
+        drop(storage);
+        let storage = Storage::open(&path).unwrap();
+        let saved = storage.get_queue("default").unwrap().unwrap();
+        assert_eq!(saved.max_concurrent, 4);
+        assert_eq!(saved.max_concurrent_per_host, Some(2));
+    }
+
+    #[test]
+    fn factory_queue_migration_preserves_custom_queue_limits() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("downloads.db");
+        let storage = Storage::open(&path).unwrap();
+        let custom = storage
+            .create_queue("Custom", 3, Some(2), DownloadPriority::Normal, 1000)
+            .unwrap();
+        storage
+            .set_queue_limits("default", 3, Some(2), 1000)
+            .unwrap();
+        storage
+            .connection()
+            .unwrap()
+            .execute_batch("PRAGMA user_version = 15;")
+            .unwrap();
+        drop(storage);
+        let storage = Storage::open(&path).unwrap();
+        assert_eq!(
+            storage
+                .get_queue("default")
+                .unwrap()
+                .unwrap()
+                .max_concurrent,
+            1
+        );
+        assert_eq!(
+            storage
+                .get_queue(&custom.id)
+                .unwrap()
+                .unwrap()
+                .max_concurrent,
+            3
+        );
+        storage.set_queue_limits("default", 5, None, 1001).unwrap();
+        storage
+            .connection()
+            .unwrap()
+            .execute_batch("PRAGMA user_version = 15;")
+            .unwrap();
+        drop(storage);
+        let storage = Storage::open(&path).unwrap();
+        assert_eq!(
+            storage
+                .get_queue("default")
+                .unwrap()
+                .unwrap()
+                .max_concurrent,
+            5
+        );
+    }
+
+    #[test]
     fn enqueues_tasks_with_default_priority_and_stable_order() {
         let directory = tempdir().unwrap();
         let storage = Storage::open(directory.path().join("downloads.db")).unwrap();
@@ -483,8 +592,10 @@ mod tests {
         assert_eq!(second.queue_position, Some(1));
 
         let queued = storage.list_queued_downloads("default").unwrap();
-        assert_eq!(queued[0].id, second.id);
-        assert_eq!(queued[1].id, first.id);
+        // The saved manual order is authoritative even when legacy priority
+        // values differ. Priority is retained in storage for compatibility.
+        assert_eq!(queued[0].id, first.id);
+        assert_eq!(queued[1].id, second.id);
     }
 
     #[test]

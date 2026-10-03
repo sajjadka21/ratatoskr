@@ -39,6 +39,7 @@ class NetworkJobService : JobService() {
     override fun onCreate() {
         super.onCreate(); store = taskStoreProvider(this); prefs = MobilePreferences(this); MobileRuntime.initialize(store)
         getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("downloads", getString(R.string.notification_channel), NotificationManager.IMPORTANCE_LOW))
+        FailureNotifications.ensureChannels(this)
         getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(callback)
     }
     override fun onStartJob(params: JobParameters): Boolean {
@@ -53,13 +54,13 @@ class NetworkJobService : JobService() {
             for (task in jobs) {
                 if (stopped || run != generation || !allowed() || android.os.SystemClock.elapsedRealtime() >= deadline) break
                 val control = TransferControl { allowed() && !stopped && run == generation }
-                var claimed = MobileRuntime.claim(task.id, control, prefs.concurrency)
+                var claimed = MobileRuntime.claim(task.id, control, prefs.concurrency, task.groupName)
                 // An OS restart can overlap the old writer's bounded cleanup.
                 // Give it time to release its slot without starting a duplicate.
                 val waitUntil = minOf(deadline, android.os.SystemClock.elapsedRealtime() + 2000)
                 while (!claimed && !stopped && run == generation && allowed() && android.os.SystemClock.elapsedRealtime() < waitUntil) {
                     delay(50)
-                    claimed = MobileRuntime.claim(task.id, control, prefs.concurrency)
+                    claimed = MobileRuntime.claim(task.id, control, prefs.concurrency, task.groupName)
                 }
                 if (!claimed) continue
                 if (!store.begin(task.id)) { MobileRuntime.release(task.id); continue }
@@ -92,7 +93,11 @@ class NetworkJobService : JobService() {
                     val current = store.get(task.id)!!
                     if (current.state == TaskState.PAUSED && (current.error == "chunk_restart" || resumed)) store.state(task.id, if (allowed()) TaskState.QUEUED else TaskState.WAITING_NETWORK)
                     if (current.state == TaskState.CANCELLED) withContext(NonCancellable + ioDispatcher) { discardTransfer(this@NetworkJobService, task.id) }
-                    notifyTask(store.get(task.id)!!)
+                    val finished = store.get(task.id)!!
+                    if (finished.state == TaskState.FAILED) {
+                        getSystemService(NotificationManager::class.java).cancel(task.notificationId)
+                        FailureNotifications.publish(this@NetworkJobService, finished)
+                    } else notifyTask(finished)
                 }
             }
             if (!stopped && run == generation) {

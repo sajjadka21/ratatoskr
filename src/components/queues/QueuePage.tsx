@@ -9,12 +9,12 @@ import {
   Layers3,
   Play,
   Plus,
+  Settings2,
   Unlink,
 } from "lucide-react";
 
 import type {
   DownloadListItem,
-  DownloadPriority,
   DownloadQueue,
 } from "../../types/download";
 
@@ -27,12 +27,13 @@ import "./QueuePage.css";
 
 type QueuePageProps = {
   queues: DownloadQueue[];
+  initialQueueId?: string;
   downloads: DownloadListItem[];
   onCreateQueue: (input: {
     name: string;
     maxConcurrent: number;
     maxConcurrentPerHost: number | null;
-    defaultPriority: DownloadPriority;
+    defaultPriority: "normal";
   }) => Promise<DownloadQueue>;
   onStartQueue: (queueId: string) => Promise<void>;
   onStopQueue: (queueId: string) => Promise<void>;
@@ -40,53 +41,40 @@ type QueuePageProps = {
     queueId: string,
     enabled: boolean,
   ) => Promise<void>;
+  onSetQueueLimits: (queueId: string, maxConcurrent: number, perHost: number | null) => Promise<void>;
   onReorder: (queueId: string, orderedIds: string[]) => Promise<void>;
   onMove: (downloadId: string, queueId: string) => Promise<void>;
   onRemove: (downloadId: string) => Promise<void>;
-  onPriority: (
-    downloadId: string,
-    priority: DownloadPriority,
-  ) => Promise<void>;
-};
-
-const priorities: DownloadPriority[] = [
-  "very_high",
-  "high",
-  "normal",
-  "low",
-];
-
-const priorityRank: Record<DownloadPriority, number> = {
-  very_high: 0,
-  high: 1,
-  normal: 2,
-  low: 3,
+  onConfigure?: (queueId: string) => void;
 };
 
 export function QueuePage({
   queues,
+  initialQueueId,
   downloads,
   onCreateQueue,
   onStartQueue,
   onStopQueue,
   onSetQueueEnabled,
+  onSetQueueLimits,
   onReorder,
   onMove,
   onRemove,
-  onPriority,
+  onConfigure,
 }: QueuePageProps) {
   const { t, fmt } = useI18n();
-  const priorityLabel = (priority: DownloadPriority) => t(`priority.${priority}` as MessageKey);
-  const [selectedQueueId, setSelectedQueueId] = useState("default");
+  const [selectedQueueId, setSelectedQueueId] = useState(initialQueueId ?? "default");
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
-  const [maxConcurrent, setMaxConcurrent] = useState(3);
-  const [perHost, setPerHost] = useState(2);
-  const [defaultPriority, setDefaultPriority] =
-    useState<DownloadPriority>("normal");
+  const [maxConcurrent, setMaxConcurrent] = useState(1);
+  const [perHost, setPerHost] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialQueueId) setSelectedQueueId(initialQueueId);
+  }, [initialQueueId]);
 
   useEffect(() => {
     if (queues.some((queue) => queue.id === selectedQueueId)) return;
@@ -106,7 +94,6 @@ export function QueuePage({
         )
         .sort(
           (left, right) =>
-            priorityRank[left.priority] - priorityRank[right.priority] ||
             (left.queuePosition ?? Number.MAX_SAFE_INTEGER) -
               (right.queuePosition ?? Number.MAX_SAFE_INTEGER) ||
             left.id.localeCompare(right.id),
@@ -135,7 +122,7 @@ export function QueuePage({
         name: queueName,
         maxConcurrent,
         maxConcurrentPerHost: perHost,
-        defaultPriority,
+        defaultPriority: "normal",
       });
       setSelectedQueueId(queue.id);
       setName("");
@@ -206,18 +193,6 @@ export function QueuePage({
                 />
               </label>
             </div>
-            <select
-              value={defaultPriority}
-              onChange={(event) =>
-                setDefaultPriority(event.target.value as DownloadPriority)
-              }
-            >
-              {priorities.map((priority) => (
-                <option key={priority} value={priority}>
-                  {t("queues.priorityOption", { priority: priorityLabel(priority) })}
-                </option>
-              ))}
-            </select>
             <button
               type="button"
               className="queue-page__create-submit"
@@ -285,11 +260,25 @@ export function QueuePage({
                       selectedQueue.maxConcurrentPerHost === null
                         ? t("queues.perHostNone")
                         : t("queues.perHostValue", { count: fmt.number(selectedQueue.maxConcurrentPerHost) }),
-                    priority: priorityLabel(selectedQueue.defaultPriority),
                   })}
                 </p>
               </div>
               <div className="queue-page__header-actions">
+                {onConfigure ? <button type="button" className="queue-page__runner-button" onClick={() => onConfigure(selectedQueue.id)}><Settings2 size={16} />{t("queues.manageShortcut")}</button> : null}
+                <label className="queue-page__limits">
+                  {t("queues.concurrent")}
+                  <select aria-label={t("queues.concurrent")} value={selectedQueue.maxConcurrent} disabled={busy}
+                    onChange={(event) => { const limit = Number(event.target.value); void run(() => onSetQueueLimits(selectedQueue.id, limit, selectedQueue.maxConcurrentPerHost)); }}>
+                    {[...new Set([1, 2, 3, 4, 5, 6, 8, 10, 16, selectedQueue.maxConcurrent])].sort((a, b) => a - b).map((limit) => <option key={limit} value={limit}>{fmt.number(limit)}</option>)}
+                  </select>
+                </label>
+                <label className="queue-page__limits">
+                  {t("queues.perHost")}
+                  <input type="number" min={1} aria-label={t("queues.perHost")} key={`${selectedQueue.id}:${selectedQueue.maxConcurrentPerHost}`} defaultValue={selectedQueue.maxConcurrentPerHost ?? ""}
+                    placeholder={t("queues.perHostNone")} disabled={busy}
+                    onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+                    onBlur={(event) => { const limit = event.target.value === "" ? null : Number(event.target.value); if (limit !== selectedQueue.maxConcurrentPerHost && (limit === null || (Number.isInteger(limit) && limit > 0))) void run(() => onSetQueueLimits(selectedQueue.id, selectedQueue.maxConcurrent, limit)); }} />
+                </label>
                 <label
                   className="queue-page__enabled"
                   title={t("queues.enabledHint")}
@@ -359,25 +348,6 @@ export function QueuePage({
                       <strong className="ltr">{displayName(download)}</strong>
                       <span className="ltr">{formatHost(download.sourceUrl)}</span>
                     </div>
-                    <select
-                      value={download.priority}
-                      disabled={busy}
-                      onChange={(event) =>
-                        void run(() =>
-                          onPriority(
-                            download.id,
-                            event.target.value as DownloadPriority,
-                          ),
-                        )
-                      }
-                      aria-label={t("queues.taskPriority")}
-                    >
-                      {priorities.map((priority) => (
-                        <option key={priority} value={priority}>
-                          {priorityLabel(priority)}
-                        </option>
-                      ))}
-                    </select>
                     <select
                       value={selectedQueue.id}
                       disabled={busy}

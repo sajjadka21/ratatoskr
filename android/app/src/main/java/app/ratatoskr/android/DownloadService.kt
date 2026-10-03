@@ -43,6 +43,7 @@ class DownloadService : Service() {
         // A finished (or failed) download makes a sound, unlike the quiet progress notification.
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(DONE_CHANNEL, getString(R.string.notification_channel_done), NotificationManager.IMPORTANCE_DEFAULT))
+        FailureNotifications.ensureChannels(this)
         getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)
         // The download window closes at a time of day, not when the network changes, so look again now and then.
         scope.launch { while (isActive) { delay(30_000); networkChanged() } }
@@ -55,7 +56,7 @@ class DownloadService : Service() {
         if (id != null) when (intent.action) {
             ACTION_PAUSE -> halt(id, TaskState.PAUSED)
             ACTION_CANCEL -> halt(id, TaskState.CANCELLED)
-            ACTION_RESUME -> if (store.get(id)?.state in setOf(TaskState.PAUSED, TaskState.FAILED, TaskState.WAITING_NETWORK)) {
+            ACTION_RESUME -> if (store.get(id)?.state in setOf(TaskState.SAVED, TaskState.PAUSED, TaskState.FAILED, TaskState.WAITING_NETWORK)) {
                 if (id in jobs) pendingResume.add(id)
                 else if (MobileRuntime.busy(id)) MobileRuntime.requestResume(id)
                 else store.state(id, TaskState.QUEUED)
@@ -85,9 +86,9 @@ class DownloadService : Service() {
         val now = System.currentTimeMillis()
         val candidates = store.list().filter { it.state in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) && !MobileRuntime.busy(it.id) && Schedule.isDue(it.startAt, now) }
         if (!allowed()) candidates.forEach { store.state(it.id, TaskState.WAITING_NETWORK) }
-        else for (task in candidates.take((prefs.concurrency - jobs.size).coerceAtLeast(0))) {
+        else for (task in candidates) {
             val control = TransferControl { allowed() }
-            if (!MobileRuntime.claim(task.id, control, prefs.concurrency)) continue
+            if (!MobileRuntime.claim(task.id, control, prefs.concurrency, task.groupName)) continue
             if (!store.begin(task.id)) { MobileRuntime.release(task.id); continue }
             val job = scope.launch(start = CoroutineStart.LAZY) {
                 try {
@@ -116,9 +117,13 @@ class DownloadService : Service() {
                 } finally {
                     jobs.remove(task.id)
                     MobileRuntime.release(task.id)
-                    if (pendingResume.remove(task.id) && !shuttingDown && store.get(task.id)?.state in setOf(TaskState.PAUSED, TaskState.FAILED, TaskState.WAITING_NETWORK)) store.state(task.id, TaskState.QUEUED)
+                    if (pendingResume.remove(task.id) && !shuttingDown && store.get(task.id)?.state in setOf(TaskState.SAVED, TaskState.PAUSED, TaskState.FAILED, TaskState.WAITING_NETWORK)) store.state(task.id, TaskState.QUEUED)
                     if (store.get(task.id)?.state == TaskState.CANCELLED) withContext(NonCancellable + ioDispatcher) { discardTransfer(this@DownloadService, task.id) }
-                    getSystemService(NotificationManager::class.java).notify(task.notificationId, notification(store.get(task.id)))
+                    val finished = store.get(task.id)
+                    if (finished?.state == TaskState.FAILED) {
+                        getSystemService(NotificationManager::class.java).cancel(task.notificationId)
+                        FailureNotifications.publish(this@DownloadService, finished)
+                    } else getSystemService(NotificationManager::class.java).notify(task.notificationId, notification(finished))
                     schedule()
                 }
             }
@@ -192,14 +197,17 @@ class DownloadService : Service() {
             wake(context)
         }
         /** Queue many links at once: files go to the segmented engine, media sites to yt-dlp. */
-        fun startMany(context: Context, urls: List<String>, height: Int?, audio: Boolean) {
+        fun startMany(context: Context, urls: List<String>, height: Int?, audio: Boolean, options: IntakeOptions = IntakeOptions()) {
+            options.validate()
             MobileRuntime.initialize(TaskStore.get(context))
             val store = TaskStore.get(context)
             urls.map { rewritten(context, it) }.forEach { url ->
-                if (LinkPlan.classify(url) == LinkKind.FILE) store.enqueue(url, null, false, "", "file")
-                else store.enqueue(url, height, audio || Spotify.isTrackUrl(url), "", "media")
+                if (LinkPlan.classify(url) == LinkKind.FILE) store.enqueue(url, null, false, TaskQuery.nameFromUrl(url), "file", options = options)
+                else store.enqueue(url, height, audio || Spotify.isTrackUrl(url), TaskQuery.nameFromUrl(url), "media", options = options)
             }
-            wake(context)
+            if (options.initialState == TaskState.QUEUED) {
+                if (options.startAt > System.currentTimeMillis()) NetworkJobs.schedule(context, store) else wake(context)
+            }
         }
         /** A plugin may point a link somewhere better; the result is still checked like any other link. */
         private fun rewritten(context: Context, url: String): String {
@@ -218,7 +226,9 @@ class DownloadService : Service() {
                 "429" in message || "rate limit" in message -> "rate_limited"
                 "login" in message || "private" in message || "403" in message || "401" in message -> "auth_required"
                 "404" in message || "removed" in message -> "not_found"
-                "unsupported" in message || "no video" in message -> "unsupported_media"
+                "unable to extract" in message || "failed to extract" in message -> "extractor_failed"
+                "unsupported" in message -> "unsupported_media"
+                "no video" in message -> "extractor_failed"
                 "timed out" in message -> "network"
                 else -> "download_failed"
             }

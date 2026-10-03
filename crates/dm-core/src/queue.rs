@@ -180,6 +180,23 @@ impl QueueService {
         self.wake(queue_id)
     }
 
+    /// New limits affect future starts; running transfers are never discarded.
+    pub fn set_queue_limits(
+        &self,
+        queue_id: &str,
+        max_concurrent: u32,
+        per_host: Option<u32>,
+    ) -> Result<QueueRecord> {
+        let queue = self.storage.set_queue_limits(
+            queue_id,
+            max_concurrent,
+            per_host,
+            unix_timestamp_seconds()?,
+        )?;
+        self.wake(queue_id)?;
+        Ok(queue)
+    }
+
     pub fn set_queue_enabled(&self, queue_id: &str, enabled: bool) -> Result<QueueRecord> {
         let queue = self
             .storage
@@ -572,10 +589,7 @@ mod tests {
     async fn queue_runner_honors_queue_concurrency() {
         let server = TestServer::start(slow_server()).await;
         let harness = harness();
-        let queue = harness
-            .queues
-            .create_queue("Serial", 1, None, DownloadPriority::Normal)
-            .unwrap();
+        let queue = harness.storage.get_queue("default").unwrap().unwrap();
 
         for path in ["first.bin", "second.bin"] {
             let task = harness.downloads.create_task(&server.url(path)).unwrap();
@@ -592,6 +606,37 @@ mod tests {
             .unwrap();
 
         assert_eq!(server.peak_concurrent_bodies(), 1);
+        assert!(
+            harness
+                .storage
+                .list_downloads()
+                .unwrap()
+                .iter()
+                .all(|task| task.status == DownloadStatus::Completed)
+        );
+    }
+
+    #[tokio::test]
+    async fn user_can_opt_into_parallel_queue_execution() {
+        let server = TestServer::start(slow_server()).await;
+        let harness = harness();
+        harness
+            .queues
+            .set_queue_limits("default", 2, Some(2))
+            .unwrap();
+        for path in ["first.bin", "second.bin", "third.bin"] {
+            let task = harness.downloads.create_task(&server.url(path)).unwrap();
+            harness
+                .queues
+                .enqueue_task(&task.id, "default", None)
+                .unwrap();
+        }
+        harness
+            .queues
+            .run_queue("default", &harness.destination, |_| {})
+            .await
+            .unwrap();
+        assert_eq!(server.peak_concurrent_bodies(), 2);
         assert!(
             harness
                 .storage

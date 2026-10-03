@@ -8,6 +8,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.ComposeView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
@@ -42,7 +43,7 @@ class SettingsActivity : MobileActivity() {
         super.onCreate(savedInstanceState)
         prefs = MobilePreferences(this)
         val viewport = FrameLayout(this).apply { setBackgroundColor(paper) }
-        val root = ScrollView(this).also { settingsScroll = it }
+        val root = ScrollView(this).also { it.isVerticalScrollBarEnabled = false; it.isHorizontalScrollBarEnabled = false; settingsScroll = it }
         viewport.addView(root, FrameLayout.LayoutParams(-1, -1))
         val page = column().apply { setPadding(dp(16), dp(8), dp(16), dp(24)) }
         root.addView(page)
@@ -53,11 +54,6 @@ class SettingsActivity : MobileActivity() {
             viewport.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             inset
         }
-        val top = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        top.addView(icon(R.drawable.ic_close, getString(R.string.cancel)) { finish() })
-        top.addView(TextView(this).apply { text = getString(R.string.settings); textSize = 22f; setTextColor(ink); typeface = android.graphics.Typeface.DEFAULT_BOLD; setPadding(dp(8), 0, 0, 0) })
-        page.addView(top)
-
         // --- network and time
         page.addView(section(R.string.section_network))
         page.addView(card {
@@ -72,6 +68,7 @@ class SettingsActivity : MobileActivity() {
         // --- downloads
         page.addView(section(R.string.section_downloads))
         page.addView(card {
+            toggle(R.string.failure_vibration, prefs.failureVibration) { prefs.failureVibration = it }
             slider(R.string.connections_value, 1, 8, prefs.connections) { prefs.connections = it }
             slider(R.string.parallel_value, 1, 3, prefs.concurrency) { prefs.concurrency = it; wake() }
             val limits = (listOf(0L, 256L, 512L, 1024L, 2048L, 5120L).map { it * 1024 } + prefs.speedLimit).distinct().sorted()
@@ -113,6 +110,11 @@ class SettingsActivity : MobileActivity() {
         })
 
         // --- updates and plugins
+        page.addView(card {
+            choice(R.string.choose_calendar, listOf(getString(R.string.calendar_persian), getString(R.string.calendar_gregorian)), if (prefs.calendarType == "persian") 0 else 1) { prefs.calendarType = if (it == 0) "persian" else "gregorian" }
+        })
+
+        // --- updates and plugins
         page.addView(section(R.string.section_updates))
         page.addView(card {
             toggle(R.string.auto_update_setting, prefs.autoUpdateCheck) { prefs.autoUpdateCheck = it }
@@ -127,7 +129,9 @@ class SettingsActivity : MobileActivity() {
             addView(button(getString(R.string.app_release)) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AppUpdate.RELEASES_PAGE))) })
         })
         page.addView(label(getString(R.string.about_details), 12f).apply { setTextColor(muted) })
-        setContentView(viewport)
+        setContentView(ComposeView(this).apply {
+            setContent { RatatoskrTheme(this@SettingsActivity) { AbSettingsPage(root, getString(R.string.settings)) { finish() } } }
+        }, android.view.ViewGroup.LayoutParams(-1, -1))
         root.post { root.scrollTo(0, savedInstanceState?.getInt("settings-scroll") ?: 0) }
         if (intent.getBooleanExtra(EXTRA_PLUGINS, false)) plugins()
     }
@@ -156,7 +160,7 @@ class SettingsActivity : MobileActivity() {
         setPadding(dp(4), dp(20), 0, dp(6))
     }
     private fun card(build: LinearLayout.() -> Unit) = column().apply {
-        setPadding(dp(14), dp(6), dp(14), dp(10)); background = rounded(surface, 18, accent and 0x33FFFFFF); build()
+        setPadding(dp(14), dp(6), dp(14), dp(10)); background = rounded(surface, 8); build()
     }
     private fun LinearLayout.toggle(text: Int, checked: Boolean, onChange: (Boolean) -> Unit) = addView(SwitchMaterial(this@SettingsActivity).apply {
         this.text = getString(text); isChecked = checked; setTextColor(ink); setPadding(0, dp(10), 0, dp(10))

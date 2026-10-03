@@ -1,0 +1,133 @@
+{
+  "repository": "https://github.com/amir1376/ab-download-manager",
+  "commit": "777ac0a9f5c47e9afeb34e7fddb37c477b9923f3",
+  "files": [
+    {
+      "path": "LICENSE",
+      "blob": "261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64"
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/abdownloadmanager/android/pages/home/HomePage.kt",
+      "blob": "801795c4dcd47e1e4fb5b50b651ad9de5cbb97ff"
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/abdownloadmanager/android/pages/home/BottomNavigation.kt",
+      "blob": "c38fc20b56938997fabc396f392af3ec7e4a69f4"
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/abdownloadmanager/android/pages/home/DownloadList.kt",
+      "blob": "0bdab92de5208d928605f327bf8923e919a18a07"
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/abdownloadmanager/android/pages/home/RenderDownloadItem.kt",
+      "blob": "403b7d80879fe867e662439c8bab388d5fafe953"
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/abdownloadmanager/android/pages/home/RenderMainMenu.kt",
+      "blob": "168af7958d4da18f77305f05b1e6c48db2fb285c"
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/abdownloadmanager/android/pages/home/RenderAddMenu.kt",
+      "blob": "65d620f675dbb5eee02057be47be136be46e420d"
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/abdownloadmanager/android/pages/home/SimplePager.kt",
+      "blob": "97e88941be284025031aad3841f760e811f831b3"
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/abdownloadmanager/android/pages/home/FilterStatusIndicator.kt",
+      "blob": "cabea08a59e53ee68b38e1423d3d2d306c436d20"
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/abdownloadmanager/android/pages/enterurl/AndroidEnterNewURLComponent.kt",
+      "blob": "a02651ebdaf2c820c8c2fcc7f92bf7ffc3b85fe3"
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/abdownloadmanager/android/pages/enterurl/EnterURLPage.kt",
+      "blob": "9b5fb01366692435af72cf5e90e61810ba9d1da0"
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/abdownloadmanager/android/ui/page/PageUI.kt",
+      "blob": "4317ecfcf3b6ea9b4e26c00f6e1279b7cca43aaa"
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/abdownloadmanager/android/ui/page/PageUtils.kt",
+      "blob": "3d8da8826c109249f1e4dc2c33dd76f70aabdd3b"
+    },
+    {
+      "path": "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/ui/BaseMyColors.kt",
+      "blob": "e02ae0ba310677e935bfdc1cb11ce4342e20bb0e"
+    },
+    {
+      "path": "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/ui/MyColors.kt",
+      "blob": "74b96bc6a75eef2f3b9b1af1cef86b4ed778c92b"
+    },
+    {
+      "path": "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/ui/theme/ISystemThemeDetector.kt",
+      "blob": "8d7d2ef1d2e6859c8545f5f43f8d175466dd6433"
+    },
+    {
+      "path": "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/ui/theme/MaterialRipple.kt",
+      "blob": "821e7ac6427b9b63f325530cc5cdd3eab34865e7"
+    },
+    {
+      "path": "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/ui/theme/MyShapes.kt",
+      "blob": "0342f7987d14829d0dfe0df93a04ce5d5c85786e"
+    },
+    {
+      "path": "shared/app/src/commonMain/kotlin/com/abdownloadmanager/shared/util/ui/theme/Sizing.kt",
+      "blob": "6ca9b4235794f938a8c7d2188c5e93bed3892df3"
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/abdownloadmanager/android/pages/settings/SettingsPage.kt",
+      "blob": "af2d718d2cfcfd8a1ef43929098b1eefa09d39d7"
+    }
+  ],
+  "icons": [
+    {
+      "upstream": "shared/resources/src/commonMain/kotlin/com/abdownloadmanager/resources/icons/Menu.kt",
+      "blob": "71cb762e092d0187a6977e9c2bfb9c4e3f1ac370",
+      "destination": "android\\app\\src\\main\\java\\app\\ratatoskr\\android\\abicons\\Menu.kt"
+    },
+    {
+      "upstream": "shared/resources/src/commonMain/kotlin/com/abdownloadmanager/resources/icons/Search.kt",
+      "blob": "d66ad5a9332dabff540cc22af2084170a6b64ffd",
+      "destination": "android\\app\\src\\main\\java\\app\\ratatoskr\\android\\abicons\\Search.kt"
+    },
+    {
+      "upstream": "shared/resources/src/commonMain/kotlin/com/abdownloadmanager/resources/icons/Plus.kt",
+      "blob": "cc9aee2656442026ef39c3b1fe2b0c9e08f0f0d5",
+      "destination": "android\\app\\src\\main\\java\\app\\ratatoskr\\android\\abicons\\Plus.kt"
+    },
+    {
+      "upstream": "shared/resources/src/commonMain/kotlin/com/abdownloadmanager/resources/icons/Clear.kt",
+      "blob": "632f751ef0bbc345eb113fcd0a0bd5c4968c39c9",
+      "destination": "android\\app\\src\\main\\java\\app\\ratatoskr\\android\\abicons\\Clear.kt"
+    },
+    {
+      "upstream": "shared/resources/src/commonMain/kotlin/com/abdownloadmanager/resources/icons/Clock.kt",
+      "blob": "f9acd2f8453715267047148b2c6c8731b89fdaac",
+      "destination": "android\\app\\src\\main\\java\\app\\ratatoskr\\android\\abicons\\Clock.kt"
+    },
+    {
+      "upstream": "shared/resources/src/commonMain/kotlin/com/abdownloadmanager/resources/icons/File.kt",
+      "blob": "fb41957640e3ed9879436ccc8d2d2fab34e1018f",
+      "destination": "android\\app\\src\\main\\java\\app\\ratatoskr\\android\\abicons\\File.kt"
+    },
+    {
+      "upstream": "shared/resources/src/commonMain/kotlin/com/abdownloadmanager/resources/icons/FolderFinished.kt",
+      "blob": "2728919abb3c2521576a7660901b338712e1342c",
+      "destination": "android\\app\\src\\main\\java\\app\\ratatoskr\\android\\abicons\\FolderFinished.kt"
+    },
+    {
+      "upstream": "shared/resources/src/commonMain/kotlin/com/abdownloadmanager/resources/icons/FolderUnfinished.kt",
+      "blob": "72df96b6cfa9dba347041a29f5c7e58322664f10",
+      "destination": "android\\app\\src\\main\\java\\app\\ratatoskr\\android\\abicons\\FolderUnfinished.kt"
+    },
+    {
+      "upstream": "shared/resources/src/commonMain/kotlin/com/abdownloadmanager/resources/icons/Back.kt",
+      "blob": "cfd13b477c017777806cf4d78bd137e82d584117",
+      "destination": "android\\app\\src\\main\\java\\app\\ratatoskr\\android\\abicons\\Back.kt"
+    }
+  ]
+}

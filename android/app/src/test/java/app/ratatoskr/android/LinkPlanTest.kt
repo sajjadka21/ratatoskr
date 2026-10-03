@@ -11,7 +11,7 @@ class LinkPlanTest {
         assertEquals(LinkKind.MEDIA, LinkPlan.classify("https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT"))
         assertEquals(LinkKind.FILE, LinkPlan.classify("https://cdn.example.org/files/Setup.EXE?token=1"))
         assertEquals(LinkKind.FILE, LinkPlan.classify("https://example.org/a/book.pdf"))
-        assertEquals(LinkKind.MEDIA, LinkPlan.classify("https://example.org/watch/123"))
+        assertEquals(LinkKind.FILE, LinkPlan.classify("https://example.org/watch/123"))
     }
     @Test fun lookalikeHostsAreNotMedia() {
         assertEquals(LinkKind.FILE, LinkPlan.classify("https://evilyoutube.com/x.zip"))
@@ -29,6 +29,12 @@ class LinkPlanTest {
         val urls = LinkPlan.parse("look: https://a.org/x.zip, and (https://youtu.be/abc)\n\nhttps://a.org/x.zip")
         assertEquals(listOf("https://a.org/x.zip", "https://youtu.be/abc"), urls)
         assertEquals(LinkPlan.Summary(1, 1), LinkPlan.summarize(urls))
+    }
+    @Test fun unsupportedGenericLinksMayUseGuardedFileTransferButMediaAndAuthNeverDo() {
+        org.junit.Assert.assertTrue(LinkPlan.mayTryFile("https://example.org/download?id=42", "unsupported_media"))
+        org.junit.Assert.assertFalse(LinkPlan.mayTryFile("https://instagram.com/reel/abc", "unsupported_media"))
+        org.junit.Assert.assertFalse(LinkPlan.mayTryFile("https://example.org/download", "auth_required"))
+        org.junit.Assert.assertFalse(LinkPlan.mayTryFile("https://example.org/download", "network"))
     }
     @Test fun categories() {
         assertEquals("Video", FileCategory.folder("a.mp4", "video/mp4"))

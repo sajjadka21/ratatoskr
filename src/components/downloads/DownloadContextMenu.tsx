@@ -14,7 +14,6 @@ import {
   Play,
   RefreshCw,
   RotateCcw,
-  SignalHigh,
   Trash2,
   XCircle,
 } from "lucide-react";
@@ -29,7 +28,6 @@ import {
 
 import type {
   DownloadListItem,
-  DownloadPriority,
   DownloadQueue,
   TaskAction,
 } from "../../types/download";
@@ -59,10 +57,6 @@ type DownloadContextMenuProps = {
   onRemoveFromQueue: (
     item: DownloadListItem,
   ) => void;
-  onChangePriority: (
-    item: DownloadListItem,
-    priority: DownloadPriority,
-  ) => void;
   onRemoveFromHistory: (
     item: DownloadListItem,
   ) => void;
@@ -86,9 +80,7 @@ const ACTION_ICONS = {
 
 /// Which expandable group is open. Only one can be open at a time so the menu
 /// never grows past the window on a small screen.
-type OpenGroup = "queue" | "priority" | null;
-
-const PRIORITIES: DownloadPriority[] = ["very_high", "high", "normal", "low"];
+type OpenGroup = "queue" | null;
 
 export function DownloadContextMenu({
   item,
@@ -100,7 +92,6 @@ export function DownloadContextMenu({
   onAction,
   onAssignQueue,
   onRemoveFromQueue,
-  onChangePriority,
   onRemoveFromHistory,
   onRefreshSource,
   onCreateQueue,
@@ -510,48 +501,6 @@ export function DownloadContextMenu({
                   </button>
                 </form>
               ) : null}
-            </div>
-          ) : null}
-
-          <button
-            type="button"
-            role="menuitem"
-            aria-expanded={openGroup === "priority"}
-            onClick={() =>
-              setOpenGroup(
-                openGroup === "priority" ? null : "priority",
-              )
-            }
-          >
-            <SignalHigh size={15} />
-            <span>{t("action.changePriority")}</span>
-
-            <ChevronRight
-              size={14}
-              className={`download-context-menu__chevron ${
-                openGroup === "priority"
-                  ? "download-context-menu__chevron--open"
-                  : ""
-              }`}
-            />
-          </button>
-
-          {openGroup === "priority" ? (
-            <div className="download-context-menu__group">
-              {PRIORITIES.map((priority) => (
-                <button
-                  key={priority}
-                  type="button"
-                  role="menuitem"
-                  disabled={priority === item.priority}
-                  onClick={() => {
-                    onChangePriority(item, priority);
-                    onClose();
-                  }}
-                >
-                  <span>{t(`priority.${priority}` as MessageKey)}</span>
-                </button>
-              ))}
             </div>
           ) : null}
 

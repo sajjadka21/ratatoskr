@@ -26,7 +26,8 @@ object MediaActions {
 object MobileText {
     fun state(context: Context, task: MobileTask): String = context.getString(when (task.state) {
         TaskState.QUEUED -> R.string.queued
-        TaskState.PROBING -> R.string.checking
+        TaskState.SAVED -> R.string.saved_only
+        TaskState.PROBING -> R.string.preparing_download
         TaskState.DOWNLOADING -> R.string.downloading
         TaskState.MERGING -> R.string.merging
         TaskState.SAVING -> R.string.saving
@@ -36,7 +37,7 @@ object MobileText {
         TaskState.FAILED -> R.string.failed
         TaskState.COMPLETED -> R.string.completed
         TaskState.CANCELLED -> R.string.cancelled
-    }) + if (task.state in TaskPolicy.inFlight) " ${task.progress}%" else ""
+    }) + if (task.state in TaskPolicy.inFlight && task.state != TaskState.PROBING && task.progress > 0) " ${task.progress}%" else ""
     fun error(context: Context, code: String): String = context.getString(when (code) {
         "no_space" -> R.string.error_space
         "rate_limited" -> R.string.error_rate
@@ -45,7 +46,9 @@ object MobileText {
         "not_a_file" -> R.string.error_not_file
         "invalid_range", "incomplete" -> R.string.error_integrity
         "cannot_write" -> R.string.error_write
-        "unsupported_media", "invalid_output" -> R.string.error_unsupported
+        "unsupported_media" -> R.string.error_unsupported
+        "invalid_output" -> R.string.error_invalid_output
+        "extractor_failed" -> R.string.error_extractor
         "system_timeout" -> R.string.error_timeout
         "storage_permission" -> R.string.error_storage
         "bad_link" -> R.string.bad_link

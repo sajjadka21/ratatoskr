@@ -152,20 +152,17 @@ class AppearanceLifecycleTest {
         val controller = Robolectric.buildActivity(MainActivity::class.java)
         controllers.add(controller); controller.setup().visible(); idle()
         val activity = controller.get()
-        val history = views(content(activity)).filterIsInstance<com.google.android.material.button.MaterialButton>().first {
-            it.text.toString().startsWith(activity.getString(R.string.history))
-        }
-        history.performClick()
-        assertTrue(history.isChecked)
-        views(content(activity)).filterIsInstance<EditText>().first().setText("kept history search")
+        // Journal/view state belongs to the activity adapter; Compose rendering is
+        // exercised by SmokeTest on three actual emulator API levels.
+        fun field(name: String) = MainActivity::class.java.getDeclaredField(name).apply { isAccessible = true }
+        field("history").set(activity, true)
+        field("query").set(activity, "kept history search")
         prefs.mode = "dark"
         controller.recreate().visible(); idle()
         val restored = controller.get()
         assertTrue(restored.dark)
-        assertEquals("kept history search", views(content(restored)).filterIsInstance<EditText>().first().text.toString())
-        assertTrue(views(content(restored)).filterIsInstance<com.google.android.material.button.MaterialButton>().first {
-            it.text.toString().startsWith(restored.getString(R.string.history))
-        }.isChecked)
+        assertEquals("kept history search", field("query").get(restored))
+        assertEquals(true, field("history").get(restored))
     }
 
     @Test fun changingBrandRetainsTheSettingsScrollPosition() {
@@ -192,27 +189,15 @@ class AppearanceLifecycleTest {
         val controller = Robolectric.buildActivity(MainActivity::class.java)
         controllers.add(controller); controller.setup().visible(); idle()
         val activity = controller.get()
-        val list = views(content(activity)).filterIsInstance<androidx.recyclerview.widget.RecyclerView>().first()
-        val adapter = list.adapter as TaskAdapter
-        assertEquals(task.id, adapter.currentList.single().task.id)
+        fun rows(): List<TaskRow> {
+            val method = MainActivity::class.java.getDeclaredMethod("getHomeState").apply { isAccessible = true }
+            return (method.invoke(activity) as AbHomeState).rows
+        }
+        assertEquals(task.id, rows().single().task.id)
         store.state(task.id, TaskState.FAILED, "not_a_file")
-        // The resumed home polls its journal. Allow the real list differ to
-        // finish instead of replacing the adapter or calling private render.
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
-        do {
-            shadowOf(Looper.getMainLooper()).idleFor(750, TimeUnit.MILLISECONDS)
-            if (adapter.currentList.singleOrNull()?.task?.state == TaskState.FAILED) break
-            Thread.sleep(10)
-        } while (System.nanoTime() < deadline)
-        assertEquals("Failure must stay on the current Active tab", task.id, adapter.currentList.singleOrNull()?.task?.id)
-        assertEquals(TaskState.FAILED, adapter.currentList.single().task.state)
-        // Bind the actual displayed row through the production adapter to
-        // verify the explanation and accessible Retry action together.
-        val holder = adapter.onCreateViewHolder(list, 0)
-        adapter.onBindViewHolder(holder, 0)
-        assertEquals(View.VISIBLE, holder.error.visibility)
-        assertEquals(activity.getString(R.string.error_not_file), holder.error.text.toString())
-        assertTrue(holder.error.text.isNotBlank())
-        assertTrue(views(holder.buttons).any { it.contentDescription?.toString() == activity.getString(R.string.resume) && it.isEnabled })
+        shadowOf(Looper.getMainLooper()).idleFor(800, TimeUnit.MILLISECONDS)
+        assertEquals("Failure stays on the active list", task.id, rows().single().task.id)
+        assertEquals(TaskState.FAILED, rows().single().task.state)
+        assertEquals("not_a_file", rows().single().task.error)
     }
 }

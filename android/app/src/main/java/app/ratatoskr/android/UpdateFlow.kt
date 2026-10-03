@@ -16,6 +16,7 @@ import java.io.File
 object UpdateFlow {
     /** Looks once a day (or right now when [manual]); nothing is downloaded until the user says yes. */
     fun check(activity: MobileActivity, manual: Boolean) {
+        if (activity.packageName.endsWith(".localreview")) return
         val prefs = MobilePreferences(activity)
         if (!manual && (!prefs.autoUpdateCheck || System.currentTimeMillis() - prefs.lastUpdateCheck < 24L * 3600 * 1000)) return
         prefs.lastUpdateCheck = System.currentTimeMillis()

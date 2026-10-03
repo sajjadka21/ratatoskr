@@ -15,9 +15,10 @@ import {
 } from "react";
 
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
+import { extractHttpUrls } from "../../utils/downloadLinks";
 
 import { useI18n } from "../../i18n/I18n";
-import type { MessageKey } from "../../i18n/messages";
 
 import { StreamQualityPicker } from "./StreamQualityPicker";
 import { VideoQualityPicker } from "./VideoQualityPicker";
@@ -31,6 +32,7 @@ export type AddDownloadAction =
   | { kind: "download-later" }
   | { kind: "queue"; queueId: string }
   | { kind: "create-queue"; queueName: string };
+export type DuplicateChoice = "all" | "new-only" | "single-copy";
 
 type AddDownloadModalProps = {
   open: boolean;
@@ -41,6 +43,8 @@ type AddDownloadModalProps = {
   linkCount: number;
   /** How many of the links are already in the downloads list. */
   duplicateCount?: number;
+  completedDuplicateCount?: number;
+  duplicateNames?: string[];
   queues: DownloadQueue[];
   /// Folder used when no category or rule names one; null is the system
   /// Downloads folder.
@@ -51,7 +55,7 @@ type AddDownloadModalProps = {
    * `links` is the text to add, with any quality chosen here attached;
    * `folder` is a folder chosen here, or null for the usual one.
    */
-  onSubmit: (action: AddDownloadAction, links: string, folder: string | null) => void;
+  onSubmit: (action: AddDownloadAction, links: string, folder: string | null, duplicateChoice: DuplicateChoice) => void;
 };
 
 export function AddDownloadModal({
@@ -61,7 +65,7 @@ export function AddDownloadModal({
   engineReady,
   error,
   linkCount,
-  duplicateCount = 0,
+  duplicateCount = 0, completedDuplicateCount = 0, duplicateNames = [],
   queues,
   defaultDirectory = null,
   onUrlChange,
@@ -79,8 +83,27 @@ export function AddDownloadModal({
   const [newQueueName, setNewQueueName] = useState("");
   const [videoQuality, setVideoQuality] = useState<VideoQuality | null>(null);
   const [folder, setFolder] = useState<string | null>(null);
+  const [folderInspection, setFolderInspection] = useState<{ matches: { name: string; folder: string; exact: boolean }[]; partial: boolean } | null>(null);
+  const [folderChecking, setFolderChecking] = useState(false);
+  useEffect(() => {
+    setFolderInspection(null);
+    const urls = extractHttpUrls(url).slice(0, 200);
+    if (!open || !urls.length) { setFolderChecking(false); return; }
+    let current = true;
+    setFolderChecking(true);
+    const timer = window.setTimeout(() => {
+      void invoke<{ matches: { name: string; folder: string; exact: boolean }[]; partial: boolean }>("inspect_existing_files", { urls, directory: folder })
+        .then((result) => { if (current) setFolderInspection(result); })
+        .catch(() => { if (current) setFolderInspection({ matches: [], partial: true }); })
+        .finally(() => { if (current) setFolderChecking(false); });
+    }, 400);
+    return () => { current = false; window.clearTimeout(timer); };
+  }, [open, url, folder]);
   const [playlist, setPlaylist] = useState<string[] | null>(null);
   const [lookingUp, setLookingUp] = useState(false);
+  const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false);
+  const [duplicateChoice, setDuplicateChoice] = useState<DuplicateChoice | null>(null);
+  useEffect(() => { setDuplicateAcknowledged(false); setDuplicateChoice(null); }, [url, open, duplicateCount, completedDuplicateCount]);
 
   useEffect(() => {
     if (!open) return;
@@ -91,12 +114,14 @@ export function AddDownloadModal({
   }, [open]);
 
   function submit(action: AddDownloadAction) {
+    if (duplicateCount > 0 && (isBatch ? !duplicateChoice : !duplicateAcknowledged)) return;
     // A playlist link adds each of its videos, not just the first.
     const text = playlist && linkCount === 1 ? playlist.join("\n") : url;
     onSubmit(
       action,
       videoQuality === null ? text : withVideoQualityForAll(text, videoQuality),
       folder,
+      duplicateChoice ?? "single-copy",
     );
   }
 
@@ -119,7 +144,7 @@ export function AddDownloadModal({
   // only its first video.
   const waitingForList = lookingUp && linkCount === 1 && looksLikeList(url);
   const actionsDisabled =
-    submitting || !engineReady || linkCount === 0 || waitingForList;
+    submitting || !engineReady || linkCount === 0 || waitingForList || (duplicateCount > 0 && (isBatch ? !duplicateChoice : !duplicateAcknowledged));
 
   useEffect(() => {
     if (!open) return;
@@ -353,13 +378,34 @@ export function AddDownloadModal({
           ) : null}
 
           {duplicateCount > 0 ? (
-            <div className="add-download-modal__detection add-download-modal__detection--warning">
-              {linkCount === 1
-                ? t("add.duplicateOne")
-                : t("add.duplicateSome", { count: fmt.number(duplicateCount) })}
+            <div className="add-download-modal__duplicate" role="status">
+              <strong>{completedDuplicateCount > 0 ? t("add.duplicateCompleted", { count: fmt.number(completedDuplicateCount) }) : t("add.duplicateOne")}</strong>
+              {duplicateNames.length > 0 ? <span className="add-download-modal__duplicate-names" dir="ltr">{duplicateNames.slice(0, 3).join(" · ")}</span> : null}
+              <span>{t("add.duplicateHistoryOnly")}</span>
+              {isBatch ? (
+                <div className="add-download-modal__duplicate-actions">
+                  <button type="button" aria-pressed={duplicateChoice === "all"} onClick={() => setDuplicateChoice("all")}>{t("add.duplicateAll")}</button>
+                  <button type="button" aria-pressed={duplicateChoice === "new-only"} onClick={() => setDuplicateChoice("new-only")}>{t("add.duplicateNewOnly")}</button>
+                </div>
+              ) : (
+                <label><input type="checkbox" checked={duplicateAcknowledged} onChange={(event) => setDuplicateAcknowledged(event.target.checked)} />{t("add.duplicateConfirm")}</label>
+            )}
+
             </div>
           ) : null}
 
+            <div className="add-download-modal__folder-inspection" role="status" aria-live="polite">
+              {folderChecking ? <span>{t("add.folderChecking")}</span> : folderInspection ? <>
+                {folderInspection.matches.length > 0 ? <>
+                  <strong>{t("add.folderFound")}</strong>
+                  {[...new Map(folderInspection.matches.map((match) => [match.folder + match.name, match])).values()].slice(0, 5).map((match) => <div key={match.folder + match.name}>
+                    <span dir="ltr">{match.name}</span><small dir="ltr">{match.folder}</small>
+                  </div>)}
+                  <span>{t("add.folderHint")}</span>
+                </> : null}
+                {folderInspection.partial ? <span>{t("add.folderPartial")}</span> : null}
+              </> : null}
+            </div>
           {linkCount === 1 ? (
             <StreamQualityPicker url={url} onChoose={onUrlChange} />
           ) : null}
@@ -413,6 +459,8 @@ export function AddDownloadModal({
             {t("add.cancel")}
           </button>
 
+          <button type="button" className="add-download-modal__cancel" disabled={actionsDisabled} onClick={() => submit({ kind: "download-later" })}><Clock3 size={16} />{t("add.later")}</button>
+
           <div
             ref={actionRef}
             className="add-download-modal__split"
@@ -439,13 +487,13 @@ export function AddDownloadModal({
             <button
               type="button"
               className="add-download-modal__dropdown-toggle"
-              aria-label={t("add.chooseAction")}
+              aria-label={t("add.chooseQueue")}
               aria-haspopup="menu"
               aria-expanded={actionMenuOpen}
               onClick={() => setActionMenuOpen((current) => !current)}
               disabled={actionsDisabled}
             >
-              <ChevronDown size={15} />
+              <Layers3 size={16} /><span>{t("add.chooseQueue")}</span><ChevronDown size={14} />
             </button>
 
             {actionMenuOpen ? (
@@ -453,38 +501,6 @@ export function AddDownloadModal({
                 className="add-download-modal__action-menu"
                 role="menu"
               >
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setActionMenuOpen(false);
-                    submit({ kind: "start-now" });
-                  }}
-                >
-                  <Download size={15} />
-                  <span>
-                    <strong>{t("add.startNow")}</strong>
-                    <small>{t("add.startNowHint")}</small>
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setActionMenuOpen(false);
-                    submit({ kind: "download-later" });
-                  }}
-                >
-                  <Clock3 size={15} />
-                  <span>
-                    <strong>{t("add.later")}</strong>
-                    <small>{t("add.laterHint")}</small>
-                  </span>
-                </button>
-
-                <div className="add-download-modal__menu-divider" />
-
                 {queues.map((queue) => (
                   <button
                     key={queue.id}
@@ -499,9 +515,7 @@ export function AddDownloadModal({
                     <span>
                       <strong>{t("add.toQueue", { name: queue.name })}</strong>
                       <small>
-                        {t("add.toQueueHint", {
-                          priority: t(`priority.${queue.defaultPriority}` as MessageKey),
-                        })}
+                        {t("add.toQueueHint")}
                       </small>
                     </span>
                   </button>

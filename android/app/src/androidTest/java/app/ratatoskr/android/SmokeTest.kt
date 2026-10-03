@@ -24,6 +24,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Before
 import org.junit.BeforeClass
 import org.junit.Test
+import org.junit.Rule
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import org.junit.Assert.assertEquals
 import org.hamcrest.Description
 import org.hamcrest.Matcher
@@ -33,6 +36,7 @@ import org.hamcrest.TypeSafeMatcher
 /** Opens the real screens on an emulator. Every click and typed key also runs the accessibility checks
  * (labels, touch-target size, contrast) over the whole screen, so a regression there fails the build. */
 class SmokeTest {
+    @get:Rule val compose = createEmptyComposeRule()
     companion object {
         @JvmStatic @BeforeClass fun accessibility() {
             AccessibilityChecks.enable().setRunChecksFromRootView(true)
@@ -43,7 +47,7 @@ class SmokeTest {
 
     @Before fun quietApp() {
         // No first-run dialog, no network look-ups and no clipboard banner while the test drives the screen.
-        MobilePreferences(context).apply { onboarded = true; autoUpdateCheck = false; watchClipboard = false }
+        MobilePreferences(context).apply { onboarded = true; autoUpdateCheck = false; watchClipboard = false; mode = "light"; brand = "ember-forge"; language = "" }
         val permission = when {
             android.os.Build.VERSION.SDK_INT >= 33 -> android.Manifest.permission.POST_NOTIFICATIONS
             android.os.Build.VERSION.SDK_INT < 29 -> android.Manifest.permission.WRITE_EXTERNAL_STORAGE
@@ -56,27 +60,50 @@ class SmokeTest {
         }
     }
 
-    @Test fun homeScreenShowsTheBrandTheTabsAndTheAddButton() {
+    @Test fun homeScreenShowsTheApprovedDockAndTheAddButton() {
         ActivityScenario.launch(MainActivity::class.java).use {
-            onView(withText("Ratatoskr")).check(matches(isDisplayed()))
-            onView(withText(R.string.add_links)).check(matches(isDisplayed()))
-            onView(withText(R.string.empty_jobs)).check(matches(isDisplayed()))
+            compose.onNodeWithText("Ratatoskr").assertIsDisplayed()
+            it.onActivity { activity ->
+                val viewport = activity.findViewById<ViewGroup>(android.R.id.content)
+                assertEquals(viewport.height, viewport.getChildAt(0).height)
+            }
+            compose.onNodeWithContentDescription(context.getString(R.string.add_links)).assertIsDisplayed()
+            compose.onNodeWithContentDescription(context.getString(R.string.browser)).assertIsDisplayed()
+            compose.onNodeWithText(context.getString(R.string.settings)).assertIsDisplayed()
+            compose.onNodeWithText(context.getString(R.string.empty_jobs)).assertIsDisplayed()
             screenshot("home-empty")
         }
     }
 
     @Test fun addingLinksCountsFilesAndVideosAsYouType() {
-        ActivityScenario.launch(MainActivity::class.java).use {
-            onView(withText(R.string.add_links)).perform(click())
-            onView(isAssignableFrom(EditText::class.java)).perform(typeText("https://example.org/p[01-03].jpg https://youtu.be/abc"), closeSoftKeyboard())
-            onView(withText(context.getString(R.string.links_summary, 4, 3, 1))).check(matches(isDisplayed()))
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            compose.onNodeWithContentDescription(context.getString(R.string.add_links)).performClick()
+            compose.onNode(hasSetTextAction()).performTextInput("https://example.org/p[01-03].jpg https://youtu.be/abc")
+            compose.onNodeWithText(context.getString(R.string.links_summary, 4, 3, 1)).assertIsDisplayed()
+            scenario.onActivity { activity ->
+                // Hide IME through its controller: Espresso root checks cannot inspect the inactive Compose container behind a modal sheet.
+                androidx.core.view.WindowInsetsControllerCompat(activity.window, activity.window.decorView).hide(androidx.core.view.WindowInsetsCompat.Type.ime())
+            }
+            compose.waitForIdle()
+            screenshot("ab-add-link-filled")
         }
     }
 
-    @Test fun settingsOpensFromTheMenu() {
+    @Test fun addLinkHasOneDownloadActionAndTheDockOpensSettings() {
         ActivityScenario.launch(MainActivity::class.java).use {
-            onView(withContentDescription(R.string.menu)).perform(click())
-            onView(withText(R.string.settings)).inRoot(isPlatformPopup()).perform(click())
+            compose.onNodeWithText(context.getString(R.string.settings)).performClick()
+            onView(withText(R.string.section_network)).check(matches(isDisplayed()))
+            androidx.test.espresso.Espresso.pressBack()
+            compose.onNodeWithContentDescription(context.getString(R.string.add_links)).performClick()
+            compose.onNodeWithContentDescription(context.getString(R.string.download_action)).assertIsDisplayed()
+            compose.onNodeWithText(context.getString(R.string.file_download)).assertDoesNotExist()
+            screenshot("add-link-single-action")
+        }
+    }
+
+    @Test fun settingsOpensFromTheDock() {
+        ActivityScenario.launch(MainActivity::class.java).use {
+            compose.onNodeWithText(context.getString(R.string.settings)).performClick()
             onView(withText(R.string.section_network)).check(matches(isDisplayed()))
         }
     }
@@ -118,6 +145,44 @@ class SmokeTest {
         }
     }
 
+    @Test fun abListShowsDownloadFailureRetryAndSurvivesRecreation() {
+        val prefs = MobilePreferences(context)
+        val store = TaskStore.get(context)
+        val queued = store.enqueue("https://example.org/ratatoskr-desktop.zip", null, false, "Ratatoskr Desktop.zip", "file")
+        store.state(queued.id, TaskState.FAILED, "not_a_file")
+        val completed = store.enqueue("https://example.org/guide.pdf", null, false, "Getting started.pdf", "file")
+        store.state(completed.id, TaskState.COMPLETED)
+        val archive = store.enqueue("https://example.org/studio.zip", null, false, "Android Studio.zip", "file")
+        store.state(archive.id, TaskState.PAUSED)
+        store.update(archive.id, android.content.ContentValues().apply { put("progress", 64); put("bytes_done", 671088640L); put("total_bytes", 1048576000L) })
+        val document = store.enqueue("https://example.org/design.pdf", null, false, "Design guidelines.pdf", "file")
+        store.state(document.id, TaskState.PAUSED)
+        store.update(document.id, android.content.ContentValues().apply { put("progress", 25); put("bytes_done", 2097152L); put("total_bytes", 8388608L) })
+        try {
+            prefs.language = "en"; prefs.mode = "dark"
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                compose.onNodeWithText("Ratatoskr Desktop.zip").assertIsDisplayed()
+                compose.onNodeWithText(context.getString(R.string.error_not_file)).assertIsDisplayed()
+                compose.onAllNodesWithContentDescription(context.getString(R.string.resume))[0].assertIsDisplayed()
+                screenshot("ab-home-downloads-dark")
+                compose.onNodeWithContentDescription(context.getString(R.string.search_history)).performClick()
+                compose.onNode(hasSetTextAction()).performTextInput("Desktop")
+                scenario.recreate()
+                compose.onNodeWithText("Desktop").assertIsDisplayed()
+                screenshot("ab-search-restored")
+                compose.onNodeWithText("Ratatoskr Desktop.zip").assertIsDisplayed()
+            }
+            prefs.mode = "light"; prefs.language = "fa"
+            ActivityScenario.launch(MainActivity::class.java).use {
+                compose.onNodeWithText("Ratatoskr Desktop.zip").assertIsDisplayed()
+                compose.waitUntil(10000) { runCatching { compose.onAllNodesWithText("فعال").fetchSemanticsNodes().isNotEmpty() }.getOrDefault(false) }
+                compose.onNodeWithText("فعال").assertIsDisplayed()
+                it.onActivity { activity -> assertEquals(View.LAYOUT_DIRECTION_RTL, activity.findViewById<View>(android.R.id.content).layoutDirection) }
+                screenshot("ab-home-downloads-light-fa")
+            }
+        } finally { listOf(queued, completed, archive, document).forEach { store.remove(it.id) }; prefs.language = "" }
+    }
+
     private fun screenshot(name: String) {
         require(name.matches(Regex("[a-z-]+")))
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
@@ -150,10 +215,9 @@ class SmokeTest {
         }
     }
 
-    @Test fun theBrowserOpensFromTheMenu() {
+    @Test fun theBrowserOpensFromTheHeader() {
         ActivityScenario.launch(MainActivity::class.java).use {
-            onView(withContentDescription(R.string.menu)).perform(click())
-            onView(withText(R.string.browser)).inRoot(isPlatformPopup()).perform(click())
+            compose.onNodeWithContentDescription(context.getString(R.string.browser)).performClick()
             onView(withText(R.string.download_page)).check(matches(isDisplayed()))
         }
     }

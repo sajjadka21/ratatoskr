@@ -31,7 +31,7 @@ class ShareModel : ViewModel() {
                 val info = withContext(Dispatchers.IO) { Engine.probe(context.applicationContext, url, process) }
                 selected.addAll(info.items.map { it.index }); ShareProbe.Ready(info)
             } catch (error: CancellationException) { throw error }
-            catch (error: Exception) { ShareProbe.Failed(if (error is TransferFailure) error.code else "unsupported_media") }
+            catch (error: Exception) { ShareProbe.Failed(DownloadService.errorCode(error)) }
         }
     }
     override fun onCleared() { Engine.cancel(process); super.onCleared() }
@@ -45,17 +45,23 @@ class ShareActivity : MobileActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         box = column().apply { setPadding(dp(20), dp(20), dp(20), dp(16)); setBackgroundColor(paper) }
-        setContentView(ScrollView(this).apply { addView(box) })
+        setContentView(ScrollView(this).apply { isVerticalScrollBarEnabled = false; isHorizontalScrollBarEnabled = false; addView(box) })
         model = ViewModelProvider(this)[ShareModel::class.java]
         val shared = if (intent?.action == Intent.ACTION_VIEW) {
             // ratatoskr://add?url=… from our own pages, or a plain file link opened with "Open with Ratatoskr"
             val data = intent?.dataString
             (if (data?.startsWith("http", true) == true) data.takeIf { LinkUtils.isPublicHttpUrl(it) } else LinkUtils.handoffUrl(data))
                 ?: run { finishWith(R.string.bad_link); return }
-        } else intent?.getStringExtra(Intent.EXTRA_TEXT)
+        } else intent?.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
         val text = shared ?: if (intent?.getBooleanExtra(EXTRA_FROM_CLIPBOARD, false) == true) clipboardText() else null
         val urls = LinkPlan.parse(text)
         if (urls.isEmpty() || urls.any { !LinkUtils.isPublicHttpUrl(it) }) { finishWith(R.string.bad_link); return }
+        if (!intent.getBooleanExtra("choose-media-items", false)) {
+            startActivity(Intent(this, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra(Intent.EXTRA_TEXT, urls.joinToString("\n")))
+            finish(); return
+        }
         val prefs = MobilePreferences(this)
         // A Spotify track has one sensible outcome: its audio. No quality question.
         if (urls.all { Spotify.isTrackUrl(it) }) { enqueue(urls, null, true); return }
@@ -74,9 +80,13 @@ class ShareActivity : MobileActivity() {
             ShareProbe.Loading -> { box.removeAllViews(); box.addView(label(getString(R.string.checking))); box.addView(label(getString(R.string.checking_help), 14f)); box.addView(ProgressBar(this@ShareActivity)); box.addView(button(getString(R.string.cancel)) { finish() }) }
             is ShareProbe.Ready -> choices(value.info)
             is ShareProbe.Failed -> {
+                if (LinkPlan.mayTryFile(urls.first(), value.code)) {
+                    // Extensionless file endpoints still work with the single
+                    // Download action. The HTTP engine rejects HTML responses.
+                    enqueue(urls, null, false, "file")
+                    return@collect
+                }
                 box.removeAllViews(); box.addView(label(MobileText.error(this@ShareActivity, value.code)))
-                box.addView(label(getString(R.string.direct_link_help), 14f))
-                if (!LinkPlan.isMediaHost(urls.first())) box.addView(button(getString(R.string.file_download)) { enqueue(urls, null, false, "file") })
                 box.addView(button(getString(R.string.cancel)) { finish() })
             }
         } } }

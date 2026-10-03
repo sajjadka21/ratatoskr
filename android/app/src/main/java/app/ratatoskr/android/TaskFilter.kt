@@ -6,7 +6,12 @@ object TaskFilter {
     val categories = listOf("Video", "Music", "Archives", "Programs", "Documents", "Images", "Other")
 
     fun categoryOf(task: MobileTask): String {
-        if (task.fileName.isEmpty()) return if (task.audioOnly || Spotify.isTrackUrl(task.url)) "Music" else if (task.kind == "file") "Other" else "Video"
+        if (task.fileName.isEmpty()) {
+            if (task.audioOnly || Spotify.isTrackUrl(task.url)) return "Music"
+            if (task.kind != "file") return "Video"
+            val inferred = FileCategory.folder(TaskQuery.name(task), task.mime)
+            return if (TaskQuery.extension(task) in setOf("jpg", "jpeg", "png", "gif", "webp")) "Images" else inferred.ifEmpty { "Images" }
+        }
         return FileCategory.folder(task.fileName, task.mime).ifEmpty { "Images" }
     }
 

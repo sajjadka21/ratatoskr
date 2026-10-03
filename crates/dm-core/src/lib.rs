@@ -4,6 +4,7 @@ pub mod clipboard_links;
 pub mod control;
 pub mod dash;
 pub mod diagnostics;
+pub mod existing_files;
 pub mod export;
 pub mod ffmpeg;
 pub mod hls;
@@ -1186,6 +1187,15 @@ fn candidate_names(filename: &str) -> impl Iterator<Item = String> + '_ {
         .unwrap_or("download")
         .to_owned();
 
+    let stem = stem
+        .rsplit_once(" (")
+        .filter(|(_, suffix)| {
+            suffix
+                .strip_suffix(')')
+                .is_some_and(|number| number.parse::<u32>().is_ok_and(|value| value > 0))
+        })
+        .map_or(stem.clone(), |(base, _)| base.to_owned());
+
     let extension = original
         .extension()
         .and_then(|value| value.to_str())
@@ -1224,6 +1234,28 @@ impl CoreService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn fresh_file_and_copies_use_sequential_suffixes_without_overwriting() {
+        let directory = tempfile::tempdir().unwrap();
+        for index in 0..3 {
+            let (destination, partial) = reserve_paths(directory.path(), "سجاد.mkv").await.unwrap();
+            let expected = if index == 0 {
+                "سجاد.mkv".to_owned()
+            } else {
+                format!("سجاد ({index}).mkv")
+            };
+            assert_eq!(destination.file_name().unwrap().to_string_lossy(), expected);
+            fs::write(&partial, b"content").await.unwrap();
+            finalize_transfer(&partial, &destination, 7).await.unwrap();
+        }
+        let (destination, _) = reserve_paths(directory.path(), "سجاد (1).mkv")
+            .await
+            .unwrap();
+        assert_eq!(
+            destination.file_name().unwrap().to_string_lossy(),
+            "سجاد (3).mkv"
+        );
+    }
     use crate::testing::{DEFAULT_BODY, ServerBehaviour, TestServer};
     use std::sync::Arc;
     use tempfile::tempdir;

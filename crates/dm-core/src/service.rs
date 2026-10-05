@@ -588,28 +588,55 @@ impl DownloadService {
             let category = self.storage.get_category(category_id).ok()??;
             absolute(category.default_directory.as_deref()?)
         };
+        let explicit_directory = rule_directory.or_else(category_directory);
+        if let Some(directory) = explicit_directory {
+            return directory;
+        }
 
         let configured_default = self.default_directory().ok().flatten();
         #[cfg(test)]
         let system_video_directory = None;
         #[cfg(not(test))]
         let system_video_directory = dirs::video_dir();
-        rule_directory
-            .or_else(category_directory)
-            .unwrap_or_else(|| {
-                let base = configured_default
-                    .clone()
-                    .unwrap_or_else(|| fallback.to_path_buf());
-                match decision.and_then(|decision| decision.category_id.as_deref()) {
-                    Some("video") => Self::choose_video_directory(
-                        &base,
-                        configured_default.is_some(),
-                        system_video_directory,
-                    ),
-                    Some("audio") => base.join("Audio"),
-                    _ => base,
-                }
-            })
+
+        #[cfg(windows)]
+        if let Some(category_id) = decision.and_then(|decision| decision.category_id.as_deref())
+            && let Some(folder_name) = Self::windows_category_folder(category_id)
+        {
+            let base = configured_default
+                .clone()
+                .unwrap_or_else(|| fallback.to_path_buf());
+            return base.join(folder_name);
+        }
+
+        let base = configured_default
+            .clone()
+            .unwrap_or_else(|| fallback.to_path_buf());
+        match decision.and_then(|decision| decision.category_id.as_deref()) {
+            Some("video") => Self::choose_video_directory(
+                &base,
+                configured_default.is_some(),
+                system_video_directory,
+            ),
+            Some("audio") => base.join("Audio"),
+            _ => base,
+        }
+    }
+
+    /// Default subfolders for categorized Windows downloads. An explicit
+    /// category or rule destination takes precedence in `resolve_destination`.
+    #[cfg(windows)]
+    fn windows_category_folder(category_id: &str) -> Option<&'static str> {
+        match category_id {
+            "applications" => Some("Applications"),
+            "archives" => Some("Archives"),
+            "documents" => Some("Documents"),
+            "video" => Some("Video"),
+            "audio" => Some("Audio"),
+            "images" => Some("Images"),
+            "other" => Some("Other"),
+            _ => None,
+        }
     }
 
     /// Check destination metadata only; never create a task, hash a file, or skip a download.
@@ -4559,6 +4586,54 @@ mod tests {
             DownloadService::choose_video_directory(&base, false, None),
             base.join("Video")
         );
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn windows_download_categories_use_default_folders_and_create_them() {
+        let harness = harness();
+        let base = harness.destination.clone();
+        let cases = [
+            ("applications", "Applications"),
+            ("archives", "Archives"),
+            ("documents", "Documents"),
+            ("video", "Video"),
+            ("audio", "Audio"),
+            ("images", "Images"),
+            ("other", "Other"),
+        ];
+
+        for (category_id, folder) in cases {
+            let decision = RuleDecision {
+                rule_id: None,
+                explanation: "test category".to_owned(),
+                rule_name: None,
+                category_id: Some(category_id.to_owned()),
+                category_name: None,
+                queue_id: None,
+                priority: None,
+                destination_directory: None,
+                max_connections: None,
+                max_host_concurrency: None,
+                speed_cap: None,
+            };
+
+            assert_eq!(
+                harness.service.resolve_destination(Some(&decision), &base),
+                base.join(folder),
+                "category {category_id} should use its default folder"
+            );
+        }
+
+        let archives = base.join("Archives");
+        assert!(!archives.exists());
+        harness
+            .service
+            .base_downloader()
+            .plan_paths(&archives, "package.zip")
+            .await
+            .unwrap();
+        assert!(archives.is_dir());
     }
 
     #[test]

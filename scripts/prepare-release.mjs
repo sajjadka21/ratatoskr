@@ -43,14 +43,17 @@ function collect(folder, files = new Map()) {
   return files;
 }
 
-export function prepareRelease({ input, output, version, repository, publicKey }) {
+export function prepareRelease({ input, output, version, repository, publicKey, scope = "all" }) {
   if (!/^\d+\.\d+\.\d+$/.test(version) || !/^[\w.-]+\/[\w.-]+$/.test(repository)) {
     throw new Error("Expected a stable semantic version and owner/repository");
   }
+  if (!["all", "windows"].includes(scope)) throw new Error("Release scope must be all or windows");
   const files = collect(input);
   const installer = `Ratatoskr_${version}_x64-setup.exe`;
-  const expected = [installer, `${installer}.sig`, `Ratatoskr_${version}_x64_en-US.msi`,
-    "Ratatoskr-portable.zip", "Ratatoskr-android.apk", "Ratatoskr-android-source.zip", "latest.json",
+  const windowsAssets = [installer, `${installer}.sig`, `Ratatoskr_${version}_x64_en-US.msi`,
+    "Ratatoskr-portable.zip", "latest.json"];
+  const expected = scope === "windows" ? windowsAssets : [
+    ...windowsAssets, "Ratatoskr-android.apk", "Ratatoskr-android-source.zip",
     "Ratatoskr-android-arm64-v8a.apk", "Ratatoskr-android-armeabi-v7a.apk", "Ratatoskr-android-x86_64.apk",
     "Ratatoskr-extension-chrome.zip", "Ratatoskr-extension-edge.zip", "Ratatoskr-extension-firefox.zip"];
   for (const name of expected) {
@@ -77,10 +80,10 @@ export function prepareRelease({ input, output, version, repository, publicKey }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const [input, output, tag, repository] = process.argv.slice(2);
+  const [input, output, tag, repository, scope = "all"] = process.argv.slice(2);
   const config = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
   if (tag !== `v${config.version}`) throw new Error("Tag does not match the application version");
-  const manifest = prepareRelease({ input, output, version: config.version, repository,
+  const manifest = prepareRelease({ input, output, version: config.version, repository, scope,
     publicKey: config.plugins.updater.pubkey });
-  console.log(`Verified updater signature and staged ${manifest.length} assets with SHA-256 checksums.`);
+  console.log(`Verified updater signature and staged ${manifest.length} ${scope} assets with SHA-256 checksums.`);
 }

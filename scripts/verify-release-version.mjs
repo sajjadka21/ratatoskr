@@ -12,6 +12,8 @@ for (const path of ["src-tauri/Cargo.toml", "crates/dm-cli/Cargo.toml"]) {
   assert.equal(readFileSync(path, "utf8").match(/^version = "([^"]+)"/m)?.[1], version, path);
 }
 const android = readFileSync("android/app/build.gradle.kts", "utf8");
-assert.equal(android.match(/versionName = "([^"]+)"/)?.[1], version);
+const windowsOnly = readFileSync(`docs/releases/${version}.md`, "utf8")
+  .includes("<!-- release-platforms: windows -->");
+if (!windowsOnly) assert.equal(android.match(/versionName = "([^"]+)"/)?.[1], version);
 if (process.argv[2]) assert.equal(process.argv[2], `v${version}`, "Release tag mismatch");
-console.log(`Release version is consistent: ${version}`);
+console.log(`Release version is consistent: ${version}${windowsOnly ? " (Windows only)" : ""}`);

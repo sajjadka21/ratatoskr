@@ -22,6 +22,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  release_scope:
+    name: Select release platforms
+    runs-on: ubuntu-latest
+    outputs:
+      scope: ${{ steps.scope.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: scope
+        shell: bash
+        run: |
+          notes="docs/releases/${GITHUB_REF_NAME#v}.md"
+          test -f "$notes" || { echo "::error::Missing release notes: $notes"; exit 1; }
+          if grep -Fq '<!-- release-platforms: windows -->' "$notes"; then
+            echo 'value=windows' >> "$GITHUB_OUTPUT"
+          else
+            echo 'value=all' >> "$GITHUB_OUTPUT"
+          fi
+
   checks:
     name: Release checks
     uses: ./.github/workflows/ci.yml
@@ -80,6 +98,8 @@ jobs:
 
   android:
     name: Android APK
+    needs: [release_scope]
+    if: needs.release_scope.outputs.scope != 'windows'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -169,6 +189,8 @@ jobs:
 
   extensions:
     name: Browser extension packages
+    needs: [release_scope]
+    if: needs.release_scope.outputs.scope != 'windows'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -193,11 +215,18 @@ jobs:
 
   publish:
     name: Publish the release
-    needs: [checks, windows, android, extensions]
+    needs: [release_scope, checks, windows, android, extensions]
     permissions:
       contents: write
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: >-
+      always() &&
+      startsWith(github.ref, 'refs/tags/v') &&
+      needs.release_scope.result == 'success' &&
+      needs.checks.result == 'success' &&
+      needs.windows.result == 'success' &&
+      (needs.android.result == 'success' || needs.android.result == 'skipped') &&
+      (needs.extensions.result == 'success' || needs.extensions.result == 'skipped')
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -210,7 +239,7 @@ jobs:
           merge-multiple: true
       - name: Verify, flatten and checksum release assets
         run: |
-          node scripts/prepare-release.mjs dist-release release-assets "${{ github.ref_name }}" "${{ github.repository }}"
+          node scripts/prepare-release.mjs dist-release release-assets "${{ github.ref_name }}" "${{ github.repository }}" "${{ needs.release_scope.outputs.scope }}"
           (cd release-assets && sha256sum --check SHA256SUMS.txt)
       - name: Create the release
         env:
@@ -220,7 +249,7 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "Ratatoskr ${{ github.ref_name }}" \
             --notes-file "docs/releases/${GITHUB_REF_NAME#v}.md" --verify-tag --draft
-          if [ "${{ inputs.promote_stable || false }}" = "true" ]; then
+          if [ "$GITHUB_EVENT_NAME" = "push" ] || [ "${{ inputs.promote_stable || false }}" = "true" ]; then
             gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --draft=false --prerelease=false --latest
           else
             gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --draft=false --prerelease --latest=false

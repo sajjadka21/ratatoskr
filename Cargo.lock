@@ -984,7 +984,7 @@ dependencies = [
 
 [[package]]
 name = "dm-cli"
-version = "1.3.0"
+version = "1.3.1"
 dependencies = [
  "dm-common",
  "dm-storage",
@@ -4537,7 +4537,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-app"
-version = "1.3.0"
+version = "1.3.1"
 dependencies = [
  "chrono",
  "dm-common",

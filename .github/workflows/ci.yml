@@ -62,7 +62,7 @@ jobs:
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" "cmake;3.22.1"'
       - name: Test recursive native-library verification
         run: python3 -m unittest discover -s scripts -p test_android_native.py -v
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: 8.9
       - working-directory: android

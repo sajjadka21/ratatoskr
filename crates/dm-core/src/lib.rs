@@ -206,6 +206,10 @@ pub struct SourceProbe {
     pub final_url: String,
     pub filename: String,
     pub content_type: Option<String>,
+    /// The response is a web page rather than a downloadable file. Some
+    /// hosts label error/login pages as octet-stream, so this also uses a
+    /// short body signature when available.
+    pub html_page: bool,
     pub total_bytes: Option<u64>,
     pub etag: Option<String>,
     pub last_modified: Option<String>,
@@ -435,20 +439,34 @@ impl Downloader {
 
         let response = self
             .request(reqwest::Method::GET, url)
-            .header(RANGE, "bytes=0-0")
+            .header(RANGE, "bytes=0-511")
             .send()
             .await?;
         self.remember_retry_after(&response);
-        let response = response.error_for_status()?;
+        let mut response = response.error_for_status()?;
 
         let final_url = response.url().clone();
         let status = response.status();
         let headers = response.headers().clone();
         let content_length = response.content_length();
-
-        // Drop the body without reading it: on a server that ignored the
-        // range this would otherwise be the entire file.
+        // Read only a small prefix. A server may ignore Range and begin
+        // streaming the whole file, so stop as soon as there is enough data
+        // to recognize a mislabeled HTML page.
+        let mut prefix = Vec::with_capacity(512);
+        while prefix.len() < 512 {
+            let Some(chunk) = response.chunk().await? else {
+                break;
+            };
+            let remaining = 512 - prefix.len();
+            prefix.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+        }
         drop(response);
+        let response_content_type = header_text(&headers, CONTENT_TYPE).or_else(|| {
+            head_headers
+                .as_ref()
+                .and_then(|h| header_text(h, CONTENT_TYPE))
+        });
+        let html_page = is_html_response(response_content_type.as_deref(), &prefix);
 
         let content_range = header_text(&headers, CONTENT_RANGE);
         let range_supported = status == StatusCode::PARTIAL_CONTENT && content_range.is_some();
@@ -471,11 +489,8 @@ impl Downloader {
         Ok(SourceProbe {
             final_url: final_url.to_string(),
             filename,
-            content_type: header_text(&headers, CONTENT_TYPE).or_else(|| {
-                head_headers
-                    .as_ref()
-                    .and_then(|h| header_text(h, CONTENT_TYPE))
-            }),
+            content_type: response_content_type,
+            html_page,
             total_bytes,
             etag: header_text(&headers, ETAG)
                 .or_else(|| head_headers.as_ref().and_then(|h| header_text(h, ETAG))),
@@ -873,6 +888,32 @@ impl Downloader {
     }
 }
 
+fn is_html_response(content_type: Option<&str>, prefix: &[u8]) -> bool {
+    if content_type.is_some_and(|value| {
+        let value = value.split(';').next().unwrap_or_default().trim();
+        value.eq_ignore_ascii_case("text/html")
+            || value.eq_ignore_ascii_case("application/xhtml+xml")
+    }) {
+        return true;
+    }
+
+    let text = String::from_utf8_lossy(prefix)
+        .trim_start_matches('\u{feff}')
+        .trim_start()
+        .to_ascii_lowercase();
+    [
+        "<!doctype html",
+        "<html",
+        "<head",
+        "<body",
+        "<script",
+        "<meta",
+        "<title",
+    ]
+    .iter()
+    .any(|signature| text.starts_with(signature))
+}
+
 /// Opens the partial file positioned at `offset`, discarding anything beyond
 /// it so a resumed transfer cannot leave stale bytes in the middle of a file.
 async fn open_partial_file(temp_path: &Path, offset: u64) -> Result<tokio::fs::File> {
@@ -962,7 +1003,7 @@ fn content_length_of(headers: &HeaderMap) -> Option<u64> {
         .and_then(|value| value.parse().ok())
 }
 
-/// Reads the total size out of `bytes 0-0/1234`. A source that reports `*`
+/// Reads the total size out of a `Content-Range` value such as `bytes 0-511/1234`. A source that reports `*`
 /// does not know its own size, and neither do we.
 fn total_from_content_range(value: &str) -> Option<u64> {
     let total = value.rsplit('/').next()?.trim();
@@ -1234,6 +1275,21 @@ impl CoreService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn identifies_html_even_when_the_host_mislabels_the_response() {
+        assert!(is_html_response(Some("text/html; charset=utf-8"), b""));
+        assert!(is_html_response(
+            Some("application/octet-stream"),
+            b"  <!doctype html><html>"
+        ));
+        assert!(is_html_response(None, b"\xef\xbb\xbf<html lang=\"en\">"));
+        assert!(!is_html_response(
+            Some("application/octet-stream"),
+            b"\x00\x01\x02media"
+        ));
+        assert!(!is_html_response(Some("application/pdf"), b"%PDF-1.7"));
+    }
     #[tokio::test]
     async fn fresh_file_and_copies_use_sequential_suffixes_without_overwriting() {
         let directory = tempfile::tempdir().unwrap();

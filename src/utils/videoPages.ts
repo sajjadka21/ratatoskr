@@ -9,6 +9,8 @@ const SITES: [string, string[]][] = [
   ["vimeo.com", []],
   ["dailymotion.com", []],
   ["twitch.tv", []],
+  ["pornhub.com", []],
+  ["pinterest.com", ["/pin/"]],
   ["x.com", ["/status/"]],
   ["twitter.com", ["/status/"]],
   ["instagram.com", ["/p/", "/reel/", "/reels/", "/tv/"]],

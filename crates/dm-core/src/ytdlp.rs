@@ -41,6 +41,8 @@ const SITES: &[(&str, &[&str])] = &[
     ("vimeo.com", &[]),
     ("dailymotion.com", &[]),
     ("twitch.tv", &[]),
+    ("pornhub.com", &[]),
+    ("pinterest.com", &["/pin/"]),
     ("x.com", &["/status/"]),
     ("twitter.com", &["/status/"]),
     ("instagram.com", &["/p/", "/reel/", "/reels/", "/tv/"]),
@@ -986,9 +988,15 @@ mod tests {
         assert!(handles("https://youtu.be/dQw4w9WgXcQ"));
         assert!(handles("https://m.youtube.com/shorts/abc"));
         assert!(handles("https://www.aparat.com/v/abc12"));
+        assert!(handles(
+            "https://www.pornhub.com/view_video.php?viewkey=6abbc213c20ff"
+        ));
+        assert!(handles("https://www.pinterest.com/pin/123456789/"));
         assert!(!handles("https://example.com/watch?v=1"));
         assert!(!handles("https://notyoutube.com/watch?v=1"));
         assert!(!handles("https://cdn.aparat.com/video/file.mp4"));
+        assert!(!handles("https://cdn.pornhub.com/video/file.mp4"));
+        assert!(!handles("https://i.pinimg.com/originals/image.jpg"));
         assert!(!handles("ftp://youtube.com/watch"));
         assert!(!handles("not a link"));
     }

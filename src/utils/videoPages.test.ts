@@ -12,6 +12,9 @@ describe("video pages", () => {
     expect(isVideoPage("https://www.youtube.com/watch?v=dQw4w9WgXcQ")).toBe(true);
     expect(isVideoPage("https://youtu.be/dQw4w9WgXcQ#rud-quality=720")).toBe(true);
     expect(isVideoPage("https://x.com/someone/status/1")).toBe(true);
+    expect(isVideoPage("https://www.pornhub.com/view_video.php?viewkey=6abbc213c20ff")).toBe(true);
+    expect(isVideoPage("https://www.pinterest.com/pin/123456789/")).toBe(true);
+    expect(isVideoPage("https://cdn.pornhub.com/video/file.mp4")).toBe(false);
     expect(isVideoPage("https://x.com/someone")).toBe(false);
     expect(isVideoPage("https://cdn.aparat.com/video/file.mp4")).toBe(false);
     expect(isVideoPage("https://example.com/watch?v=1")).toBe(false);

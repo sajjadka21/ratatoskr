@@ -9,7 +9,7 @@ object LinkPlan {
     private val mediaHosts = listOf(
         "youtube.com", "youtu.be", "instagram.com", "spotify.com", "aparat.com", "tiktok.com", "twitter.com", "x.com",
         "facebook.com", "fb.watch", "soundcloud.com", "vimeo.com", "dailymotion.com", "reddit.com", "twitch.tv",
-        "bandcamp.com", "namava.ir", "telewebion.com",
+        "bandcamp.com", "namava.ir", "telewebion.com", "pornhub.com", "pinterest.com",
     )
     private val fileExtensions = setOf(
         "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso", "apk", "xapk", "exe", "msi", "dmg", "deb", "pdf", "epub",
@@ -56,6 +56,15 @@ object LinkPlan {
 
     data class Summary(val files: Int, val media: Int)
     fun summarize(urls: List<String>) = Summary(urls.count { classify(it) == LinkKind.FILE }, urls.count { classify(it) == LinkKind.MEDIA })
+
+    /** Detect mislabeled page responses before a generic URL is saved as a file. */
+    fun isHtmlResponse(contentType: String?, prefix: ByteArray): Boolean {
+        val mime = contentType.orEmpty().substringBefore(';').trim()
+        if (mime.equals("text/html", true) || mime.equals("application/xhtml+xml", true)) return true
+        val text = prefix.toString(Charsets.UTF_8).trimStart('\uFEFF', ' ', '\n', '\r', '\t').lowercase()
+        return listOf("<!doctype html", "<html", "<head", "<body", "<script", "<meta", "<title")
+            .any(text::startsWith)
+    }
 }
 
 /** Folder inside Downloads/Ratatoskr, like the category tabs of other download managers. */

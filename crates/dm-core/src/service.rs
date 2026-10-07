@@ -1406,6 +1406,15 @@ impl DownloadService {
             }
         };
 
+        // Many extractors support far more hosts than the curated UI list.
+        // If an otherwise unknown URL answers with a web page, let yt-dlp
+        // identify it instead of saving the page as a corrupt download.
+        if probe.html_page {
+            return self
+                .run_ytdlp_transfer(task, destination_directory, control, on_progress)
+                .await;
+        }
+
         // Probing told us the type and size, so the full rule set can decide
         // the folder and any per-task limits now.
         let decision = crate::rules::evaluate_file_rules(

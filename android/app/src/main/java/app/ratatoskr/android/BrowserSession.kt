@@ -1,7 +1,7 @@
 package app.ratatoskr.android
 
-import android.net.Uri
 import com.yausername.youtubedl_android.YoutubeDLRequest
+import java.net.URI
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -25,9 +25,11 @@ class BrowserSession private constructor(
         ?.split(';')?.joinToString("; ") { "${it.trim()}; Secure" }
 
     private fun appliesTo(value: String): Boolean {
-        val uri = Uri.parse(value)
+        val uri = runCatching { URI(value) }.getOrNull() ?: return false
+        val candidateHost = uri.host ?: return false
+        val candidatePort = uri.port.takeIf { it >= 0 } ?: if (uri.scheme.equals("https", true)) 443 else -1
         return uri.scheme.equals(scheme, ignoreCase = true) &&
-            uri.host.equals(host, ignoreCase = true) && (uri.port.takeIf { it >= 0 } ?: 443) == port
+            candidateHost.equals(host, ignoreCase = true) && candidatePort == port
     }
 
     override fun toString() = "BrowserSession(origin=https://$host:$port, cookie=<redacted>)"
@@ -35,7 +37,7 @@ class BrowserSession private constructor(
     companion object {
         private const val MAX_COOKIE_BYTES = 16 * 1024
         fun create(sourceUrl: String, cookieHeader: String?): BrowserSession? {
-            val uri = Uri.parse(sourceUrl)
+            val uri = runCatching { URI(sourceUrl) }.getOrNull() ?: return null
             val host = uri.host?.takeIf { it.isNotBlank() } ?: return null
             if (!uri.scheme.equals("https", ignoreCase = true)) return null
             val cookie = cookieHeader?.trim()?.takeIf { value ->

@@ -8,10 +8,19 @@ class LinkPlanTest {
         assertEquals(LinkKind.MEDIA, LinkPlan.classify("https://www.youtube.com/watch?v=abc"))
         assertEquals(LinkKind.MEDIA, LinkPlan.classify("https://youtu.be/abc"))
         assertEquals(LinkKind.MEDIA, LinkPlan.classify("https://m.instagram.com/reel/abc/"))
+        assertEquals(LinkKind.MEDIA, LinkPlan.classify("https://www.pornhub.com/view_video.php?viewkey=6abbc213c20ff"))
+        assertEquals(LinkKind.MEDIA, LinkPlan.classify("https://www.pinterest.com/pin/123456789/"))
         assertEquals(LinkKind.MEDIA, LinkPlan.classify("https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT"))
         assertEquals(LinkKind.FILE, LinkPlan.classify("https://cdn.example.org/files/Setup.EXE?token=1"))
         assertEquals(LinkKind.FILE, LinkPlan.classify("https://example.org/a/book.pdf"))
         assertEquals(LinkKind.FILE, LinkPlan.classify("https://example.org/watch/123"))
+    }
+    @Test fun detectsMislabeledWebPagesBeforeSavingThem() {
+        assertEquals(true, LinkPlan.isHtmlResponse("text/html; charset=utf-8", byteArrayOf()))
+        assertEquals(true, LinkPlan.isHtmlResponse("application/octet-stream", " <!doctype html><html>".toByteArray()))
+        assertEquals(false, LinkPlan.isHtmlResponse("application/octet-stream", byteArrayOf(0, 1, 2, 3)))
+        org.junit.Assert.assertTrue(LinkPlan.mayTryMedia("https://example.org/share/abc", "not_a_file"))
+        org.junit.Assert.assertFalse(LinkPlan.mayTryMedia("https://example.org/file.mp4", "not_a_file"))
     }
     @Test fun lookalikeHostsAreNotMedia() {
         assertEquals(LinkKind.FILE, LinkPlan.classify("https://evilyoutube.com/x.zip"))

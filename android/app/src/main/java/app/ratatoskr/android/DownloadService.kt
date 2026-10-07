@@ -69,6 +69,7 @@ class DownloadService : Service() {
     private fun halt(id: String, state: TaskState) {
         val task = store.get(id) ?: return
         if (task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED)) return
+        if (state != TaskState.WAITING_NETWORK) BrowserSessionVault.forget(id)
         pendingResume.remove(id)
         MobileRuntime.clearResume(id); MobileRuntime.stop(id)
         store.state(id, state)
@@ -120,6 +121,8 @@ class DownloadService : Service() {
                     if (pendingResume.remove(task.id) && !shuttingDown && store.get(task.id)?.state in setOf(TaskState.SAVED, TaskState.PAUSED, TaskState.FAILED, TaskState.WAITING_NETWORK)) store.state(task.id, TaskState.QUEUED)
                     if (store.get(task.id)?.state == TaskState.CANCELLED) withContext(NonCancellable + ioDispatcher) { discardTransfer(this@DownloadService, task.id) }
                     val finished = store.get(task.id)
+                    if (finished?.state != TaskState.QUEUED && finished?.state != TaskState.WAITING_NETWORK)
+                        BrowserSessionVault.forget(task.id)
                     if (finished?.state == TaskState.FAILED) {
                         getSystemService(NotificationManager::class.java).cancel(task.notificationId)
                         FailureNotifications.publish(this@DownloadService, finished)
@@ -175,6 +178,7 @@ class DownloadService : Service() {
     override fun onDestroy() {
         shuttingDown = true
         running = false
+        BrowserSessionVault.clear()
         runCatching { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(networkCallback) }
         jobs.keys.toList().filter { store.get(it)?.state in TaskPolicy.inFlight }.forEach { halt(it, TaskState.PAUSED) }
         jobs.values.forEach { it.second.stop() }
@@ -191,9 +195,10 @@ class DownloadService : Service() {
         const val ACTION_CANCEL = "app.ratatoskr.android.CANCEL"
         const val ACTION_RESUME = "app.ratatoskr.android.RESUME"
         const val EXTRA_PROCESS = "process"
-        fun start(context: Context, url: String, height: Int?, audio: Boolean, title: String, kind: String = "media", items: String = "") {
+        fun start(context: Context, url: String, height: Int?, audio: Boolean, title: String, kind: String = "media", items: String = "", browserSession: BrowserSession? = null) {
             MobileRuntime.initialize(TaskStore.get(context))
-            TaskStore.get(context).enqueue(rewritten(context, url), height, audio, title, kind, items)
+            val task = TaskStore.get(context).enqueue(rewritten(context, url), height, audio, title, kind, items)
+            browserSession?.let { BrowserSessionVault.attach(task.id, it) }
             wake(context)
         }
         /** Queue many links at once: files go to the segmented engine, media sites to yt-dlp. */

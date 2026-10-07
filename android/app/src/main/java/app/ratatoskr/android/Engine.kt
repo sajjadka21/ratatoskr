@@ -27,7 +27,7 @@ object Engine {
         FFmpeg.getInstance().init(context.applicationContext)
         ready = true
     }
-    fun probe(context: Context, url: String, processId: String? = null, check: () -> Unit = {}): LinkInfo {
+    fun probe(context: Context, url: String, processId: String? = null, check: () -> Unit = {}, session: BrowserSession? = null): LinkInfo {
         val canonical = SafeHttp.canonicalSource(url, check)
         if (Spotify.isTrackUrl(canonical)) return probeSpotify(context, canonical, processId, check)
         cache[canonical]?.takeIf { System.currentTimeMillis() - it.first < 120000 }?.let { return it.second }
@@ -36,6 +36,7 @@ object Engine {
             addOption("--dump-single-json"); addOption("--skip-download"); addOption("--ignore-no-formats-error")
             addOption("--yes-playlist"); addOption("--playlist-end", "51"); addOption("--no-warnings")
             addOption("--socket-timeout", "10"); addOption("--retries", "1"); addOption("--extractor-retries", "1"); addOption("--no-cache-dir")
+            session?.addTo(this, canonical)
         }
         val response = SafeProxy(check).use { proxy ->
             request.addOption("--proxy", proxy.url)
@@ -74,9 +75,22 @@ object Engine {
         return info
     }
     fun work(context: Context, id: String) = File(context.filesDir, "download-work/$id")
-    private fun isMediaRow(target: android.net.Uri): Boolean =
+    internal fun isMediaRow(target: android.net.Uri): Boolean =
         target.scheme == "content" && target.authority == "media" && target.query == null && target.fragment == null &&
-            Regex("/external(?:_primary)?/(?:downloads|images/media)/[0-9]+").matches(target.path.orEmpty())
+            Regex("/external(?:_primary)?/(?:downloads|images/media|file)/[0-9]+").matches(target.path.orEmpty())
+
+    /** Delete only an output row owned by Android's public MediaStore collections. */
+    fun deleteSavedOutput(context: Context, media: SavedMedia): Boolean {
+        val target = android.net.Uri.parse(media.uri)
+        if (!isMediaRow(target)) return false
+        val resolver = context.contentResolver
+        val exists = try {
+            resolver.query(target, arrayOf(android.provider.BaseColumns._ID), null, null, null)?.use { it.moveToFirst() }
+                ?: return false
+        } catch (_: Exception) { return false }
+        if (!exists) return true // It was already removed outside Ratatoskr.
+        return runCatching { resolver.delete(target, null, null) == 1 }.getOrDefault(false)
+    }
     fun discard(context: Context, id: String) {
         val directory = work(context, id)
         var cleaned = true
@@ -133,7 +147,8 @@ object Engine {
             return listOf(result)
         }
         onState(TaskState.PROBING)
-        val info = try { probe(context, task.url, task.id, control::check) }
+        val browserSession = BrowserSessionVault.forTask(task.id)
+        val info = try { probe(context, task.url, task.id, control::check, browserSession) }
         catch (error: Exception) {
             control.check()
             if (allowFallback && LinkPlan.mayTryFile(task.url, DownloadService.errorCode(error)))
@@ -173,6 +188,7 @@ object Engine {
                     addOption("-f", MediaOptions.guardedFormat(task.height, audioOnly || item.kind == "audio"))
                     if (audioOnly || item.kind == "audio") { addOption("-x"); addOption("--audio-format", "m4a") }
                     else addOption("--merge-output-format", "mp4")
+                    browserSession?.addTo(this, info.url)
                 }
                 SafeProxy(control::check).use { proxy ->
                     request.addOption("--proxy", proxy.url)

@@ -335,9 +335,9 @@ async fn serve(
         return socket.shutdown().await;
     }
 
-    // A single-byte probe asks for `bytes=0-0`; anything else asks for the
-    // rest of the file. A server without range support ignores all of that
-    // and answers with the whole body.
+    // The downloader's bounded capability probe asks for `bytes=0-511`; any
+    // other range is transfer work. A server without range support ignores
+    // all of that and answers with the whole body.
     let end = if behaviour.supports_range {
         probe_end(&request).unwrap_or(total - 1).min(total - 1)
     } else {
@@ -387,9 +387,15 @@ async fn serve(
         .unwrap_or(slice.len())
         .min(slice.len());
 
-    // Only a real body transfer counts towards concurrency; the single-byte
-    // capability probe is not a download.
-    let counts_as_body = limit > 1 || slice.len() > 1;
+    // The bounded capability probe is metadata work, not a download. It is
+    // also exempt from deliberate range truncation used by mirror tests.
+    let is_capability_probe = range_start == Some(0) && probe_end(&request) == Some(511);
+    let limit = if is_capability_probe {
+        slice.len()
+    } else {
+        limit
+    };
+    let counts_as_body = !is_capability_probe && (limit > 1 || slice.len() > 1);
 
     if counts_as_body {
         let active = stats.active_bodies.fetch_add(1, Ordering::SeqCst) + 1;

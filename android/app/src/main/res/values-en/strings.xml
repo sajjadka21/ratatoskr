@@ -16,6 +16,12 @@
     <string name="choose_quality">Choose the quality</string>
     <string name="best_quality">Best quality</string>
     <string name="audio_only">Audio only</string>
+    <string name="quality_checking">Loading the qualities available on this site…</string>
+    <string name="quality_available">Qualities are read from the link; Best means the highest available option.</string>
+    <string name="quality_check_fallback">Could not list qualities; the selected maximum will still be applied during download.</string>
+    <string name="quality_batch_hint">For multiple links, this is a maximum; each site uses its best available quality up to that limit.</string>
+    <string name="quality_with_size">%1$s · about %2$s</string>
+    <string name="quality_not_needed">This link has no video; video quality does not apply.</string>
     <string name="video_height">%1$dp</string>
     <string name="cancel">Cancel</string>
     <string name="downloading">Downloading…</string>
@@ -38,7 +44,7 @@
     <string name="share_file">Share file</string>
     <string name="error_space">Not enough storage. Free space and retry; partial data is kept.</string>
     <string name="error_rate">The site limited requests. Wait before retrying.</string>
-    <string name="error_private">Login or permission is required. Private media cannot be downloaded here.</string>
+    <string name="error_private">Login or permission is required. Open the page in the Ratatoskr browser, sign in, then use Download this page.</string>
     <string name="error_removed">This item is unavailable or removed.</string>
     <string name="error_unsupported">This link or media format is not supported.</string>
     <string name="error_timeout">Android stopped this background session. Open the app and resume.</string>
@@ -86,6 +92,9 @@ Tap + to add a link.</string>
     <string name="resume_all">Resume all</string>
     <string name="clear_finished">Clear history</string>
     <string name="remove">Remove</string>
+    <string name="remove_saved_files">Also delete selected downloaded files</string>
+    <string name="remove_files_hint">This permanently deletes the selected saved files from your device.</string>
+    <string name="remove_files_failed">Some files could not be deleted; their entries were kept in the list.</string>
     <string name="clipboard_found">Copied link: %1$s</string>
     <string name="download_now">Download</string>
     <string name="dismiss">Dismiss</string>
@@ -168,7 +177,7 @@ Tap + to add a link.</string>
     <string name="cat_other">Other</string>
     <string name="selected_count">%1$d selected</string>
     <string name="select_all">All</string>
-    <string name="remove_selected">Remove %1$d items from the list? Saved files are kept and unfinished downloads are cancelled.</string>
+    <string name="remove_selected">Remove %1$d items from the list? Unfinished downloads are cancelled.</string>
     <string name="verify_checksum">Verify checksum</string>
     <string name="checksum_hint">Paste an MD5, SHA-1 or SHA-256</string>
     <string name="checksum_bad">That is not a valid checksum (32, 40 or 64 hex characters).</string>
@@ -281,4 +290,5 @@ Tap + to add a link.</string>
     <string name="exit_app">Exit and pause downloads</string>
     <string name="create_queue">Create queue</string>
     <string name="calendar_filter">Calendar</string>
+    <string name="browser_session_notice">A temporary copy is used for this download only; it is not saved with the task or in a separate file. The Ratatoskr browser keeps its own sign-in like a normal browser.</string>
 </resources>

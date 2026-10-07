@@ -3,6 +3,7 @@ package app.ratatoskr.android
 import android.content.ContentValues
 import android.content.Context
 import org.json.JSONObject
+import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.net.URI
@@ -44,7 +45,12 @@ object DirectDownload {
             if (decision == ResumeDecision.REJECT || (decision == ResumeDecision.RESTART && response.status != 200)) throw TransferFailure("invalid_range")
             if (decision == ResumeDecision.RESTART) offset = 0
             val mime = connection.contentType.orEmpty().substringBefore(';').lowercase()
-            if (mime in setOf("text/html", "application/xhtml+xml")) throw TransferFailure("not_a_file")
+            val input = BufferedInputStream(connection.inputStream)
+            input.mark(512)
+            val prefix = ByteArray(512)
+            val prefixLength = input.read(prefix).coerceAtLeast(0)
+            input.reset()
+            if (LinkPlan.isHtmlResponse(mime, prefix.copyOf(prefixLength))) throw TransferFailure("not_a_file")
             val rawName = Regex("filename\\*=UTF-8''([^;]+)", RegexOption.IGNORE_CASE).find(connection.getHeaderField("Content-Disposition").orEmpty())?.groupValues?.get(1)
                 ?.let { runCatching { java.net.URLDecoder.decode(it.replace("+", "%2B"), "UTF-8") }.getOrNull() }
                 ?: Regex("filename=\"?([^\";]+)", RegexOption.IGNORE_CASE).find(connection.getHeaderField("Content-Disposition").orEmpty())?.groupValues?.get(1)
@@ -67,7 +73,7 @@ object DirectDownload {
             val start = android.os.SystemClock.elapsedRealtime()
             var received = 0L; var checkpoint = start
             val rate = MobilePreferences(context).speedLimit
-            FileOutputStream(partial, offset > 0).use { output -> connection.inputStream.use { input ->
+            FileOutputStream(partial, offset > 0).use { output -> input.use { input ->
                 val buffer = ByteArray(64 * 1024)
                 while (true) {
                     control.check(); val count = input.read(buffer); if (count < 0) break

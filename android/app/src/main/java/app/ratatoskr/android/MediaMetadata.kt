@@ -10,7 +10,10 @@ data class MediaItem(
 data class LinkInfo(
     val title: String, val heights: List<Int>, val hasVideo: Boolean,
     val items: List<MediaItem> = emptyList(), val url: String = "", val truncated: Boolean = false,
+    val qualities: List<MediaQualityOption> = emptyList(), val audioBytes: Long? = null,
+    val durationSeconds: Long? = null,
 )
+data class MediaQualityOption(val height: Int, val bytes: Long?)
 
 /** Only Instagram's photo metadata can turn thumbnail candidates into originals.
  * A video poster or another site's preview is never a downloadable photo. */
@@ -42,7 +45,34 @@ object MediaMetadata {
                 if (kind == "photo") image!!.getString("url") else null, thumbnail)
         }
         require(items.isNotEmpty()) { "unsupported_media" }
+        val duration = root.optDouble("duration", Double.NaN).takeIf { it.isFinite() && it > 0 }
+        val rootFormats = root.optJSONArray("formats")
+        val formats = (0 until (rootFormats?.length() ?: 0)).mapNotNull { rootFormats?.optJSONObject(it) }
+        fun hasPicture(format: org.json.JSONObject): Boolean = when (format.optString("vcodec")) {
+            "none" -> false
+            "" -> format.optInt("height") > 0
+            else -> true
+        }
+        fun mayHaveSound(format: org.json.JSONObject) = format.optString("acodec") != "none"
+        fun hasSound(format: org.json.JSONObject) = format.optString("acodec").let { it.isNotEmpty() && it != "none" }
+        fun soundOnly(format: org.json.JSONObject) = hasSound(format) && !hasPicture(format)
+        fun rate(format: org.json.JSONObject) = format.optDouble("tbr", 0.0).takeIf { it.isFinite() && it > 0 } ?: 0.0
+        fun size(format: org.json.JSONObject): Long? {
+            val exact = format.optDouble("filesize", Double.NaN).takeIf { it.isFinite() && it > 0 }
+            val approximate = format.optDouble("filesize_approx", Double.NaN).takeIf { it.isFinite() && it > 0 }
+            val estimated = duration?.let { seconds -> rate(format).takeIf { it > 0 }?.let { it * 1000.0 / 8.0 * seconds } }
+            return (exact ?: approximate ?: estimated)?.takeIf { it.isFinite() && it > 0 }?.toLong()
+        }
+        fun best(rows: List<org.json.JSONObject>) = rows.maxByOrNull(::rate)
+        val audioBytes = best(formats.filter(::soundOnly))?.let(::size)
+        val usableFormats = formats.filter(::hasPicture)
+        val qualities = LinkUtils.offeredHeights(usableFormats.map { it.optInt("height").takeIf { height -> height > 0 } }).map { height ->
+            val pictureBytes = best(usableFormats.filter { it.optInt("height") == height })?.let(::size)
+            val hasMuxedSound = best(usableFormats.filter { it.optInt("height") == height })?.let(::mayHaveSound) == true
+            MediaQualityOption(height, pictureBytes?.let { if (hasMuxedSound) it else it + (audioBytes ?: 0L) })
+        }
         return LinkInfo(root.optString("title").take(300), LinkUtils.offeredHeights(items.flatMap { it.heights }),
-            items.any { it.kind == "video" }, items, canonical, count > 50)
+            items.any { it.kind == "video" }, items, canonical, count > 50, qualities, audioBytes,
+            duration?.toLong())
     }
 }

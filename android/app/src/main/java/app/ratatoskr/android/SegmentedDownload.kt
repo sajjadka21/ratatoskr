@@ -142,20 +142,30 @@ object SegmentedDownload {
         tail
     }
 
-    /** Ask for the first byte: a 206 with a total proves ranges work and gives size, name and identity. */
+    /** Ask for a short prefix: a 206 proves ranges work, and the prefix catches mislabeled HTML pages. */
     internal fun probe(url: String, connections: Int, control: TransferControl, open: (String, Map<String, String>, () -> Unit) -> HttpConnection): Plan? {
-        val connection = open(url, mapOf("Range" to "bytes=0-0"), control::check)
+        val connection = open(url, mapOf("Range" to "bytes=0-511"), control::check)
         try {
             if (connection.responseCode != 206) {
                 if (connection.responseCode == 200 || connection.responseCode == 416) return null
                 SafeHttp.requireSuccess(connection.responseCode)
                 return null
             }
-            val range = Regex("bytes 0-0/(\\d+)").matchEntire(connection.getHeaderField("Content-Range").orEmpty()) ?: return null
-            val total = range.groupValues[1].toLongOrNull() ?: return null
+            val range = Regex("bytes 0-(\\d+)/(\\d+)").matchEntire(connection.getHeaderField("Content-Range").orEmpty()) ?: return null
+            if (range.groupValues[1].toLongOrNull() != 511L) return null
+            val total = range.groupValues[2].toLongOrNull() ?: return null
             if (total < MIN_TOTAL) return null
             val mime = connection.contentType.orEmpty().substringBefore(';').lowercase()
-            if (mime in setOf("text/html", "application/xhtml+xml")) throw TransferFailure("not_a_file")
+            val prefix = connection.inputStream.use { input -> ByteArray(512).also { buffer ->
+                var offset = 0
+                while (offset < buffer.size) {
+                    control.check()
+                    val count = input.read(buffer, offset, buffer.size - offset)
+                    if (count < 0) break
+                    offset += count
+                }
+            } }
+            if (LinkPlan.isHtmlResponse(mime, prefix)) throw TransferFailure("not_a_file")
             val validators = HttpValidators(connection.getHeaderField("ETag"), connection.getHeaderField("Last-Modified"))
             // Without a validator a changed file could be stitched from two versions.
             if (HttpResumePolicy.ifRange(validators) == null) return null

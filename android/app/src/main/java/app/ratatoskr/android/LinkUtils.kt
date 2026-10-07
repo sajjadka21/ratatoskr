@@ -68,8 +68,8 @@ object LinkUtils {
 
     /** Label the actual source heights; never advertise 480p for a 540p source. */
     fun offeredHeights(available: List<Int?>): List<Int> =
-        available.filterNotNull().filter { it > 0 }
-            .distinct().sortedDescending().take(4)
+        available.filterNotNull().filter { it >= 144 }
+            .distinct().sortedDescending()
 
     fun videoFormat(height: Int?): String =
         if (height == null || height <= 0) "bv*+ba/b" else "bv*[height<=$height]+ba/b[height<=$height]"

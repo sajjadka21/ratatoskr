@@ -83,6 +83,24 @@ class MediaMetadataTest {
         assertTrue(info.hasVideo)
     }
 
+    @Test fun videoProbeKeepsEveryRealQualityAndEstimatesSizesLikeDesktop() {
+        val info = MediaMetadata.parse("https://www.youtube.com/watch?v=Fixture123", """
+            {"title":"Quality fixture","duration":20,"formats":[
+              {"height":2160,"vcodec":"vp9","acodec":"none","tbr":5000.0},
+              {"height":720,"vcodec":"h264","acodec":"aac","filesize":3000000,"tbr":2500.0},
+              {"height":720,"vcodec":"h264","acodec":"none","tbr":2000.0},
+              {"height":144,"vcodec":"h264","acodec":"aac","filesize_approx":500000,"tbr":400.0},
+              {"vcodec":"none","acodec":"aac","tbr":128.0},
+              {"height":90,"vcodec":"h264","acodec":"none","tbr":30.0}
+            ]}
+        """.trimIndent())
+
+        assertEquals(listOf(2160, 720, 144), info.heights)
+        assertEquals(listOf(MediaQualityOption(2160, 12_820_000), MediaQualityOption(720, 3_000_000), MediaQualityOption(144, 500_000)), info.qualities)
+        assertEquals(320_000L, info.audioBytes)
+        assertEquals(20L, info.durationSeconds)
+    }
+
     @Test fun thumbnailOnlyMetadataFromAnotherSiteIsUnsupportedMedia() {
         val metadata = """
             {"title": "Preview, not an image download", "formats": [],

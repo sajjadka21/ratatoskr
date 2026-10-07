@@ -15,15 +15,19 @@ data class SavedMedia(val uri: String, val name: String, val mime: String)
 
 /** Native mobile backend. Workspaces survive pause, failure and process death. */
 object Engine {
+    private val outputNameLock = Any()
     @Volatile private var ready = false
     private val cache = ConcurrentHashMap<String, Pair<Long, LinkInfo>>()
+    /** UI reads only already resolved public metadata; it never starts extraction. */
+    fun cachedThumbnail(url: String): String? = cache[url]?.second?.items?.firstOrNull()?.thumbnail
     @Synchronized fun init(context: Context) {
         if (ready) return
+        BundledMediaEngine.install(context.applicationContext)
         YoutubeDL.getInstance().init(context.applicationContext)
         FFmpeg.getInstance().init(context.applicationContext)
         ready = true
     }
-    fun probe(context: Context, url: String, processId: String? = null, check: () -> Unit = {}): LinkInfo {
+    fun probe(context: Context, url: String, processId: String? = null, check: () -> Unit = {}, session: BrowserSession? = null): LinkInfo {
         val canonical = SafeHttp.canonicalSource(url, check)
         if (Spotify.isTrackUrl(canonical)) return probeSpotify(context, canonical, processId, check)
         cache[canonical]?.takeIf { System.currentTimeMillis() - it.first < 120000 }?.let { return it.second }
@@ -31,7 +35,8 @@ object Engine {
         val request = YoutubeDLRequest(canonical).apply {
             addOption("--dump-single-json"); addOption("--skip-download"); addOption("--ignore-no-formats-error")
             addOption("--yes-playlist"); addOption("--playlist-end", "51"); addOption("--no-warnings")
-            addOption("--socket-timeout", "15"); addOption("--no-cache-dir")
+            addOption("--socket-timeout", "10"); addOption("--retries", "1"); addOption("--extractor-retries", "1"); addOption("--no-cache-dir")
+            session?.addTo(this, canonical)
         }
         val response = SafeProxy(check).use { proxy ->
             request.addOption("--proxy", proxy.url)
@@ -57,7 +62,7 @@ object Engine {
         val search = "ytsearch1:${track.query}"
         val request = YoutubeDLRequest(search).apply {
             addOption("--dump-single-json"); addOption("--skip-download"); addOption("--ignore-no-formats-error")
-            addOption("--no-warnings"); addOption("--socket-timeout", "15"); addOption("--no-cache-dir")
+            addOption("--no-warnings"); addOption("--socket-timeout", "10"); addOption("--retries", "1"); addOption("--extractor-retries", "1"); addOption("--no-cache-dir")
         }
         val response = SafeProxy(check).use { proxy ->
             request.addOption("--proxy", proxy.url)
@@ -70,9 +75,22 @@ object Engine {
         return info
     }
     fun work(context: Context, id: String) = File(context.filesDir, "download-work/$id")
-    private fun isMediaRow(target: android.net.Uri): Boolean =
+    internal fun isMediaRow(target: android.net.Uri): Boolean =
         target.scheme == "content" && target.authority == "media" && target.query == null && target.fragment == null &&
-            Regex("/external(?:_primary)?/(?:downloads|images/media)/[0-9]+").matches(target.path.orEmpty())
+            Regex("/external(?:_primary)?/(?:downloads|images/media|file)/[0-9]+").matches(target.path.orEmpty())
+
+    /** Delete only an output row owned by Android's public MediaStore collections. */
+    fun deleteSavedOutput(context: Context, media: SavedMedia): Boolean {
+        val target = android.net.Uri.parse(media.uri)
+        if (!isMediaRow(target)) return false
+        val resolver = context.contentResolver
+        val exists = try {
+            resolver.query(target, arrayOf(android.provider.BaseColumns._ID), null, null, null)?.use { it.moveToFirst() }
+                ?: return false
+        } catch (_: Exception) { return false }
+        if (!exists) return true // It was already removed outside Ratatoskr.
+        return runCatching { resolver.delete(target, null, null) == 1 }.getOrDefault(false)
+    }
     fun discard(context: Context, id: String) {
         val directory = work(context, id)
         var cleaned = true
@@ -96,7 +114,10 @@ object Engine {
     }
 
     fun download(context: Context, task: MobileTask, control: TransferControl,
-                 onState: (TaskState) -> Unit, onProgress: (Float) -> Unit): List<SavedMedia> {
+                 onState: (TaskState) -> Unit, onProgress: (Float) -> Unit): List<SavedMedia> = downloadAttempt(context, task, control, onState, onProgress, true)
+
+    private fun downloadAttempt(context: Context, task: MobileTask, control: TransferControl,
+                 onState: (TaskState) -> Unit, onProgress: (Float) -> Unit, allowFallback: Boolean): List<SavedMedia> {
         val store = TaskStore.get(context)
         if (task.kind == "file") {
             control.check()
@@ -108,20 +129,32 @@ object Engine {
             onState(TaskState.DOWNLOADING)
             val prefs = MobilePreferences(context)
             val directory = work(context, task.id)
-            val file = SegmentedDownload.fetch(directory, task.fileName, task.url, control, prefs.connections, prefs.speedLimit,
+            val file = try { SegmentedDownload.fetch(directory, task.fileName, task.url, control, prefs.connections, prefs.speedLimit,
                 { received, total ->
                     val done = if (total > 0) minOf(received, total) else received   // overlapping retries can briefly count extra
                     store.update(task.id, ContentValues().apply { put("bytes_done", done); put("total_bytes", total) })
                     onProgress(if (total > 0) done.toFloat() / total * 98f else 0f)
                 },
                 { DirectDownload.fetch(context, task, task.url, control, onProgress) })
+            } catch (error: Exception) {
+                if (allowFallback && LinkPlan.mayTryMedia(task.url, DownloadService.errorCode(error)))
+                    return downloadAttempt(context, task.copy(kind = "media"), control, onState, onProgress, false)
+                throw error
+            }
             control.check(); onState(TaskState.SAVING)
             val result = publish(context, task.id, 1, file, control)
             discard(context, task.id)
             return listOf(result)
         }
         onState(TaskState.PROBING)
-        val info = probe(context, task.url, task.id, control::check)
+        val browserSession = BrowserSessionVault.forTask(task.id)
+        val info = try { probe(context, task.url, task.id, control::check, browserSession) }
+        catch (error: Exception) {
+            control.check()
+            if (allowFallback && LinkPlan.mayTryFile(task.url, DownloadService.errorCode(error)))
+                return downloadAttempt(context, task.copy(kind = "file"), control, onState, onProgress, false)
+            throw error
+        }
         val spotify = Spotify.isTrackUrl(task.url)
         val audioOnly = task.audioOnly || spotify
         store.update(task.id, ContentValues().apply { put("title", info.title) })
@@ -155,6 +188,7 @@ object Engine {
                     addOption("-f", MediaOptions.guardedFormat(task.height, audioOnly || item.kind == "audio"))
                     if (audioOnly || item.kind == "audio") { addOption("-x"); addOption("--audio-format", "m4a") }
                     else addOption("--merge-output-format", "mp4")
+                    browserSession?.addTo(this, info.url)
                 }
                 SafeProxy(control::check).use { proxy ->
                     request.addOption("--proxy", proxy.url)
@@ -186,16 +220,13 @@ object Engine {
         if (MobilePreferences(context).saveTree.isNotEmpty()) return publishToTree(context, id, index, file, control)
         if (android.os.Build.VERSION.SDK_INT < 29) return publishLegacy(context, id, index, file, control)
         ensureSpace(context.filesDir, file.length())
-        val name = LinkUtils.safeFileName(Plugins.rename(PluginStore.active(context), file.name))
+        val requestedName = LinkUtils.safeFileName(Plugins.rename(PluginStore.active(context), file.name))
         val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "application/octet-stream"
         val images = mime.startsWith("image/")
         val collection = if (images) MediaStore.Images.Media.EXTERNAL_CONTENT_URI else MediaStore.Downloads.EXTERNAL_CONTENT_URI
-        val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, name); put(MediaStore.MediaColumns.MIME_TYPE, mime)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, "${if (images) Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_DOWNLOADS}/Ratatoskr" +
-                if (images || !MobilePreferences(context).categoryFolders) "" else FileCategory.folder(name, mime).let { if (it.isEmpty()) "" else "/$it" })
-            put(MediaStore.MediaColumns.IS_PENDING, 1)
-        }
+        val relativePath = "${if (images) Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_DOWNLOADS}/Ratatoskr" +
+            if (images || !MobilePreferences(context).categoryFolders) "" else FileCategory.folder(requestedName, mime).let { if (it.isEmpty()) "" else "/$it" }
+        var name = requestedName
         val resolver = context.contentResolver
         val journal = File(work(context, id), "pending-$index.uri")
         if (journal.exists()) {
@@ -207,7 +238,16 @@ object Engine {
             if (committed != null) { TaskStore.get(context).recordOutput(id, index, committed); journal.delete(); return committed }
             runCatching { resolver.delete(old, null, null) }; journal.delete()
         }
-        val target = resolver.insert(collection, values) ?: throw TransferFailure("no_space")
+        val target = synchronized(outputNameLock) {
+            name = UniqueFileName.next(requestedName) { candidate -> mediaNameExists(resolver, collection, relativePath, candidate) }
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+                put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            resolver.insert(collection, values) ?: throw TransferFailure("no_space")
+        }
         journal.parentFile?.mkdirs(); journal.writeText(target.toString())
         var published = false
         try {
@@ -217,8 +257,8 @@ object Engine {
                 output.flush()
             } } ?: throw IOException("cannot_write")
             control.check()
-            values.clear(); values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-            if (resolver.update(target, values, null, null) != 1) throw TransferFailure("cannot_write")
+            val publishValues = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+            if (resolver.update(target, publishValues, null, null) != 1) throw TransferFailure("cannot_write")
             published = true
             val result = SavedMedia(target.toString(), name, mime)
             TaskStore.get(context).recordOutput(id, index, result)
@@ -229,18 +269,29 @@ object Engine {
             throw error
         }
     }
+
+    private fun mediaNameExists(resolver: android.content.ContentResolver, collection: android.net.Uri, relativePath: String, name: String): Boolean =
+        runCatching {
+            resolver.query(collection, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME),
+                "${MediaStore.MediaColumns.RELATIVE_PATH}=? AND ${MediaStore.MediaColumns.DISPLAY_NAME}=?",
+                arrayOf(relativePath, name), null)?.use { it.moveToFirst() } == true
+        }.getOrDefault(false)
+
     /** Saves into the folder the user chose (Storage Access Framework), with the same category sub-folders. */
     private fun publishToTree(context: Context, id: String, index: Int, file: File, control: TransferControl): SavedMedia {
         val resolver = context.contentResolver
         val tree = android.net.Uri.parse(MobilePreferences(context).saveTree)
-        val name = LinkUtils.safeFileName(Plugins.rename(PluginStore.active(context), file.name))
+        var name = LinkUtils.safeFileName(Plugins.rename(PluginStore.active(context), file.name))
         val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "application/octet-stream"
         var target: android.net.Uri? = null
         try {
             var parent = android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, android.provider.DocumentsContract.getTreeDocumentId(tree))
             val category = if (!MobilePreferences(context).categoryFolders) "" else FileCategory.folder(name, mime)
             if (category.isNotEmpty()) parent = childFolder(context, tree, parent, category)
-            target = android.provider.DocumentsContract.createDocument(resolver, parent, mime, name) ?: throw TransferFailure("cannot_write")
+            target = synchronized(outputNameLock) {
+                name = UniqueFileName.next(name) { candidate -> documentNameExists(context, tree, parent, candidate) }
+                android.provider.DocumentsContract.createDocument(resolver, parent, mime, name)
+            } ?: throw TransferFailure("cannot_write")
             resolver.openOutputStream(target)?.use { output -> file.inputStream().use { input ->
                 val buffer = ByteArray(64 * 1024)
                 while (true) { control.check(); val count = input.read(buffer); if (count < 0) break; output.write(buffer, 0, count) }
@@ -270,22 +321,31 @@ object Engine {
         return android.provider.DocumentsContract.createDocument(resolver, parent, android.provider.DocumentsContract.Document.MIME_TYPE_DIR, name) ?: throw TransferFailure("cannot_write")
     }
 
+    private fun documentNameExists(context: Context, tree: android.net.Uri, parent: android.net.Uri, name: String): Boolean {
+        val children = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(tree, android.provider.DocumentsContract.getDocumentId(parent))
+        return runCatching {
+            context.contentResolver.query(children, arrayOf(android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { cursor ->
+                while (cursor.moveToNext()) if (cursor.getString(0).equals(name, ignoreCase = true)) return@use true
+                false
+            } == true
+        }.getOrDefault(false)
+    }
+
     /** Android 8 and 9 have no per-app Downloads access: write into the public Downloads folder (the user
      * allowed storage once) and register the file so other apps can open and share it. */
     private fun publishLegacy(context: Context, id: String, index: Int, file: File, control: TransferControl): SavedMedia {
         if (context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED)
             throw TransferFailure("storage_permission")
-        val name = LinkUtils.safeFileName(Plugins.rename(PluginStore.active(context), file.name))
+        val requestedName = LinkUtils.safeFileName(Plugins.rename(PluginStore.active(context), file.name))
         val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "application/octet-stream"
         val images = mime.startsWith("image/")
         val root = File(Environment.getExternalStoragePublicDirectory(if (images) Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_DOWNLOADS), "Ratatoskr")
-        val category = if (images || !MobilePreferences(context).categoryFolders) "" else FileCategory.folder(name, mime)
+        val category = if (images || !MobilePreferences(context).categoryFolders) "" else FileCategory.folder(requestedName, mime)
         val directory = if (category.isEmpty()) root else File(root, category)
         if (!directory.isDirectory && !directory.mkdirs()) throw TransferFailure("cannot_write")
         ensureSpace(directory, file.length())
-        var target = File(directory, name)
-        var copy = 1
-        while (target.exists()) { target = File(directory, name.substringBeforeLast('.', name) + " ($copy)" + name.substringAfterLast('.', "").let { if (it.isEmpty()) "" else ".$it" }); copy++ }
+        val name = UniqueFileName.next(requestedName) { candidate -> File(directory, candidate).exists() }
+        val target = File(directory, name)
         val temp = File(directory, target.name + ".ratatoskr-part")
         try {
             file.inputStream().use { input -> temp.outputStream().use { output ->

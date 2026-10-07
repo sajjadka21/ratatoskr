@@ -10,8 +10,8 @@ import android.widget.*
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 
-/** A small browser that notices downloads and media on the pages you open, so they can be saved with Ratatoskr.
- * It passes only the link on: no cookies, no history and no passwords are kept for downloads. */
+/** A small browser that notices media on the pages you open. A site session can be
+ * handed to one Ratatoskr download from memory; it is never saved with the task. */
 class BrowserActivity : MobileActivity() {
     private lateinit var web: WebView
     private lateinit var address: EditText
@@ -38,6 +38,8 @@ class BrowserActivity : MobileActivity() {
         box.addView(bar, LinearLayout.LayoutParams(-1, dp(3)))
 
         web = WebView(this).apply {
+            isVerticalScrollBarEnabled = false
+            isHorizontalScrollBarEnabled = false
             settings.javaScriptEnabled = true; settings.domStorageEnabled = true
             settings.allowFileAccess = false; settings.allowContentAccess = false; settings.setSupportMultipleWindows(false)
             webViewClient = object : WebViewClient() {
@@ -96,7 +98,7 @@ class BrowserActivity : MobileActivity() {
         AlertDialog.Builder(this).setTitle(R.string.found_title)
             .setItems(links.map { it.substringBefore('?').substringAfterLast('/').ifEmpty { it } }.toTypedArray()) { _, index ->
                 val url = links[index]
-                if (BrowserUrl.isStream(url)) startActivity(Intent(this, ShareActivity::class.java).putExtra(Intent.EXTRA_TEXT, url))
+                if (BrowserUrl.isStream(url)) startActivity(mediaIntent(url))
                 else { DownloadService.start(this, url, null, false, "", "file"); Toast.makeText(this, R.string.browser_added, Toast.LENGTH_SHORT).show() }
             }.show()
     }
@@ -105,6 +107,15 @@ class BrowserActivity : MobileActivity() {
     private fun downloadPage() {
         val url = web.url
         if (url == null || !LinkUtils.isPublicHttpUrl(url)) { Toast.makeText(this, R.string.bad_link, Toast.LENGTH_SHORT).show(); return }
-        startActivity(Intent(this, ShareActivity::class.java).putExtra(Intent.EXTRA_TEXT, url))
+        startActivity(mediaIntent(url))
+    }
+
+    private fun mediaIntent(url: String): Intent {
+        val session = BrowserSession.create(url, CookieManager.getInstance().getCookie(url))
+        val token = BrowserSessionHandoff.stage(session)
+        return Intent(this, ShareActivity::class.java)
+            .putExtra(Intent.EXTRA_TEXT, url)
+            .putExtra("choose-media-items", true)
+            .putExtra(ShareActivity.EXTRA_BROWSER_SESSION, token)
     }
 }

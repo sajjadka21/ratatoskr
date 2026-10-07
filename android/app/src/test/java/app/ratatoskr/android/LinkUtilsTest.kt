@@ -26,7 +26,7 @@ class LinkUtilsTest {
 
     @Test fun onlyHeightsTheVideoHasAreOffered() {
         assertEquals(listOf(1080, 720, 360), LinkUtils.offeredHeights(listOf(360, 720, 1080)))
-        assertEquals(listOf(2160, 1440, 1080, 720), LinkUtils.offeredHeights(listOf(1080, 2160, 1440, 720, 480, 360)))
+        assertEquals(listOf(4320, 2160, 1440, 1080, 720, 480, 360, 144), LinkUtils.offeredHeights(listOf(1080, 2160, 1440, 720, 480, 360, 144, 90, 4320)))
         assertEquals(listOf(540), LinkUtils.offeredHeights(listOf(540)))
         assertEquals(emptyList<Int>(), LinkUtils.offeredHeights(listOf(null)))
     }

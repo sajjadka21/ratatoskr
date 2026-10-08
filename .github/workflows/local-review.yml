@@ -1,0 +1,56 @@
+name: Local review artifacts
+on:
+  push:
+    branches: ['codex/folder-tap-review-*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: local-review-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  android:
+    name: Android local test APKs
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned Android native toolchain
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Verify native preparation
+        run: python3 -m unittest discover -s scripts -p test_android_native.py -v
+      - name: Test and build localreview application
+        working-directory: android
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Verify APK signatures and native payloads
+        run: |
+          for apk in android/app/build/outputs/apk/debug/*.apk; do
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$apk"
+            "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep "package: name='app.ratatoskr.android.localreview'"
+            python3 scripts/verify_android_native.py "$apk"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ratatoskr-local-review-android
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ratatoskr-local-review-test-reports
+          path: android/app/build/reports/tests/
+          if-no-files-found: ignore
+

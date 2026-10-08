@@ -17,6 +17,12 @@
     <string name="choose_quality">کیفیت را انتخاب کنید</string>
     <string name="best_quality">بهترین کیفیت</string>
     <string name="audio_only">فقط صدا</string>
+    <string name="quality_checking">در حال دریافت کیفیت‌های موجود از سایت…</string>
+    <string name="quality_available">کیفیت‌ها از خود لینک خوانده شده‌اند؛ بهترین کیفیت یعنی بالاترین کیفیت در دسترس.</string>
+    <string name="quality_check_fallback">فهرست کیفیت‌ها قابل دریافت نبود؛ سقف انتخابی هنگام دانلود اعمال می‌شود.</string>
+    <string name="quality_batch_hint">برای چند لینک، این گزینه سقف کیفیت است و هر سایت بهترین کیفیت موجود تا آن سقف را انتخاب می‌کند.</string>
+    <string name="quality_with_size">%1$s · حدود %2$s</string>
+    <string name="quality_not_needed">این لینک ویدیو ندارد؛ کیفیت تصویر برای آن قابل انتخاب نیست.</string>
     <string name="video_height">%1$dp</string>
     <string name="cancel">انصراف</string>
     <string name="downloading">در حال دانلود…</string>
@@ -39,7 +45,7 @@
     <string name="share_file">اشتراک فایل</string>
     <string name="error_space">فضای ذخیره کافی نیست. فضا را خالی کنید و دوباره ادامه دهید؛ فایل ناقص حفظ شده است.</string>
     <string name="error_rate">سایت درخواست‌ها را محدود کرده است. کمی صبر کنید و دوباره تلاش کنید.</string>
-    <string name="error_private">ورود یا اجازه لازم است. محتوای خصوصی در این برنامه دانلود نمی‌شود.</string>
+    <string name="error_private">این سایت ورود یا اجازهٔ دسترسی می‌خواهد. صفحه را در مرورگر راتاتوسک باز کن، وارد حسابت شو و «دانلود این صفحه» را بزن.</string>
     <string name="error_removed">این مورد در دسترس نیست یا حذف شده است.</string>
     <string name="error_unsupported">این لینک یا قالب رسانه پشتیبانی نمی‌شود.</string>
     <string name="error_timeout">اندروید این جلسهٔ پس‌زمینه را متوقف کرد. برنامه را باز کنید و ادامه دهید.</string>
@@ -87,6 +93,9 @@
     <string name="resume_all">ادامه همه</string>
     <string name="clear_finished">پاک‌کردن تاریخچه</string>
     <string name="remove">حذف</string>
+    <string name="remove_saved_files">فایل‌های ذخیره‌شدهٔ انتخاب‌شده هم پاک شوند</string>
+    <string name="remove_files_hint">این کار فایل‌های ذخیره‌شده را از حافظهٔ دستگاه پاک می‌کند.</string>
+    <string name="remove_files_failed">بعضی فایل‌ها پاک نشدند؛ موردهای مربوط در فهرست باقی ماندند.</string>
     <string name="clipboard_found">لینک کپی‌شده: %1$s</string>
     <string name="download_now">دانلود</string>
     <string name="dismiss">بستن</string>
@@ -169,7 +178,7 @@
     <string name="cat_other">سایر</string>
     <string name="selected_count">%1$d انتخاب شد</string>
     <string name="select_all">همه</string>
-    <string name="remove_selected">%1$d مورد از فهرست حذف شود؟ فایل‌های ذخیره‌شده پاک نمی‌شوند و دانلودهای ناتمام لغو می‌شوند.</string>
+    <string name="remove_selected">%1$d مورد از فهرست حذف شود؟ دانلودهای ناتمام لغو می‌شوند.</string>
     <string name="verify_checksum">بررسی checksum</string>
     <string name="checksum_hint">MD5، SHA-1 یا SHA-256 را بچسبانید</string>
     <string name="checksum_bad">این مقدار یک checksum معتبر نیست (۳۲، ۴۰ یا ۶۴ نویسه‌ی هگز).</string>
@@ -192,6 +201,37 @@
     <string name="link_changed">لینک عوض شد؛ دانلود از ادامه‌ی قبلی پیش می‌رود.</string>
     <string name="browser">مرورگر</string>
     <string name="browser_address">آدرس یا جستجو</string>
+    <string name="browser_back">صفحهٔ قبل</string>
+    <string name="browser_forward">صفحهٔ بعد</string>
+    <string name="browser_menu">گزینه‌های مرورگر</string>
+    <string name="browser_tabs">تب‌ها</string>
+    <string name="browser_tabs_count">تب‌ها · %1$d</string>
+    <string name="browser_tabs_title">تب‌های باز</string>
+    <string name="browser_new_tab">تب تازه</string>
+    <string name="browser_close_tab">بستن تب</string>
+    <string name="browser_tab_limit">حداکثر ۱۲ تب باز می‌شود.</string>
+    <string name="browser_bookmark">نشانک</string>
+    <string name="browser_saved">ذخیره‌شده</string>
+    <string name="browser_bookmarked">به نشانک‌ها اضافه شد.</string>
+    <string name="browser_bookmark_removed">از نشانک‌ها برداشته شد.</string>
+    <string name="browser_open_bookmarks">نشانک‌ها</string>
+    <string name="browser_open_history">تاریخچه</string>
+    <string name="browser_bookmarks_empty">هنوز نشانکی ذخیره نشده است.</string>
+    <string name="browser_history_empty">تاریخچه خالی است.</string>
+    <string name="browser_clear_bookmarks">پاک کردن نشانک‌ها</string>
+    <string name="browser_bookmarks_cleared">نشانک‌ها پاک شدند.</string>
+    <string name="browser_clear_history">پاک کردن تاریخچه</string>
+    <string name="browser_clear_history_q">تاریخچهٔ مرورگر از این دستگاه پاک شود؟</string>
+    <string name="browser_history_cleared">تاریخچه پاک شد.</string>
+    <string name="browser_reload">تازه‌سازی</string>
+    <string name="browser_media_found">رسانه‌های پیدا‌شده</string>
+    <string name="browser_media_count">رسانه · %1$d</string>
+    <string name="browser_download_page">دانلود صفحه</string>
+    <string name="browser_home_title">مرورگر راتاتوسک</string>
+    <string name="browser_home_hint">آدرس را بالا وارد کن یا یکی از صفحه‌های ذخیره‌شده را باز کن.</string>
+    <string name="browser_unsupported_link">این نوع پیوند در مرورگر داخلی باز نمی‌شود.</string>
+    <string name="browser_page_failed">بارگذاری صفحه ناموفق بود؛ اتصال را بررسی و دوباره تلاش کن.</string>
+    <string name="browser_download_file">دریافت فایل</string>
     <string name="found_media">رسانه‌ی پیداشده: %1$d</string>
     <string name="found_title">رسانه‌های این صفحه</string>
     <string name="nothing_found">هنوز رسانه‌ای در این صفحه دیده نشده. ویدیو را پخش کنید و دوباره بزنید.</string>
@@ -282,4 +322,6 @@
     <string name="exit_app">خروج کامل و توقف دانلودها</string>
     <string name="create_queue">ساخت صف</string>
     <string name="calendar_filter">تقویم</string>
+    <string name="browser_session_notice">یک کپی موقت فقط برای همین دانلود استفاده می‌شود و در صف یا فایل جداگانه ذخیره نمی‌شود؛ مرورگر راتاتوسک نشست ورود خودش را مثل مرورگر عادی نگه می‌دارد.</string>
 </resources>
+

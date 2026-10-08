@@ -206,15 +206,39 @@ class MainActivity : MobileActivity(), TaskActions {
         selectedTasks().forEach { runCatching { DownloadService.command(this, it.id, action) } }
         selection.clear(); render()
     }
-    /** Finished downloads leave the list (their files stay); unfinished ones are cancelled first. */
-    private fun removeSelection() {
-        val chosen = selectedTasks()
+    /** Finished entries can optionally delete their saved files; unfinished downloads are cancelled. */
+    private fun removeSelection() = confirmRemove(selectedTasks(), clearSelection = true)
+
+    private fun confirmRemove(chosen: List<MobileTask>, clearSelection: Boolean) {
         if (chosen.isEmpty()) return
-        AlertDialog.Builder(this).setMessage(getString(R.string.remove_selected, chosen.size))
+        val hasSavedFiles = chosen.any { task ->
+            task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED, TaskState.FAILED) &&
+                TaskStore.get(this).outputs(task.id).ifEmpty { if (task.uri.isNotEmpty()) listOf(SavedMedia(task.uri, task.fileName, task.mime)) else emptyList() }.isNotEmpty()
+        }
+        val deleteFiles = CheckBox(this).apply {
+            text = getString(R.string.remove_saved_files)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            isChecked = false
+            visibility = if (hasSavedFiles) View.VISIBLE else View.GONE
+        }
+        val message = getString(R.string.remove_selected, chosen.size) +
+            if (hasSavedFiles) "\n\n" + getString(R.string.remove_files_hint) else ""
+        val dialog = AlertDialog.Builder(this).setMessage(message)
+        if (hasSavedFiles) dialog.setView(deleteFiles)
+        dialog
             .setPositiveButton(R.string.remove) { _, _ ->
                 val store = TaskStore.get(this)
-                chosen.forEach { if (it.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED, TaskState.FAILED)) store.remove(it.id) else runCatching { DownloadService.command(this, it.id, DownloadService.ACTION_CANCEL) } }
-                selection.clear(); render()
+                var deletionFailed = false
+                chosen.forEach { task ->
+                    if (task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED, TaskState.FAILED)) {
+                        val outputs = store.outputs(task.id).ifEmpty { if (task.uri.isNotEmpty()) listOf(SavedMedia(task.uri, task.fileName, task.mime)) else emptyList() }
+                        val deleted = !deleteFiles.isChecked || outputs.all { Engine.deleteSavedOutput(this, it) }
+                        if (deleted) store.remove(task.id) else deletionFailed = true
+                    } else runCatching { DownloadService.command(this, task.id, DownloadService.ACTION_CANCEL) }
+                }
+                if (clearSelection) selection.clear()
+                render()
+                if (deletionFailed) Toast.makeText(this, R.string.remove_files_failed, Toast.LENGTH_LONG).show()
             }.setNegativeButton(R.string.cancel, null).show()
     }
 
@@ -257,7 +281,7 @@ class MainActivity : MobileActivity(), TaskActions {
         }
     }
     override fun share(task: MobileTask) { media(task).takeIf { it.isNotEmpty() }?.let { MediaActions.share(this, it) } }
-    override fun remove(task: MobileTask) { TaskStore.get(this).remove(task.id); render() }
+    override fun remove(task: MobileTask) = confirmRemove(listOf(task), clearSelection = false)
     override fun schedule(task: MobileTask) {
         MobileDates.choose(this, task.startAt.takeIf { it > System.currentTimeMillis() } ?: System.currentTimeMillis() + 3_600_000) { chosen ->
             TaskStore.get(this).schedule(task.id, chosen)
@@ -396,9 +420,9 @@ class MainActivity : MobileActivity(), TaskActions {
         history = false; query = ""; category = null; formatFilter = null; dateFrom = 0; dateUntil = 0; sortOrder = 0; selection.clear()
     }
 
-    private fun downloadLinks(text: String, audio: Boolean): Boolean = submitLinks(text, audio, IntakeOptions())
+    private fun downloadLinks(text: String, audio: Boolean, height: Int?): Boolean = submitLinks(text, audio, height, IntakeOptions())
 
-    private fun submitLinks(text: String, audio: Boolean, options: IntakeOptions): Boolean {
+    private fun submitLinks(text: String, audio: Boolean, height: Int?, options: IntakeOptions): Boolean {
         val urls = LinkPlan.parse(text)
         if (urls.isEmpty() || urls.any { !LinkUtils.isPublicHttpUrl(it) } || runCatching { options.validate() }.isFailure) return false
         val identities = urls.map { LinkUtils.contentIdentity(it) }.toSet()
@@ -410,16 +434,16 @@ class MainActivity : MobileActivity(), TaskActions {
                 "\n\n" + getString(R.string.duplicate_warning)
             addPrefill = null
             AlertDialog.Builder(this).setTitle(R.string.duplicate_title).setMessage(message)
-                .setPositiveButton(R.string.duplicate_again) { _, _ -> submitLinks(text, audio, options.copy(allowDuplicate = true)) }
+                .setPositiveButton(R.string.duplicate_again) { _, _ -> submitLinks(text, audio, height, options.copy(allowDuplicate = true)) }
                 .setNeutralButton(R.string.duplicate_view) { _, _ -> showAllDownloads(); render(); details(old) }
                 .setNegativeButton(R.string.cancel) { _, _ -> addPrefill = text }.show()
             return true
         }
-        val prefs = MobilePreferences(this)
-        val result = runCatching { DownloadService.startMany(this, urls, prefs.defaultHeight, audio, options) }
+        val result = runCatching { DownloadService.startMany(this, urls, height, audio, options) }
         if (result.isFailure) { Toast.makeText(this, R.string.error_retry, Toast.LENGTH_LONG).show(); return false }
         addPrefill = null; showAllDownloads(); render()
         Toast.makeText(this, if (options.initialState == TaskState.SAVED) R.string.add_saved_feedback else R.string.add_started_feedback, Toast.LENGTH_LONG).show()
         return true
     }
 }
+

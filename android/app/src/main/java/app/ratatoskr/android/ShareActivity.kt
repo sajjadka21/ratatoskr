@@ -21,6 +21,7 @@ sealed class ShareProbe {
 class ShareModel : ViewModel() {
     val state = MutableStateFlow<ShareProbe>(ShareProbe.Loading)
     val selected = mutableSetOf<Int>()
+    var browserSession: BrowserSession? = null
     private var started = false
     private val process = "probe-${UUID.randomUUID()}"
     fun probe(context: Context, url: String) {
@@ -28,7 +29,7 @@ class ShareModel : ViewModel() {
         started = true
         viewModelScope.launch {
             state.value = try {
-                val info = withContext(Dispatchers.IO) { Engine.probe(context.applicationContext, url, process) }
+                val info = withContext(Dispatchers.IO) { Engine.probe(context.applicationContext, url, process, session = browserSession) }
                 selected.addAll(info.items.map { it.index }); ShareProbe.Ready(info)
             } catch (error: CancellationException) { throw error }
             catch (error: Exception) { ShareProbe.Failed(DownloadService.errorCode(error)) }
@@ -47,6 +48,7 @@ class ShareActivity : MobileActivity() {
         box = column().apply { setPadding(dp(20), dp(20), dp(20), dp(16)); setBackgroundColor(paper) }
         setContentView(ScrollView(this).apply { isVerticalScrollBarEnabled = false; isHorizontalScrollBarEnabled = false; addView(box) })
         model = ViewModelProvider(this)[ShareModel::class.java]
+        model.browserSession = BrowserSessionHandoff.take(intent.getStringExtra(EXTRA_BROWSER_SESSION))
         val shared = if (intent?.action == Intent.ACTION_VIEW) {
             // ratatoskr://add?url=… from our own pages, or a plain file link opened with "Open with Ratatoskr"
             val data = intent?.dataString
@@ -96,6 +98,7 @@ class ShareActivity : MobileActivity() {
     private fun choices(info: LinkInfo) {
         box.removeAllViews()
         box.addView(label(info.title.ifEmpty { "Ratatoskr" }, 20f))
+        if (model.browserSession != null) box.addView(label(getString(R.string.browser_session_notice), 13f))
         if (info.truncated) box.addView(label(getString(R.string.album_limit), 14f))
         if (info.items.size > 1) {
             box.addView(label(getString(R.string.select_items), 14f))
@@ -111,7 +114,7 @@ class ShareActivity : MobileActivity() {
             box.addView(button(label) {
                 val selected = model.selected.filter { index -> !audio || info.items.first { it.index == index }.kind != "photo" }.sorted()
                 if (selected.isEmpty()) { Toast.makeText(this, R.string.selection_empty, Toast.LENGTH_SHORT).show(); return@button }
-                DownloadService.start(this, info.url, height, audio, info.title, items = selected.joinToString(",")); finish()
+                DownloadService.start(this, info.url, height, audio, info.title, items = selected.joinToString(","), browserSession = model.browserSession); finish()
             })
         }
         if (info.hasVideo) {
@@ -123,10 +126,16 @@ class ShareActivity : MobileActivity() {
         box.addView(button(getString(R.string.cancel)) { finish() })
     }
     private fun enqueue(urls: List<String>, height: Int?, audio: Boolean, kind: String? = null) {
-        if (kind == null) DownloadService.startMany(this, urls, height, audio)
+        if (kind == null && model.browserSession != null && urls.size == 1)
+            DownloadService.start(this, urls.single(), height, audio, "", browserSession = model.browserSession)
+        else if (kind == null) DownloadService.startMany(this, urls, height, audio)
         else urls.forEach { DownloadService.start(this, it, height, audio, "", kind) }
         finish()
     }
     private fun finishWith(message: Int) { Toast.makeText(this, message, Toast.LENGTH_LONG).show(); finish() }
-    companion object { const val EXTRA_FROM_CLIPBOARD = "from_clipboard" }
+    companion object {
+        const val EXTRA_FROM_CLIPBOARD = "from_clipboard"
+        const val EXTRA_BROWSER_SESSION = "browser-session-handoff"
+    }
 }
+

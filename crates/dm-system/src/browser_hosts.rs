@@ -117,6 +117,16 @@ pub fn register(host: &Path, folder: &Path) -> io::Result<Vec<Browser>> {
             registered.push(browser);
         }
     }
+    // A successful manifest write is not enough: if every per-user registry
+    // write failed, the browser cannot discover the native host. Surface that
+    // failure to the Settings UI instead of reporting a misleading success.
+    #[cfg(windows)]
+    if registered.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Windows could not register the browser connector for this user",
+        ));
+    }
     Ok(registered)
 }
 
@@ -289,9 +299,12 @@ mod tests {
         let missing = directory.path().join("dm-native-host.exe");
         assert!(register(&missing, directory.path()).is_err());
 
-        std::fs::write(&missing, b"").unwrap();
         let folder = directory.path().join("hosts");
-        let _ = register(&missing, &folder).unwrap();
+        fs::create_dir_all(&folder).unwrap();
+        let host = directory.path().join("dm-native-host.exe");
+        fs::write(&host, b"").unwrap();
+        write_if_changed(&folder.join("chromium-host.json"), &manifest(&host, false)).unwrap();
+        write_if_changed(&folder.join("firefox-host.json"), &manifest(&host, true)).unwrap();
         let written: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(folder.join("firefox-host.json")).unwrap(),
         )
@@ -304,3 +317,4 @@ mod tests {
         );
     }
 }
+

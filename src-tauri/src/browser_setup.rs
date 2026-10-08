@@ -13,8 +13,8 @@ use tracing::{info, warn};
 pub struct BrowserConnection {
     /// The connector program is installed next to the app.
     pub host_found: bool,
-    /// Browsers that can now reach the app: `chrome`, `edge`, `brave`,
-    /// `chromium`, `firefox`.
+    /// Browsers with a valid native-host registry entry. This does not prove
+    /// that the extension is installed or enabled in that browser.
     pub registered: Vec<String>,
     pub connected: Vec<String>,
     /// The extension folder shipped with the app, for loading it by hand.
@@ -145,3 +145,4 @@ fn launch(program: &str, argument: &str) -> Result<(), String> {
             .map_err(|error| error.to_string())
     }
 }
+

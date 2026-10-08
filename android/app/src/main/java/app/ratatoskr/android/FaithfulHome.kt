@@ -91,7 +91,7 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
         if (state.selecting) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             UiIcon(R.drawable.ui_x, R.string.cancel) { onSelection(R.string.cancel) }
             Text(stringResource(R.string.selected_count, state.selectionCount), Modifier.weight(1f))
-        } else if (!search) Text(stringResource(R.string.nav_downloads), Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 12.dp), fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Right)
+        } else if (!search) Text(stringResource(R.string.nav_downloads), Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 12.dp), fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Start)
         if (search) {
             BackHandler { search = false; onQuery("") }
             val focus = remember { FocusRequester() }
@@ -144,7 +144,7 @@ fun AbHome(state: AbHomeState, actions: TaskActions, onAdd: () -> Unit, onQuery:
                 val groups = listOf(ungrouped.filter { it.task.state in TaskPolicy.inFlight }, ungrouped.filter { it.task.state !in TaskPolicy.inFlight && it.task.state !in setOf(TaskState.COMPLETED, TaskState.CANCELLED) }, ungrouped.filter { it.task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED) })
                 groups.forEachIndexed { index, group ->
                     if (group.isNotEmpty()) {
-                        item(key = "section-$index") { Text(stringResource(when(index) { 0 -> R.string.group_transferring; 2 -> R.string.group_completed; else -> R.string.pending_downloads }) + " (${java.text.NumberFormat.getIntegerInstance(LocalContext.current.resources.configuration.locales[0]).format(group.size)})", Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 12.dp, bottom = 4.dp), fontSize = 16.sp, lineHeight=22.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Right) }
+                        item(key = "section-$index") { Text(stringResource(when(index) { 0 -> R.string.group_transferring; 2 -> R.string.group_completed; else -> R.string.pending_downloads }) + " (${java.text.NumberFormat.getIntegerInstance(LocalContext.current.resources.configuration.locales[0]).format(group.size)})", Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 12.dp, bottom = 4.dp), fontSize = 16.sp, lineHeight=22.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Start) }
                         items(group, key = { it.task.id }) { row -> if (index == 0) ActiveTransfer(row, state.selecting, actions) else FileRow(row, state.selecting, actions) }
                         if (index == 0) item(key = "network") { NetworkStatus() }
                     }
@@ -272,8 +272,8 @@ private fun kindIcon(task:MobileTask):Int {
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
                 if(selecting)Checkbox(row.selected,{actions.toggle(t)}) else TransferAction(t,actions)
-                Column(Modifier.weight(1f).padding(horizontal=12.dp),horizontalAlignment=Alignment.End) {
-                    Text(t.title.ifEmpty { t.fileName.ifEmpty { LinkPlan.host(t.url) } },fontSize=16.sp,maxLines=2,overflow=TextOverflow.Ellipsis,textAlign=TextAlign.End,style=MaterialTheme.typography.bodyLarge.copy(textDirection=TextDirection.Ltr))
+                Column(Modifier.weight(1f).padding(horizontal=12.dp),horizontalAlignment=Alignment.Start) {
+                    Text(t.title.ifEmpty { t.fileName.ifEmpty { LinkPlan.host(t.url) } },fontSize=16.sp,maxLines=2,overflow=TextOverflow.Ellipsis,textAlign=TextAlign.Start,style=MaterialTheme.typography.bodyLarge.copy(textDirection=TextDirection.Ltr))
                     Text(LinkPlan.host(t.url),fontSize=13.sp,lineHeight=18.sp,color=c.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
                 }
                 PreviewImage(row.thumbnail ?: t.uri.takeIf { it.isNotBlank() },t,Modifier.width(88.dp).height(64.dp))
@@ -286,7 +286,7 @@ private fun kindIcon(task:MobileTask):Int {
             }
             val parts=row.stats.split(" · ");val speed=parts.firstOrNull { it.endsWith("/s") }.orEmpty();val eta=parts.drop(1).firstOrNull { !it.endsWith("/s") }.orEmpty()
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) { Text(speed,fontSize=13.sp,lineHeight=18.sp,color=c.onSurfaceVariant);Text(eta.ifEmpty { if(t.state!=TaskState.DOWNLOADING)MobileText.state(LocalContext.current,t) else "" },fontSize=13.sp,lineHeight=18.sp,color=c.onSurfaceVariant) }
-            Text(parts.firstOrNull().orEmpty(),Modifier.fillMaxWidth(),fontSize=13.sp,lineHeight=18.sp,color=c.onSurfaceVariant,textAlign=TextAlign.End,style=MaterialTheme.typography.bodyMedium.copy(textDirection=TextDirection.Ltr))
+            Text(parts.firstOrNull().orEmpty(),Modifier.fillMaxWidth(),fontSize=13.sp,lineHeight=18.sp,color=c.onSurfaceVariant,textAlign=TextAlign.Start,style=MaterialTheme.typography.bodyMedium.copy(textDirection=TextDirection.Ltr))
         }
     }
 }
@@ -328,15 +328,44 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
     }
 }
 
+private sealed interface QualityProbeState {
+    data object Idle : QualityProbeState
+    data object Loading : QualityProbeState
+    data class Ready(val info: LinkInfo) : QualityProbeState
+    data class Failed(val code: String) : QualityProbeState
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun AbEnterUrl(prefill:String,defaultAudio:Boolean,onClose:()->Unit,onPaste:()->String,onDownload:(String,Boolean)->Boolean,folder:String="Downloads/Ratatoskr",onFolder:()->Unit={},onSubmit:((String,Boolean,IntakeOptions)->Boolean)?=null,groups:List<String> = emptyList(),previousTasks:List<MobileTask> = emptyList()) {
+@Composable fun AbEnterUrl(prefill:String,defaultAudio:Boolean,onClose:()->Unit,onPaste:()->String,onDownload:(String,Boolean,Int?)->Boolean,folder:String="Downloads/Ratatoskr",onFolder:()->Unit={},onSubmit:((String,Boolean,Int?,IntakeOptions)->Boolean)?=null,groups:List<String> = emptyList(),previousTasks:List<MobileTask> = emptyList()) {
     var text by rememberSaveable(prefill) { mutableStateOf(prefill) };var audio by rememberSaveable { mutableStateOf(defaultAudio) }
     var more by rememberSaveable { mutableStateOf(defaultAudio) };var invalid by rememberSaveable { mutableStateOf(false) }
     val urls=remember(text){LinkPlan.parse(text)};val counts=remember(urls){LinkPlan.summarize(urls)};val c=MaterialTheme.colorScheme
+    val activity = LocalContext.current as MobileActivity
+    val defaultHeight = MobilePreferences(activity).defaultHeight
+    var qualityHeight by rememberSaveable(prefill) { mutableStateOf<Int?>(defaultHeight) }
+    val probeUrl = urls.singleOrNull()?.takeIf { LinkPlan.classify(it) == LinkKind.MEDIA }
+    val hasMediaLinks = urls.any { LinkPlan.classify(it) == LinkKind.MEDIA }
+    val qualityProbe by produceState<QualityProbeState>(QualityProbeState.Idle, probeUrl) {
+        if (probeUrl == null) { value = QualityProbeState.Idle; return@produceState }
+        kotlinx.coroutines.delay(350)
+        if (!LinkUtils.isPublicHttpUrl(probeUrl)) { value = QualityProbeState.Idle; return@produceState }
+        value = QualityProbeState.Loading
+        val processId = "quality-${java.util.UUID.randomUUID()}"
+        value = try {
+            QualityProbeState.Ready(withContext(Dispatchers.IO) { Engine.probe(activity.applicationContext, probeUrl, processId) })
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            Engine.cancel(processId); throw error
+        } catch (error: Exception) {
+            QualityProbeState.Failed(DownloadService.errorCode(error))
+        }
+    }
+    LaunchedEffect(probeUrl) {
+        qualityHeight = defaultHeight
+        audio = defaultAudio
+    }
     var queueDialog by rememberSaveable { mutableStateOf(false) }
     var group by rememberSaveable { mutableStateOf("") }; var startAt by rememberSaveable { mutableLongStateOf(0) }
     var groupMenu by remember { mutableStateOf(false) }
-    val activity = LocalContext.current as MobileActivity
     val destinationTree = MobilePreferences(activity).saveTree
     val folderFiles by produceState<FolderFileInspection?>(null, urls, destinationTree) {
         value = null
@@ -347,7 +376,7 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
     }
     fun submit(mode: IntakeMode): Boolean {
         val options = IntakeOptions(mode, if (mode in setOf(IntakeMode.SCHEDULE, IntakeMode.QUEUE)) startAt else 0, if (mode == IntakeMode.QUEUE) group.trim() else "")
-        invalid = runCatching { options.validate(); if (onSubmit != null) !onSubmit(text, audio, options) else !onDownload(text, audio) }.getOrDefault(true)
+        invalid = runCatching { options.validate(); if (onSubmit != null) !onSubmit(text, audio, qualityHeight, options) else !onDownload(text, audio, qualityHeight) }.getOrDefault(true)
         return !invalid
     }
     val focus=remember { FocusRequester() }
@@ -358,7 +387,7 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
                 Text(stringResource(R.string.new_download),Modifier.weight(1f),fontSize=24.sp,fontWeight=FontWeight.Bold)
                 UiIcon(R.drawable.ui_x,R.string.cancel,onClose)
             }
-            Text(stringResource(R.string.link_label),Modifier.fillMaxWidth().padding(bottom=6.dp),fontSize=14.sp,color=c.onSurfaceVariant,textAlign=TextAlign.Right)
+            Text(stringResource(R.string.link_label),Modifier.fillMaxWidth().padding(bottom=6.dp),fontSize=14.sp,color=c.onSurfaceVariant,textAlign=TextAlign.Start)
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 OutlinedTextField(text,{text=it;invalid=false},Modifier.fillMaxWidth().focusRequester(focus),maxLines=3,singleLine=urls.size<=1,isError=invalid,shape=Round,
                     placeholder={Text("https://",fontSize=14.sp)},textStyle=MaterialTheme.typography.bodyLarge.copy(textDirection=TextDirection.Ltr),
@@ -400,6 +429,43 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
                     }
                 }
             }
+            if (hasMediaLinks) {
+                val info = (qualityProbe as? QualityProbeState.Ready)?.info
+                val currentHeight = qualityHeight
+                val choices = (info?.takeIf { it.items.size == 1 }?.heights?.takeIf { it.isNotEmpty() } ?: listOf(1080, 720, 480, 360)).distinct().toMutableList()
+                if (currentHeight != null && currentHeight !in choices) choices.add(0, currentHeight)
+                fun labelWithSize(label: String, bytes: Long?): String = if (bytes != null) activity.getString(R.string.quality_with_size, label, Format.bytes(bytes)) else label
+                Surface(Modifier.fillMaxWidth().padding(top = 12.dp), shape = Round, color = c.surfaceVariant.copy(alpha = .48f), border = BorderStroke(1.dp, c.outline.copy(alpha = .45f))) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text(stringResource(R.string.choose_quality), fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        if (info?.hasVideo == false) {
+                            Text(stringResource(R.string.quality_not_needed), Modifier.padding(top = 8.dp), fontSize = 13.sp, color = c.onSurfaceVariant)
+                        } else {
+                            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(selected = currentHeight == null && !audio, onClick = { qualityHeight = null; audio = false }, label = { Text(labelWithSize(activity.getString(R.string.best_quality), info?.qualities?.firstOrNull()?.bytes)) })
+                                choices.forEach { height ->
+                                    val bytes = info?.qualities?.firstOrNull { it.height == height }?.bytes
+                                    val heightLabel = activity.getString(R.string.video_height, height)
+                                    FilterChip(selected = currentHeight == height && !audio, onClick = { qualityHeight = height; audio = false }, label = { Text(labelWithSize(heightLabel, bytes)) })
+                                }
+                                FilterChip(selected = audio, onClick = { audio = true }, label = { Text(labelWithSize(activity.getString(R.string.audio_only), info?.audioBytes)) })
+                            }
+                        }
+                        val probeMessage = when (val state = qualityProbe) {
+                            QualityProbeState.Loading -> stringResource(R.string.quality_checking)
+                            is QualityProbeState.Failed -> stringResource(if (state.code == "auth_required") R.string.error_private else R.string.quality_check_fallback)
+                            QualityProbeState.Idle -> stringResource(R.string.quality_batch_hint)
+                            is QualityProbeState.Ready -> when {
+                                !state.info.hasVideo -> stringResource(R.string.quality_not_needed)
+                                state.info.items.size > 1 -> stringResource(R.string.quality_batch_hint)
+                                state.info.qualities.isNotEmpty() -> stringResource(R.string.quality_available)
+                                else -> stringResource(R.string.quality_check_fallback)
+                            }
+                        }
+                        Text(probeMessage, Modifier.padding(top = 6.dp), fontSize = 12.sp, color = c.onSurfaceVariant)
+                    }
+                }
+            }
             Surface(Modifier.fillMaxWidth().padding(top=12.dp).clickable(onClick=onFolder),shape=Round,color=c.surface,border=BorderStroke(1.dp,c.outline.copy(alpha=c.outline.alpha*.8f))) {
                 Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically) {
                     Icon(painterResource(R.drawable.ui_folder),null,Modifier.size(24.dp));Spacer(Modifier.width(12.dp))
@@ -413,14 +479,13 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
                 }
             }
             AnimatedVisibility(more) { Column {
-                Row(Modifier.clickable{audio=!audio},verticalAlignment=Alignment.CenterVertically) { Checkbox(audio,{audio=it});Text(stringResource(R.string.audio_only_all),fontSize=14.sp) }
                 OutlinedButton(onClick = { MobileDates.choose(activity, if (startAt > System.currentTimeMillis()) startAt else System.currentTimeMillis() + 3_600_000) { startAt = it; invalid = false } }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = Round) {
                     Icon(painterResource(R.drawable.ui_clock), null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.choose_date_time))
                 }
                 Text(stringResource(R.string.pattern_hint),fontSize=12.sp,color=c.onSurfaceVariant)
             } }
-            Text(stringResource(R.string.automatic_hint),Modifier.fillMaxWidth().padding(top=12.dp,bottom=20.dp),fontSize=12.sp,color=c.onSurfaceVariant,textAlign=TextAlign.Right)
+            Text(stringResource(R.string.automatic_hint),Modifier.fillMaxWidth().padding(top=12.dp,bottom=20.dp),fontSize=12.sp,color=c.onSurfaceVariant,textAlign=TextAlign.Start)
             if (startAt > 0) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.scheduled_for, MobileDates.format(activity, startAt)), Modifier.weight(1f), color = c.primary, fontSize = 13.sp)
                 UiIcon(R.drawable.ui_x, R.string.schedule_clear) { startAt = 0; invalid = false }
@@ -462,3 +527,4 @@ private fun java.io.InputStream.readBytesBounded(limit:Int=2*1024*1024):ByteArra
         confirmButton = { TextButton(onClick = { if (submit(IntakeMode.QUEUE)) queueDialog = false }) { Text(stringResource(R.string.add_queue)) } },
         dismissButton = { TextButton(onClick = { queueDialog = false }) { Text(stringResource(R.string.cancel)) } }, containerColor = c.surface)
 }
+

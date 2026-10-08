@@ -1,7 +1,7 @@
 name: Local review artifacts
 on:
   push:
-    branches: ['codex/folder-tap-review-*']
+    branches: ['codex/folder-tap-review-*', 'codex/android-browser-review-*']
   workflow_dispatch:
 permissions:
   contents: read

@@ -134,7 +134,7 @@ class BrowserActivity : MobileActivity() {
 
     private fun actionText(value: String, contentDescription: Int, fallback: Int = 0, action: () -> Unit) = TextView(this).apply {
         text = value.ifEmpty { if (fallback != 0) getString(fallback, 0) else getString(contentDescription) }
-        textSize = 12f; gravity = Gravity.CENTER; setTextColor(accent); contentDescription = getString(contentDescription)
+        textSize = 12f; gravity = Gravity.CENTER; setTextColor(accent); this.contentDescription = getString(contentDescription)
         setOnClickListener { action() }; background = rounded(surface, 12)
     }
 

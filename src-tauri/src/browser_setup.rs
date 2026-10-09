@@ -11,10 +11,10 @@ use tracing::{info, warn};
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserConnection {
-    /// The connector program is installed next to the app.
+    /// The connector program is present beside the app or in bundled resources.
     pub host_found: bool,
-    /// Browsers that can now reach the app: `chrome`, `edge`, `brave`,
-    /// `chromium`, `firefox`.
+    /// Browsers with a valid native-host registry entry. This does not prove
+    /// that the extension is installed or enabled in that browser.
     pub registered: Vec<String>,
     pub connected: Vec<String>,
     /// The extension folder shipped with the app, for loading it by hand.
@@ -29,10 +29,13 @@ fn manifests_folder<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
     crate::portable::app_data(app).map(|folder| folder.join("native-messaging"))
 }
 
-fn host_program() -> Option<PathBuf> {
-    std::env::current_exe()
-        .ok()
-        .and_then(|exe| browser_hosts::host_beside(&exe))
+fn host_program<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
+    let executable = std::env::current_exe().ok()?;
+    let resources = app
+        .path()
+        .resolve("dm-native-host.exe", BaseDirectory::Resource)
+        .ok();
+    browser_hosts::host_for(&executable, resources.as_deref())
 }
 
 pub fn extension_folder<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
@@ -46,7 +49,7 @@ pub fn extension_folder<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
 /// connector program is not there (a development build without it).
 pub fn register<R: Runtime>(app: &AppHandle<R>) -> Result<Vec<Browser>, String> {
     let host =
-        host_program().ok_or_else(|| "the browser connector program is missing".to_owned())?;
+        host_program(app).ok_or_else(|| "the browser connector program is missing".to_owned())?;
     let folder = manifests_folder(app).ok_or_else(|| "no application data folder".to_owned())?;
     let registered = browser_hosts::register(&host, &folder).map_err(|error| error.to_string())?;
     info!(browsers = registered.len(), "browser connector registered");
@@ -54,7 +57,7 @@ pub fn register<R: Runtime>(app: &AppHandle<R>) -> Result<Vec<Browser>, String> 
 }
 
 pub fn register_quietly<R: Runtime>(app: &AppHandle<R>) {
-    if host_program().is_none() {
+    if host_program(app).is_none() {
         return;
     }
     if let Err(error) = register(app) {
@@ -81,7 +84,7 @@ pub fn connection<R: Runtime>(app: &AppHandle<R>) -> BrowserConnection {
         .unwrap_or(0);
     BrowserConnection {
         connected: dm_system::browser_health::connected_browsers(&records, now),
-        host_found: host_program().is_some(),
+        host_found: host_program(app).is_some(),
         registered: browser_hosts::registered()
             .into_iter()
             .map(|browser| browser.name().to_owned())

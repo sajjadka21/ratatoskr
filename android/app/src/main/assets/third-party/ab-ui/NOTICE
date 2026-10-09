@@ -1,0 +1,9 @@
+AB Download Manager Android UI
+Copyright AB Download Manager contributors
+https://github.com/amir1376/ab-download-manager
+Apache License, Version 2.0 (see LICENSE).
+
+Ratatoskr modifications: replace KMP resource/theme/component wrappers with Android Compose and TaskStore adapters; retain the AB toolbar, page overlay, download list/row and URL-sheet structure. Add Persian/English resources, Ratatoskr themes, accessible actions, automatic file/media routing, clipboard batch input, retry and background-download integration.
+Upstream revision: 777ac0a9f5c47e9afeb34e7fddb37c477b9923f3
+
+AB Download Manager is an independent project; no endorsement is implied.

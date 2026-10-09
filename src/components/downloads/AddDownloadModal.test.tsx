@@ -6,6 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { I18nProvider } from "../../i18n/I18n";
 import { AddDownloadModal } from "./AddDownloadModal";
+import { invoke } from "@tauri-apps/api/core";
+import type { DownloadQueue } from "../../types/download";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 // Extractor probes are unrelated to keyboard navigation and require the
 // native bridge. Keep the real modal, labels, inputs and action menu.
@@ -18,6 +22,7 @@ describe("add-download modal keyboard navigation", () => {
   let outside: HTMLButtonElement;
 
   beforeEach(() => {
+    vi.mocked(invoke).mockReset().mockResolvedValue({ matches: [], partial: false });
     vi.useFakeTimers();
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
       .IS_REACT_ACT_ENVIRONMENT = true;
@@ -34,21 +39,25 @@ describe("add-download modal keyboard navigation", () => {
     document.body.replaceChildren();
   });
 
-  async function renderModal(options: { open?: boolean; ready?: boolean; submitting?: boolean } = {}) {
+  const submitted = vi.fn();
+  async function renderModal(options: { open?: boolean; ready?: boolean; submitting?: boolean; duplicate?: boolean; duplicateUrls?: string[]; url?: string; linkCount?: number; queues?: DownloadQueue[] } = {}) {
     await act(async () => {
       root.render(
         <I18nProvider language="en">
           <AddDownloadModal
             open={options.open ?? true}
-            url={options.ready ? "https://example.com/file.zip" : ""}
+            url={options.url ?? (options.ready ? "https://example.com/file.zip" : "")}
             submitting={options.submitting ?? false}
             engineReady={options.ready ?? false}
             error={null}
-            linkCount={options.ready ? 1 : 0}
-            queues={[]}
+            linkCount={options.linkCount ?? (options.ready ? 1 : 0)}
+            queues={options.queues ?? []}
+            duplicateCount={options.duplicate ? 1 : 0}
+            completedDuplicateCount={options.duplicate ? 1 : 0}
+            duplicateUrls={options.duplicateUrls ?? (options.duplicate ? (options.url ?? "https://example.com/file.zip").split("\n") : [])}
             onUrlChange={() => {}}
             onClose={() => {}}
-            onSubmit={() => {}}
+            onSubmit={submitted}
           />
         </I18nProvider>,
       );
@@ -61,6 +70,99 @@ describe("add-download modal keyboard navigation", () => {
   function dialog() {
     return document.querySelector<HTMLElement>('[role="dialog"]')!;
   }
+  it("shows an actual folder match without history or blocking download", async () => {
+    vi.mocked(invoke).mockResolvedValue({ matches: [{ sourceName: "file.zip", name: "file (1).zip", folder: "D:/Downloads", exact: false }], partial: false });
+    await renderModal({ ready: true });
+    await act(async () => { await vi.advanceTimersByTimeAsync(450); });
+    expect(dialog().querySelector(".add-download-modal__folder-inspection")!.textContent).toContain("file (1).zip");
+    expect(dialog().querySelector<HTMLButtonElement>(".add-download-modal__submit")!.disabled).toBe(false);
+    expect(dialog().querySelector('input[type="checkbox"]')).toBeNull();
+  });
+  it("reports an unavailable folder inspection without claiming absence", async () => {
+    vi.mocked(invoke).mockRejectedValue(new Error("access unavailable"));
+    await renderModal({ ready: true });
+    await act(async () => { await vi.advanceTimersByTimeAsync(450); });
+    const hint = dialog().querySelector(".add-download-modal__folder-inspection")!.textContent;
+    expect(hint?.length).toBeGreaterThan(0);
+    expect(hint).not.toContain("No files");
+    expect(dialog().querySelector<HTMLButtonElement>(".add-download-modal__submit")!.disabled).toBe(false);
+  });
+  it("keeps download later visible and puts only queue actions in the queue menu", async () => {
+    await renderModal({ ready: true });
+    const later = [...dialog().querySelectorAll<HTMLButtonElement>("footer button")].find(b => b.textContent?.includes("Download later"))!;
+    expect(later).toBeDefined();
+    submitted.mockClear();
+    await act(async () => later.click());
+    expect(submitted).toHaveBeenCalledWith({ kind: "download-later" }, "https://example.com/file.zip", null, "new-only");
+    await act(async () => dialog().querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')!.click());
+    const menu = dialog().querySelector('[role="menu"]')!;
+    expect(menu.textContent).not.toContain("Download later");
+    expect(menu.textContent).not.toContain("Start now");
+  });
+
+  it("presents each queue as a clear clickable destination", async () => {
+    const queues: DownloadQueue[] = [{
+      id: "default", name: "Default Queue", enabled: true, state: "stopped", sortOrder: 0,
+      maxConcurrent: 1, maxConcurrentPerHost: null, defaultPriority: "normal", createdAt: 1, updatedAt: 1,
+    }];
+    await renderModal({ ready: true, queues });
+    await act(async () => dialog().querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')!.click());
+    const option = dialog().querySelector<HTMLButtonElement>('[role="menuitem"]')!;
+    expect(option.textContent).toContain("Default Queue");
+    expect(option.textContent).toContain("Add");
+    expect(option.querySelector("small")).toBeNull();
+    submitted.mockClear();
+    await act(async () => option.click());
+    expect(submitted).toHaveBeenCalledWith({ kind: "queue", queueId: "default" }, "https://example.com/file.zip", null, "new-only");
+  });
+
+  it("shows a concise history warning and requires explicit consent before another copy", async () => {
+    await renderModal({ ready: true, duplicate: true });
+    expect(dialog().querySelector('[role="status"]')!.textContent).toContain("Already downloaded: 1");
+    expect(dialog().querySelector('[role="status"]')!.textContent).not.toContain("Series episode 03.mp4");
+    expect(dialog().querySelector<HTMLButtonElement>(".add-download-modal__submit")!.disabled).toBe(true);
+    await act(async () => dialog().querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    const start = dialog().querySelector<HTMLButtonElement>(".add-download-modal__submit")!;
+    expect(start.disabled).toBe(false);
+    submitted.mockClear();
+    await act(async () => start.click());
+    expect(submitted).toHaveBeenCalledTimes(1);
+    await renderModal({ ready: true, duplicate: true, url: "https://example.com/another.zip" });
+    expect(dialog().querySelector<HTMLButtonElement>(".add-download-modal__submit")!.disabled).toBe(true);
+  });
+
+  it("lets the user review a batch, select individual links, and identify history duplicates", async () => {
+    const first = "https://example.com/episode-1.mkv";
+    const second = "https://example.com/episode-2.mkv";
+    const batch = `${first}\n${second}`;
+    await renderModal({ ready: true, duplicate: true, duplicateUrls: [first], linkCount: 2, url: batch });
+    expect(dialog().querySelector<HTMLButtonElement>(".add-download-modal__submit")!.disabled).toBe(true);
+    await act(async () => dialog().querySelector<HTMLButtonElement>(".add-download-modal__manage-links")!.click());
+    expect(dialog().querySelector(".add-download-modal__selection")!.textContent).toContain("Repeat #1");
+    const choices = [...dialog().querySelectorAll<HTMLInputElement>(".add-download-modal__selection-row input")];
+    expect(choices).toHaveLength(2);
+    expect(choices[0]!.checked).toBe(false);
+    expect(choices[1]!.checked).toBe(true);
+    await act(async () => choices[0]!.click());
+    await act(async () => [...dialog().querySelectorAll<HTMLButtonElement>(".add-download-modal__footer button")].find((button) => button.textContent?.includes("Use 2 selected"))!.click());
+    const start = dialog().querySelector<HTMLButtonElement>(".add-download-modal__submit")!;
+    expect(start.disabled).toBe(false);
+    submitted.mockClear();
+    await act(async () => start.click());
+    expect(submitted).toHaveBeenCalledWith({ kind: "start-now" }, batch, null, "all");
+  });
+
+  it("submits only individually selected links from a batch", async () => {
+    const batch = "https://example.com/one.zip\nhttps://example.com/two.zip";
+    await renderModal({ ready: true, linkCount: 2, url: batch });
+    await act(async () => dialog().querySelector<HTMLButtonElement>(".add-download-modal__manage-links")!.click());
+    const choices = [...dialog().querySelectorAll<HTMLInputElement>(".add-download-modal__selection-row input")];
+    await act(async () => choices[1]!.click());
+    await act(async () => [...dialog().querySelectorAll<HTMLButtonElement>(".add-download-modal__footer button")].find((button) => button.textContent?.includes("Use 1 selected"))!.click());
+    submitted.mockClear();
+    await act(async () => dialog().querySelector<HTMLButtonElement>(".add-download-modal__submit")!.click());
+    expect(submitted).toHaveBeenCalledWith({ kind: "start-now" }, "https://example.com/one.zip", null, "new-only");
+  });
 
   function enabledButtons() {
     return [...dialog().querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];

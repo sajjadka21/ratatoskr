@@ -75,6 +75,36 @@ test("all thirteen Windows, Android, source, updater and browser artifacts flatt
     assert.equal(createHash("sha256").update(readFileSync(join(options.output, name))).digest("hex"), digest);
   }
 });
+test("a Windows-only patch release contains no Android or browser packages", (t) => {
+  const options = fixture(t);
+  rmSync(join(options.input, "Ratatoskr-android.apk"));
+  rmSync(join(options.input, "Ratatoskr-android-source.zip"));
+  rmSync(join(options.input, "android-abis"), { recursive: true });
+  rmSync(join(options.input, "browser-packages"), { recursive: true });
+  options.scope = "windows";
+  const manifest = prepareRelease(options);
+  const names = manifest.map((line) => line.split("  ")[1]);
+  assert.equal(manifest.length, 5);
+  assert.deepEqual(names.sort(), [
+    "Ratatoskr-portable.zip", "Ratatoskr_1.0.1_x64-setup.exe",
+    "Ratatoskr_1.0.1_x64-setup.exe.sig", "Ratatoskr_1.0.1_x64_en-US.msi", "latest.json",
+  ].sort());
+});
+test("a Windows and extensions release contains no Android packages", (t) => {
+  const options = fixture(t);
+  rmSync(join(options.input, "Ratatoskr-android.apk"));
+  rmSync(join(options.input, "Ratatoskr-android-source.zip"));
+  rmSync(join(options.input, "android-abis"), { recursive: true });
+  options.scope = "windows-extensions";
+  const manifest = prepareRelease(options);
+  const names = manifest.map((line) => line.split("  ")[1]);
+  assert.equal(manifest.length, 8);
+  assert.deepEqual(names.sort(), [
+    "Ratatoskr-portable.zip", "Ratatoskr_1.0.1_x64-setup.exe",
+    "Ratatoskr_1.0.1_x64-setup.exe.sig", "Ratatoskr_1.0.1_x64_en-US.msi", "latest.json",
+    ...browserPackages,
+  ].sort());
+});
 test("colliding filenames cannot overwrite a release asset", (t) => {
   const options = fixture(t);
   writeFileSync(join(options.input, "portable", "Ratatoskr-android.apk"), "different APK");

@@ -83,20 +83,33 @@
   }
 
   // The video under the pointer, even with the site's controls over it.
+  // Looking through every video on every mouse event becomes expensive on
+  // feeds with many previews. Ask the browser for the elements at this point
+  // and coalesce rapid pointer movement into one check every 50 ms instead.
   function videoAt(x, y) {
-    for (const video of document.querySelectorAll("video")) {
-      const box = video.getBoundingClientRect();
-      if (x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) return video;
+    for (const element of document.elementsFromPoint(x, y)) {
+      const video = element.tagName === "VIDEO" ? element : element.closest?.("video");
+      if (video) return video;
     }
     return null;
   }
 
+  let pointerTimer = 0;
+  let latestPointer = null;
   document.addEventListener(
     "mousemove",
     (event) => {
       if (host.contains(event.target)) return;
-      const video = videoAt(event.clientX, event.clientY);
-      if (video) show(video);
+      latestPointer = { x: event.clientX, y: event.clientY };
+      if (pointerTimer) return;
+      pointerTimer = setTimeout(() => {
+        pointerTimer = 0;
+        const point = latestPointer;
+        latestPointer = null;
+        if (!point) return;
+        const video = videoAt(point.x, point.y);
+        if (video) show(video);
+      }, 50);
     },
     { passive: true }
   );

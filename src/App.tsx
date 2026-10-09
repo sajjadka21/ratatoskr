@@ -12,14 +12,14 @@ import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-import { AddDownloadModal, type AddDownloadAction } from "./components/downloads/AddDownloadModal";
+import { AddDownloadModal, type AddDownloadAction, type DuplicateChoice } from "./components/downloads/AddDownloadModal";
 import { Welcome } from "./components/onboarding/Welcome";
 import { SHOW_WELCOME_EVENT } from "./utils/appEvents";
 import { BulkActionBar, type BulkAction } from "./components/downloads/BulkActionBar";
 import { DownloadContextMenu } from "./components/downloads/DownloadContextMenu";
 import { MobileHandoffDialog } from "./components/downloads/MobileHandoffDialog";
 import { DownloadDetailsPanel, type ActivityEntry } from "./components/downloads/DownloadDetailsPanel";
-import { DownloadTable, type SortKey, type SortState } from "./components/downloads/DownloadTable";
+import { DownloadTable, downloadDate, type SortKey, type SortState } from "./components/downloads/DownloadTable";
 import { RefreshLinkDialog } from "./components/downloads/RefreshLinkDialog";
 import { RemoveHistoryDialog } from "./components/downloads/RemoveHistoryDialog";
 import { ThroughputBand } from "./components/downloads/ThroughputBand";
@@ -32,6 +32,8 @@ import { Toasts, type Toast, type ToastKind } from "./components/feedback/Toasts
 import { AppShell } from "./components/layout/AppShell";
 import type { DownloadSection, SidebarCounts, WorkspacePage } from "./components/layout/Sidebar";
 import { LinkGrabberPage } from "./components/linkgrabber/LinkGrabberPage";
+import { QuickQueueControls } from "./components/queues/QuickQueueControls";
+import { QueueSettingsDialog } from "./components/queues/QueueSettingsDialog";
 import { QueuePage } from "./components/queues/QueuePage";
 import { SettingsPage, type AddDownloadInputMode } from "./components/settings/SettingsPage";
 import { useQueues } from "./hooks/useQueues";
@@ -45,7 +47,6 @@ import { messages, type MessageKey } from "./i18n/messages";
 import type {
   CompletionActionEvent,
   DownloadListItem,
-  DownloadPriority,
   DownloadSettings,
   RestoreOutcome,
   TrafficSummary,
@@ -182,17 +183,20 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     [downloads],
   );
   const [page, setPage] = useState<WorkspacePage>("downloads");
+  const [settingsInitialGroup, setSettingsInitialGroup] = useState<"general" | "downloads" | "network" | "browser" | "system">("general");
   const [section, setSection] = useState<DownloadSection>("all");
-  const [sort, setSort] = useState<SortState>({ key: "added", descending: true });
+  const [sort, setSort] = useState<SortState>({ key: "date", descending: true });
   const [searchQuery, setSearchQuery] = useState("");
 
   const [inputMode, setInputMode] = useState<AddDownloadInputMode>("clipboard");
+  const [ctrlVAutoAdd, setCtrlVAutoAdd] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [downloadSettings, setDownloadSettings] = useState<DownloadSettings | null>(null);
 
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsId, setDetailsId] = useState<string | null>(null);
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
@@ -209,6 +213,10 @@ function App({ preferences, onPreferencesChange }: AppProps) {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [url, setUrl] = useState("");
+  const lastClipboardIntake = useRef("");
+  const [queueSettingsId, setQueueSettingsId] = useState<string | null>(null);
+  const duplicateLinks = useMemo(() => extractHttpUrls(url).filter((link) => knownLinks.has(link.split("#")[0]!)), [url, knownLinks]);
+  const duplicateRecords = useMemo(() => downloads.filter((item) => duplicateLinks.some((link) => item.sourceUrl.split("#")[0] === link.split("#")[0])), [downloads, duplicateLinks]);
   const [addError, setAddError] = useState<string | null>(null);
   const [creatingTasks, setCreatingTasks] = useState(false);
 
@@ -369,10 +377,10 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     startQueue,
     stopQueue,
     setQueueEnabled,
+    setQueueLimits,
     reorderQueue,
     moveQueuedDownload,
     removeFromQueue,
-    changePriority,
   } = useQueues({
     upsertDownloads,
     updateDownloadProgress,
@@ -380,6 +388,23 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     refreshDownloads,
     onTaskUpdated: onQueueTaskUpdated,
   });
+
+  const [quickQueueId, setQuickQueueId] = useState("default");
+  const [quickQueueBusy, setQuickQueueBusy] = useState(false);
+  const quickQueuePending = useRef(false);
+  const quickQueue = queues.find((queue) => queue.id === quickQueueId) ?? queues[0];
+
+  async function toggleQuickQueue() {
+    if (!quickQueue || !quickQueue.enabled || quickQueuePending.current || !allReady) return;
+    quickQueuePending.current = true;
+    setQuickQueueBusy(true);
+    try {
+      await runQueueAction(() => quickQueue.state === "running" ? stopQueue(quickQueue.id) : startQueue(quickQueue.id));
+    } finally {
+      quickQueuePending.current = false;
+      setQuickQueueBusy(false);
+    }
+  }
 
   // The usage chip follows traffic without being a live counter: a refresh
   // every 20 seconds, and whenever the downloads page comes back into view.
@@ -543,6 +568,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
       setPage("downloads");
       setSection("all");
       setFocusedId(payload);
+      setDetailsId(payload);
       setSelectedIds(new Set([payload]));
       setDetailsOpen(true);
     });
@@ -638,6 +664,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
       item.totalBytes ? item.downloadedBytes / item.totalBytes : item.status.toLowerCase() === "completed" ? 1 : 0;
     const compare: Record<SortKey, (a: DownloadListItem, b: DownloadListItem) => number> = {
       added: (a, b) => a.createdAt - b.createdAt,
+      date: (a, b) => downloadDate(a) - downloadDate(b),
       name: (a, b) => displayName(a).localeCompare(displayName(b), language),
       progress: (a, b) => progress(a) - progress(b),
       speed: (a, b) => (liveMetrics[a.id]?.bytesPerSecond ?? -1) - (liveMetrics[b.id]?.bytesPerSecond ?? -1),
@@ -669,7 +696,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   }, [downloads, liveMetrics]);
 
   const resumableCount = downloads.filter((item) => RESUMABLE_STATUSES.has(item.status.toLowerCase())).length;
-  const focusedDownload = detailsOpen ? downloads.find((item) => item.id === focusedId) ?? null : null;
+  const focusedDownload = detailsOpen ? downloads.find((item) => item.id === detailsId) ?? null : null;
   const selectedDownloads = useMemo(
     () => downloads.filter((item) => selectedIds.has(item.id)),
     [downloads, selectedIds],
@@ -809,18 +836,6 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     clearSelection();
   }
 
-  async function runBulkPriority(priority: DownloadPriority) {
-    for (const item of selectedDownloads) {
-      try {
-        await changePriority(item.id, priority);
-      } catch (reason) {
-        notify("error", t("toast.queueFailed", { reason: String(reason) }));
-      }
-    }
-    await refreshDownloads().catch(() => undefined);
-    clearSelection();
-  }
-
   async function pauseAll() {
     try {
       const count = await invoke<number>("pause_all_downloads");
@@ -884,11 +899,22 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     action: AddDownloadAction,
     inputValue = url,
     folder: string | null = null,
+    duplicateChoice: DuplicateChoice = "single-copy",
   ) {
     // LinkGrabber submits without the dialog, so its errors need a toast.
     const report = modalOpen ? setAddError : (message: string) => notify("error", message);
-    const links = extractHttpUrls(inputValue);
-    if (links.length === 0) return report(t("toast.noLinks"));
+    const detectedLinks = extractHttpUrls(inputValue);
+    if (modalOpen && detectedLinks.length > 0) lastClipboardIntake.current = extractHttpUrls(url).join("\n");
+    if (detectedLinks.length === 0) return report(t("toast.noLinks"));
+    const links = duplicateChoice === "new-only"
+      ? detectedLinks.filter((link) => !knownLinks.has(link.split("#")[0]!))
+      : detectedLinks;
+    if (links.length === 0) {
+      setModalOpen(false);
+      setUrl("");
+      notify("info", t("add.duplicateNoneNew"));
+      return;
+    }
     if (!allReady) return report(t("toast.engineNotReady"));
 
     setCreatingTasks(true);
@@ -901,8 +927,8 @@ function App({ preferences, onPreferencesChange }: AppProps) {
       if (action.kind === "create-queue") {
         const queue = await createQueue({
           name: action.queueName,
-          maxConcurrent: 3,
-          maxConcurrentPerHost: 2,
+          maxConcurrent: 1,
+          maxConcurrentPerHost: 1,
           defaultPriority: "normal",
         });
         targetQueueId = queue.id;
@@ -921,8 +947,8 @@ function App({ preferences, onPreferencesChange }: AppProps) {
           (
             await createQueue({
               name,
-              maxConcurrent: BATCH_START_LIMIT,
-              maxConcurrentPerHost: 2,
+              maxConcurrent: 1,
+              maxConcurrentPerHost: 1,
               defaultPriority: "normal",
             })
           ).id;
@@ -990,7 +1016,9 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     setAddError(null);
     if (inputMode === "clipboard") {
       try {
-        setUrl((await invoke<string[]>("read_clipboard_links")).join("\n"));
+        const clipboard = (await invoke<string[]>("read_clipboard_links")).join("\n");
+        setUrl(clipboard === lastClipboardIntake.current ? "" : clipboard);
+        lastClipboardIntake.current = clipboard;
       } catch {
         setUrl("");
       }
@@ -999,6 +1027,26 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     }
     setModalOpen(true);
   }
+
+  useEffect(() => {
+    let current = true;
+    void invoke<boolean>("get_ctrl_v_auto_add").then((enabled) => { if (current) setCtrlVAutoAdd(enabled); }).catch(() => {});
+    return () => { current = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!ctrlVAutoAdd) return;
+    const handlePasteShortcut = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "v" || isTypingTarget(event.target) || modalOpen || welcomeOpen || creatingTasks) return;
+      event.preventDefault();
+      void invoke<string[]>("read_clipboard_links").then((links) => {
+        if (links.length) return createDownloadTasks({ kind: "start-now" }, links.join("\n"));
+        notify("info", t("toast.noLinks"));
+      }).catch((reason) => notify("error", String(reason)));
+    };
+    window.addEventListener("keydown", handlePasteShortcut, true);
+    return () => window.removeEventListener("keydown", handlePasteShortcut, true);
+  }, [ctrlVAutoAdd, modalOpen, welcomeOpen, creatingTasks, t]);
 
   // ---- selection ----------------------------------------------------------
 
@@ -1015,7 +1063,6 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     const previous = lastSelectedIndex.current;
 
     setFocusedId(item.id);
-    setDetailsOpen(true);
     lastSelectedIndex.current = index;
     setSelectedIds((current) => {
       if (range && previous !== null) {
@@ -1062,6 +1109,13 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     (item: DownloadListItem, index: number, event: SyntheticEvent) => rowHandlers.current.select(item, index, event),
     [],
   );
+  const handleRowDetails = useCallback((item: DownloadListItem) => {
+    setFocusedId(item.id);
+    setDetailsId(item.id);
+    setSelectedIds((current) => current.has(item.id) ? current : new Set([item.id]));
+    lastSelectedIndex.current = null;
+    setDetailsOpen(true);
+  }, []);
   const handleRowAction = useCallback(
     (item: DownloadListItem, action: TaskAction) => rowHandlers.current.action(item, action),
     [],
@@ -1118,6 +1172,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
         run: () => {
           goToSection("all");
           setFocusedId(item.id);
+          setDetailsId(item.id);
           setSelectedIds(new Set([item.id]));
           setDetailsOpen(true);
         },
@@ -1135,6 +1190,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     welcomeOpen ||
     Boolean(contextMenu) ||
     phoneSource !== null ||
+    queueSettingsId !== null ||
     removeCandidates.length > 0 ||
     Boolean(refreshCandidate);
   const keyboard = useRef<(event: KeyboardEvent) => void>(() => {});
@@ -1167,7 +1223,13 @@ function App({ preferences, onPreferencesChange }: AppProps) {
       window.setTimeout(() => document.getElementById("download-search")?.focus(), 0);
       return;
     }
-    if (overlayOpen || isTypingTarget(event.target) || page !== "downloads") return;
+    if (overlayOpen || isTypingTarget(event.target)) return;
+    if (control && event.shiftKey && code === "KeyQ") {
+      event.preventDefault();
+      void toggleQuickQueue();
+      return;
+    }
+    if (page !== "downloads") return;
 
     if (control && code === "KeyA") {
       event.preventDefault();
@@ -1256,6 +1318,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   }
 
   function goToPage(next: WorkspacePage) {
+    if (next === "settings") setSettingsInitialGroup("general");
     setPage(next);
     setContextMenu(null);
   }
@@ -1315,10 +1378,17 @@ function App({ preferences, onPreferencesChange }: AppProps) {
         onSection={goToSection}
         onPage={goToPage}
         onAddDownload={() => void openAddDownload()}
+        onSettingsClick={() => goToPage("settings")}
+        onQuitClick={() => void invoke("request_close_confirmation").catch((reason) => notify("error", String(reason)))}
+        actions={<QuickQueueControls queues={queues} selected={quickQueue} busy={quickQueueBusy} ready={allReady}
+          onSelect={setQuickQueueId} onToggle={() => void toggleQuickQueue()}
+          onManage={() => setQueueSettingsId(quickQueue?.id ?? null)}
+          onSchedule={() => setQueueSettingsId(quickQueue?.id ?? null)} />}
         fill={page === "downloads"}
       >
         {page === "settings" ? (
           <SettingsPage
+            initialGroup={settingsInitialGroup}
             inputMode={inputMode}
             saving={settingsSaving}
             error={settingsError}
@@ -1330,19 +1400,22 @@ function App({ preferences, onPreferencesChange }: AppProps) {
             onSaved={reportSaved}
             uiPreferences={preferences}
             onUiPreferencesChange={onPreferencesChange}
+            onQueueSettings={setQueueSettingsId}
           />
         ) : page === "queues" ? (
           <QueuePage
             queues={queues}
+            initialQueueId={quickQueue?.id}
             downloads={downloads}
             onCreateQueue={createQueue}
             onStartQueue={startQueue}
             onStopQueue={stopQueue}
             onSetQueueEnabled={setQueueEnabled}
+            onSetQueueLimits={setQueueLimits}
             onReorder={reorderQueue}
             onMove={moveQueuedDownload}
             onRemove={removeFromQueue}
-            onPriority={changePriority}
+            onConfigure={setQueueSettingsId}
           />
         ) : page === "linkgrabber" ? (
           <LinkGrabberPage
@@ -1387,7 +1460,6 @@ function App({ preferences, onPreferencesChange }: AppProps) {
                     queues={queues}
                     onAction={(action) => void runBulkAction(action)}
                     onQueue={(queueId) => void runBulkQueue(queueId)}
-                    onPriority={(priority) => void runBulkPriority(priority)}
                     onClear={clearSelection}
                   />
                 </div>
@@ -1413,6 +1485,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
                   empty={emptyState}
                   onSort={toggleSort}
                   onSelect={handleRowSelect}
+                  onDetails={handleRowDetails}
                   onAction={handleRowAction}
                   onContextMenu={handleRowContextMenu}
                 />
@@ -1452,12 +1525,13 @@ function App({ preferences, onPreferencesChange }: AppProps) {
         onClose={() => setContextMenu(null)}
         onShowDetails={(id) => {
           setFocusedId(id);
+          setDetailsId(id);
           setDetailsOpen(true);
         }}
         onAction={(target, action) => void runTaskAction(target, action)}
         onAssignQueue={(item, queueId) => void assignToQueue(item, queueId)}
         onCreateQueue={(item, name) =>
-          void createQueue({ name, maxConcurrent: 3, maxConcurrentPerHost: 2, defaultPriority: "normal" })
+          void createQueue({ name, maxConcurrent: 1, maxConcurrentPerHost: 1, defaultPriority: "normal" })
             .then((queue) => assignToQueue(item, queue.id))
             .catch((reason) => notify("error", String(reason)))
         }
@@ -1489,7 +1563,6 @@ function App({ preferences, onPreferencesChange }: AppProps) {
             .catch((reason) => notify("error", String(reason)))
         }
         onRemoveFromQueue={(item) => void runQueueAction(() => removeFromQueue(item.id))}
-        onChangePriority={(item, priority) => void runQueueAction(() => changePriority(item.id, priority))}
         onRemoveFromHistory={(item) => {
           setContextMenu(null);
           setRemoveHistoryError(null);
@@ -1547,6 +1620,10 @@ function App({ preferences, onPreferencesChange }: AppProps) {
         />
       ) : null}
 
+      {queueSettingsId !== null && queues.find((queue) => queue.id === queueSettingsId) ? <QueueSettingsDialog
+        queue={queues.find((queue) => queue.id === queueSettingsId)!}
+        onClose={() => setQueueSettingsId(null)} onLimits={setQueueLimits} onEnabled={setQueueEnabled}
+      /> : null}
       <AddDownloadModal
         open={modalOpen}
         url={url}
@@ -1555,19 +1632,21 @@ function App({ preferences, onPreferencesChange }: AppProps) {
         error={addError}
         linkCount={extractHttpUrls(url).length}
         duplicateCount={
-          modalOpen
-            ? extractHttpUrls(url).filter((link) => knownLinks.has(link.split("#")[0])).length
-            : 0
+          modalOpen ? duplicateLinks.length : 0
         }
+        duplicateUrls={modalOpen ? duplicateLinks : []}
+        completedDuplicateCount={modalOpen ? duplicateRecords.filter((item) => item.status.toLowerCase() === "completed").length : 0}
         queues={queues}
         defaultDirectory={downloadSettings?.defaultDirectory ?? null}
         onUrlChange={setUrl}
         onClose={() => {
           if (creatingTasks) return;
           setAddError(null);
+          setUrl("");
+          if (extractHttpUrls(url).length > 0) lastClipboardIntake.current = extractHttpUrls(url).join("\n");
           setModalOpen(false);
         }}
-        onSubmit={(action, links, folder) => void createDownloadTasks(action, links, folder)}
+        onSubmit={(action, links, folder, duplicateChoice) => void createDownloadTasks(action, links, folder, duplicateChoice)}
       />
     </>
   );

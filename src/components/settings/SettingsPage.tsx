@@ -5,6 +5,7 @@ import {
   Plus,
   RotateCcw,
   Trash2,
+  Search,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -56,6 +57,7 @@ import "./SettingsPage.css";
 export type AddDownloadInputMode = "clipboard" | "manual";
 
 type SettingsPageProps = {
+  initialGroup?: "general" | "downloads" | "network" | "browser" | "system";
   inputMode: AddDownloadInputMode;
   saving: boolean;
   error: string | null;
@@ -67,6 +69,7 @@ type SettingsPageProps = {
   onSaved: (message: string) => void;
   uiPreferences: UiPreferences;
   onUiPreferencesChange: (preferences: UiPreferences) => void;
+  onQueueSettings?: (queueId: string) => void;
 };
 
 /// Opens the system folder picker. Returns null when the user cancels.
@@ -81,6 +84,7 @@ export async function pickFolder(title: string, current?: string | null) {
 }
 
 export function SettingsPage({
+  initialGroup = "general",
   inputMode,
   saving,
   error,
@@ -92,15 +96,18 @@ export function SettingsPage({
   onSaved,
   uiPreferences,
   onUiPreferencesChange,
+  onQueueSettings,
 }: SettingsPageProps) {
   const { t, fmt, language } = useI18n();
   const [selectedGroup, setSelectedGroup] = useState<
     "general" | "downloads" | "network" | "browser" | "system"
-  >("general");
+  >(initialGroup);
   const [search, setSearch] = useState("");
   const [schedules, setSchedules] = useState<QueueSchedule[]>([]);
   const [categories, setCategories] = useState<DownloadCategory[]>([]);
   const [rules, setRules] = useState<DownloadRule[]>([]);
+
+  useEffect(() => setSelectedGroup(initialGroup), [initialGroup]);
 
   useEffect(() => {
     let cancelled = false;
@@ -226,6 +233,7 @@ export function SettingsPage({
         "settings.manual",
         "settings.input",
         "settings.intake",
+        "settings.autoPasteCtrlV",
       ],
       content: (
         <div className="settings-page__section">
@@ -256,6 +264,7 @@ export function SettingsPage({
             <div className="settings-page__hint">{t("settings.inputHint")}</div>
             <IntakeWindowRow onError={onError} />
             <ClipboardWatchRow onError={onError} />
+            <BackendSwitchRow id="ctrl-v-auto-add" label={t("settings.autoPasteCtrlV")} hint={t("settings.autoPasteCtrlVHint")} read="get_ctrl_v_auto_add" write="set_ctrl_v_auto_add" onError={onError} />
             {error ? <div className="settings-page__error">{error}</div> : null}
           </div>
         </div>
@@ -276,7 +285,7 @@ export function SettingsPage({
           ) : (
             <div className="settings-page__stack">
               {queues.map((queue) => (
-                <ScheduleEditor
+                onQueueSettings ? <button key={queue.id} type="button" className="settings-page__group" onClick={() => onQueueSettings(queue.id)}>{queue.name} — {t("settings.schedules")}</button> : <ScheduleEditor
                   key={queue.id}
                   queue={queue}
                   schedule={
@@ -344,9 +353,11 @@ export function SettingsPage({
     <section className="settings-page">
       <label className="settings-page__search">
         <span>{t("settings.search")}</span>
+        <Search size={17} aria-hidden="true" />
         <input
           type="search"
           value={search}
+          placeholder={t("settings.searchPlaceholder")}
           onChange={(event) => setSearch(event.target.value)}
         />
       </label>
@@ -925,7 +936,7 @@ function draftFrom(schedule: QueueSchedule | null): ScheduleDraft {
   };
 }
 
-function ScheduleEditor({
+export function ScheduleEditor({
   queue,
   schedule,
   onSaved,
@@ -1316,11 +1327,6 @@ function describeRule(
             t("settings.describe.aQueue"),
         })
       : null,
-    rule.priority
-      ? t("settings.describe.priority", {
-          priority: t(`priority.${rule.priority}` as MessageKey),
-        })
-      : null,
     rule.maxConnections
       ? t("settings.describe.connections", {
           count: fmt.number(rule.maxConnections),
@@ -1536,19 +1542,6 @@ function RulesSection({
                     {queue.name}
                   </option>
                 ))}
-              </select>
-            </label>
-            <label className="settings-page__field">
-              <span>{t("settings.rulePriority")}</span>
-              <select {...field("priority")}>
-                <option value="">{t("settings.ruleUnchanged")}</option>
-                {(["very_high", "high", "normal", "low"] as const).map(
-                  (priority) => (
-                    <option key={priority} value={priority}>
-                      {t(`priority.${priority}`)}
-                    </option>
-                  ),
-                )}
               </select>
             </label>
             <label className="settings-page__field">

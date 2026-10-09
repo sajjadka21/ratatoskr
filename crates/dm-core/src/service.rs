@@ -588,11 +588,114 @@ impl DownloadService {
             let category = self.storage.get_category(category_id).ok()??;
             absolute(category.default_directory.as_deref()?)
         };
+        let explicit_directory = rule_directory.or_else(category_directory);
+        if let Some(directory) = explicit_directory {
+            return directory;
+        }
 
-        rule_directory
-            .or_else(category_directory)
-            .or_else(|| self.default_directory().ok().flatten())
-            .unwrap_or_else(|| fallback.to_path_buf())
+        let configured_default = self.default_directory().ok().flatten();
+        #[cfg(test)]
+        let system_video_directory = None;
+        #[cfg(not(test))]
+        let system_video_directory = dirs::video_dir();
+
+        #[cfg(windows)]
+        if let Some(category_id) = decision.and_then(|decision| decision.category_id.as_deref())
+            && let Some(folder_name) = Self::windows_category_folder(category_id)
+        {
+            let base = configured_default
+                .clone()
+                .unwrap_or_else(|| fallback.to_path_buf());
+            return base.join(folder_name);
+        }
+
+        let base = configured_default
+            .clone()
+            .unwrap_or_else(|| fallback.to_path_buf());
+        match decision.and_then(|decision| decision.category_id.as_deref()) {
+            Some("video") => Self::choose_video_directory(
+                &base,
+                configured_default.is_some(),
+                system_video_directory,
+            ),
+            Some("audio") => base.join("Audio"),
+            _ => base,
+        }
+    }
+
+    /// Default subfolders for categorized Windows downloads. An explicit
+    /// category or rule destination takes precedence in `resolve_destination`.
+    #[cfg(windows)]
+    fn windows_category_folder(category_id: &str) -> Option<&'static str> {
+        match category_id {
+            "applications" => Some("Applications"),
+            "archives" => Some("Compressed"),
+            "documents" => Some("Documents"),
+            "video" => Some("Video"),
+            "audio" => Some("Audio"),
+            "images" => Some("Images"),
+            "other" => Some("Other"),
+            _ => None,
+        }
+    }
+
+    /// Check destination metadata only; never create a task, hash a file, or skip a download.
+    pub fn inspect_existing_files(
+        &self,
+        urls: &[String],
+        directory: Option<&Path>,
+        fallback: &Path,
+    ) -> Result<crate::existing_files::FolderInspection> {
+        if directory.is_some_and(|path| !path.is_absolute()) {
+            return Err(DownloadServiceError::RelativeDirectory);
+        }
+        let mut names = Vec::new();
+        let mut roots = Vec::new();
+        for source in urls.iter().take(200) {
+            let parsed = validate_source_url(source)?;
+            let name = parsed
+                .path_segments()
+                .and_then(|mut parts| parts.next_back())
+                .unwrap_or("");
+            let name = percent_encoding::percent_decode_str(name)
+                .decode_utf8_lossy()
+                .into_owned();
+            if !name.contains('.') || name.len() > 1024 {
+                continue;
+            }
+            names.push(crate::sanitize_filename(&name));
+            let decision = self.rule_decision_for_url(source)?;
+            roots.push(
+                directory
+                    .map(Path::to_path_buf)
+                    .unwrap_or_else(|| self.resolve_destination(decision.as_ref(), fallback)),
+            );
+        }
+        if directory.is_none() {
+            roots.push(
+                self.default_directory()?
+                    .unwrap_or_else(|| fallback.to_path_buf()),
+            );
+        }
+        roots.sort();
+        roots.dedup();
+        names.sort();
+        names.dedup();
+        Ok(crate::existing_files::inspect(&names, &roots))
+    }
+
+    fn choose_video_directory(
+        base: &Path,
+        has_user_selected_default: bool,
+        system_video_directory: Option<PathBuf>,
+    ) -> PathBuf {
+        if has_user_selected_default {
+            base.join("Video")
+        } else {
+            system_video_directory
+                .filter(|directory| directory.is_absolute())
+                .unwrap_or_else(|| base.join("Video"))
+        }
     }
 
     fn task_overrides(&self, download_id: &str) -> Option<TaskOverrides> {
@@ -925,13 +1028,27 @@ impl DownloadService {
     }
 
     /// Evaluates the persisted intake rules using URL-only facts available
-    /// before probing. MIME and size matches are applied later by the probe;
+    /// before probing. Recognized video pages provide their media family;
+    /// exact MIME and size matches are applied later by the probe;
     /// this method keeps the decision backend-owned for Tauri/queue callers.
     pub fn rule_decision_for_url(&self, source_url: &str) -> Result<Option<RuleDecision>> {
         validate_source_url(source_url)?;
         let rules = self.storage.list_rules()?;
         let categories = self.storage.list_categories()?;
-        Ok(evaluate_rules(source_url, None, None, &rules, &categories))
+        let media_family = crate::ytdlp::handles(source_url).then(|| {
+            if self.quality_for(source_url).1 {
+                "audio/unknown"
+            } else {
+                "video/unknown"
+            }
+        });
+        Ok(evaluate_rules(
+            source_url,
+            media_family,
+            None,
+            &rules,
+            &categories,
+        ))
     }
 
     pub fn claim_task(&self, download_id: &str) -> Result<DownloadRecord> {
@@ -1289,10 +1406,20 @@ impl DownloadService {
             }
         };
 
+        // Many extractors support far more hosts than the curated UI list.
+        // If an otherwise unknown URL answers with a web page, let yt-dlp
+        // identify it instead of saving the page as a corrupt download.
+        if probe.html_page {
+            return self
+                .run_ytdlp_transfer(task, destination_directory, control, on_progress)
+                .await;
+        }
+
         // Probing told us the type and size, so the full rule set can decide
         // the folder and any per-task limits now.
-        let decision = evaluate_rules(
+        let decision = crate::rules::evaluate_file_rules(
             &task.source_url,
+            &probe.filename,
             probe.content_type.as_deref(),
             probe.total_bytes,
             &self.storage.list_rules()?,
@@ -1344,14 +1471,11 @@ impl DownloadService {
                 self.base_downloader().plan_paths(&directory, &name).await?
             }
         };
-        // A name chosen by the user is listed as the file actually got it.
-        let listed_name = match self.storage.get_download_name(&task.id).ok().flatten() {
-            Some(_) => destination_path
-                .file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_else(|| probe.filename.clone()),
-            None => probe.filename.clone(),
-        };
+        // Always list the allocated name, including a collision suffix.
+        let listed_name = destination_path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| probe.filename.clone());
 
         let scope = self.traffic_scope_of(&probe.final_url);
         self.ensure_quota_allows(scope)?;
@@ -1994,13 +2118,7 @@ impl DownloadService {
         use crate::ytdlp::{YtDlpError, YtDlpRequest};
 
         let ytdlp = self.ytdlp().ok_or(DownloadError::NeedsYtDlp)?;
-        let decision = evaluate_rules(
-            &task.source_url,
-            None,
-            None,
-            &self.storage.list_rules()?,
-            &self.storage.list_categories()?,
-        );
+        let decision = self.rule_decision_for_url(&task.source_url)?;
         // A paused run continues in the folder it started in.
         let work_dir = match task.temp_path.as_deref().map(PathBuf::from) {
             Some(path) if crate::ytdlp::is_work_dir(&path) => path,
@@ -3266,15 +3384,11 @@ impl DownloadService {
                 .resolved_url
                 .clone()
                 .unwrap_or_else(|| task.source_url.clone()),
-            filename: task
-                .filename
-                .clone()
-                .or_else(|| {
-                    outcome
-                        .final_path
-                        .file_name()
-                        .map(|name| name.to_string_lossy().into_owned())
-                })
+            filename: outcome
+                .final_path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .or(task.filename.clone())
                 .unwrap_or_else(|| "download.bin".to_owned()),
             destination_path: outcome.final_path.to_string_lossy().into_owned(),
             mime_type: task.mime_type.clone(),
@@ -4124,6 +4238,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn list_names_match_saved_files_for_fresh_and_repeated_names() {
+        let server = TestServer::start(ServerBehaviour::default()).await;
+        let harness = harness();
+        for index in 0..3 {
+            let created = harness
+                .service
+                .create_task(&server.url(&format!("download-{index}.bin")))
+                .unwrap();
+            let record = harness
+                .service
+                .start_task(&created.id, &harness.destination)
+                .await
+                .unwrap();
+            let expected = if index == 0 {
+                "payload.bin".to_owned()
+            } else {
+                format!("payload ({index}).bin")
+            };
+            assert_eq!(record.filename.as_deref(), Some(expected.as_str()));
+            assert_eq!(
+                Path::new(record.destination_path.as_deref().unwrap())
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy(),
+                expected
+            );
+            assert_eq!(
+                tokio::fs::read(record.destination_path.unwrap())
+                    .await
+                    .unwrap(),
+                DEFAULT_BODY
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn starts_existing_task_with_stable_id_and_no_duplicate_record() {
         let server = TestServer::start(ServerBehaviour::default()).await;
         let harness = harness();
@@ -4280,7 +4430,11 @@ mod tests {
 
     #[tokio::test]
     async fn files_go_to_rule_then_category_then_default_folder() {
-        let server = TestServer::start(ServerBehaviour::default()).await;
+        let server = TestServer::start(ServerBehaviour {
+            filename: Some("payload.exe".to_owned()),
+            ..ServerBehaviour::default()
+        })
+        .await;
         let harness = harness();
         let root = harness.destination.parent().unwrap().to_path_buf();
 
@@ -4301,7 +4455,7 @@ mod tests {
         );
 
         // 2. The matched category's folder beats the default. The test
-        //    server answers application/octet-stream, which is Applications.
+        //    server sends a generic MIME and an .exe filename, which is Applications.
         let category_folder = root.join("apps");
         harness
             .storage
@@ -4329,6 +4483,166 @@ mod tests {
             .await
             .unwrap();
         assert!(Path::new(record.destination_path.as_deref().unwrap()).starts_with(&rule_folder));
+    }
+
+    #[tokio::test]
+    async fn video_filename_routes_generic_binary_response_to_video_folder() {
+        let server = TestServer::start(ServerBehaviour {
+            filename: Some("movie.mp4".to_owned()),
+            ..ServerBehaviour::default()
+        })
+        .await;
+        let harness = harness();
+        let base = harness.destination.parent().unwrap().join("default");
+        harness.service.set_default_directory(Some(&base)).unwrap();
+        let task = harness
+            .service
+            .create_task(&server.url("download?id=1"))
+            .unwrap();
+        let record = harness
+            .service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+        assert_eq!(
+            Path::new(record.destination_path.as_deref().unwrap())
+                .parent()
+                .unwrap(),
+            base.join("Video")
+        );
+        assert_eq!(
+            tokio::fs::read(record.destination_path.unwrap())
+                .await
+                .unwrap(),
+            ServerBehaviour::default().body
+        );
+        // An explicitly chosen per-download folder always wins.
+        let explicit = base.join("chosen");
+        let task = harness
+            .service
+            .create_task(&server.url("download?id=2"))
+            .unwrap();
+        harness
+            .service
+            .set_download_folder(&task.id, Some(&explicit))
+            .unwrap();
+        let record = harness
+            .service
+            .start_task(&task.id, &harness.destination)
+            .await
+            .unwrap();
+        assert_eq!(
+            Path::new(record.destination_path.as_deref().unwrap())
+                .parent()
+                .unwrap(),
+            explicit
+        );
+    }
+
+    #[test]
+    fn video_pages_and_audio_selection_use_media_folders_with_category_override() {
+        let harness = harness();
+        let video = harness
+            .service
+            .rule_decision_for_url("https://www.youtube.com/watch?v=sample")
+            .unwrap()
+            .unwrap();
+        assert_eq!(video.category_id.as_deref(), Some("video"));
+        assert_eq!(
+            harness
+                .service
+                .resolve_destination(Some(&video), &harness.destination),
+            harness.destination.join("Video")
+        );
+        let audio = harness
+            .service
+            .rule_decision_for_url("https://www.youtube.com/watch?v=sample#rud-quality=audio")
+            .unwrap()
+            .unwrap();
+        assert_eq!(audio.category_id.as_deref(), Some("audio"));
+        assert_eq!(
+            harness
+                .service
+                .resolve_destination(Some(&audio), &harness.destination),
+            harness.destination.join("Audio")
+        );
+        let custom = harness.destination.join("custom-video");
+        harness
+            .storage
+            .set_category_directory("video", Some(&custom.to_string_lossy()))
+            .unwrap();
+        assert_eq!(
+            harness
+                .service
+                .resolve_destination(Some(&video), &harness.destination),
+            custom
+        );
+    }
+
+    #[test]
+    fn video_destination_uses_the_standard_folder_unless_the_user_selected_a_download_folder() {
+        let base = PathBuf::from("C:/Users/test/Downloads");
+        let standard = PathBuf::from("C:/Users/test/Videos");
+        assert_eq!(
+            DownloadService::choose_video_directory(&base, false, Some(standard.clone())),
+            standard
+        );
+        assert_eq!(
+            DownloadService::choose_video_directory(&base, true, Some(standard)),
+            base.join("Video")
+        );
+        assert_eq!(
+            DownloadService::choose_video_directory(&base, false, None),
+            base.join("Video")
+        );
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn windows_download_categories_use_default_folders_and_create_them() {
+        let harness = harness();
+        let base = harness.destination.clone();
+        let cases = [
+            ("applications", "Applications"),
+            ("archives", "Compressed"),
+            ("documents", "Documents"),
+            ("video", "Video"),
+            ("audio", "Audio"),
+            ("images", "Images"),
+            ("other", "Other"),
+        ];
+
+        for (category_id, folder) in cases {
+            let decision = RuleDecision {
+                rule_id: None,
+                explanation: "test category".to_owned(),
+                rule_name: None,
+                category_id: Some(category_id.to_owned()),
+                category_name: None,
+                queue_id: None,
+                priority: None,
+                destination_directory: None,
+                max_connections: None,
+                max_host_concurrency: None,
+                speed_cap: None,
+            };
+
+            assert_eq!(
+                harness.service.resolve_destination(Some(&decision), &base),
+                base.join(folder),
+                "category {category_id} should use its default folder"
+            );
+        }
+
+        let archives = base.join("Compressed");
+        assert!(!archives.exists());
+        harness
+            .service
+            .base_downloader()
+            .plan_paths(&archives, "package.zip")
+            .await
+            .unwrap();
+        assert!(archives.is_dir());
     }
 
     #[test]
@@ -6461,11 +6775,7 @@ mod tests {
             .storage
             .set_setting(SETTING_YTDLP_PATH, "/nowhere/yt-dlp")
             .unwrap();
-        if harness.service.ytdlp().is_some() {
-            // A yt-dlp on this machine's PATH is found whatever the setting
-            // says, so the "missing" case cannot be staged here.
-            return;
-        }
+        assert!(harness.service.ytdlp().is_none());
         let task = harness
             .service
             .create_task("https://www.youtube.com/watch?v=abc")

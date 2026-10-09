@@ -243,7 +243,8 @@
 }
 
 .mini__failure,
-.mini__error {
+.mini__error,
+.mini__converting {
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -254,6 +255,12 @@
   border-radius: var(--radius-sm);
   font-size: 12px;
   line-height: 1.6;
+}
+
+.mini__converting {
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border-color: var(--border-subtle);
 }
 
 .mini__footer {
@@ -354,6 +361,13 @@
 .mini__field select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+.mini__field small {
+  grid-column: 2;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.4;
 }
 
 .mini__field--wide {

@@ -12,6 +12,7 @@ use dm_core::{
 mod automation;
 mod browser_setup;
 mod clipboard_watch;
+mod image_conversion;
 mod mini;
 mod plugin_store;
 mod portable;
@@ -59,6 +60,31 @@ const SCHEDULE_POLL_INTERVAL: Duration = Duration::from_secs(15);
 /// UI instead of running invisibly.
 const DOWNLOAD_TASK_EVENT: &str = "download-task-event";
 const QUEUE_RUNNER_EVENT: &str = "queue-runner-event";
+
+#[tauri::command]
+async fn inspect_existing_files(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    urls: Vec<String>,
+    directory: Option<String>,
+) -> Result<dm_core::existing_files::FolderInspection, String> {
+    if urls.len() > 200 {
+        return Err("too many links to inspect".into());
+    }
+    let downloads = state.downloads.clone();
+    let fallback = app
+        .path()
+        .download_dir()
+        .map_err(|_| "download directory is unavailable")?;
+    let directory = directory.map(std::path::PathBuf::from);
+    tauri::async_runtime::spawn_blocking(move || {
+        downloads
+            .inspect_existing_files(&urls, directory.as_deref(), &fallback)
+            .map_err(|_| "folder inspection unavailable".to_owned())
+    })
+    .await
+    .map_err(|_| "folder inspection interrupted".to_owned())?
+}
 
 pub struct AppState {
     core: CoreService,
@@ -565,6 +591,20 @@ fn start_queue(
 }
 
 #[tauri::command]
+fn set_queue_limits(
+    state: State<'_, AppState>,
+    queue_id: String,
+    max_concurrent: u32,
+    max_concurrent_per_host: Option<u32>,
+) -> Result<QueueResponse, String> {
+    state
+        .queues
+        .set_queue_limits(&queue_id, max_concurrent, max_concurrent_per_host)
+        .map(queue_response)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn set_queue_enabled(
     state: State<'_, AppState>,
     queue_id: String,
@@ -782,9 +822,13 @@ fn get_browser_connection(app: AppHandle) -> browser_setup::BrowserConnection {
 /// Registers the connector again, for when a browser was installed after
 /// the app started.
 #[tauri::command]
-fn connect_browsers(app: AppHandle) -> Result<browser_setup::BrowserConnection, String> {
-    browser_setup::register(&app)?;
-    Ok(browser_setup::connection(&app))
+async fn connect_browsers(app: AppHandle) -> Result<browser_setup::BrowserConnection, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        browser_setup::register(&app)?;
+        Ok(browser_setup::connection(&app))
+    })
+    .await
+    .map_err(|error| format!("browser registration task failed: {error}"))?
 }
 
 /// Shows the extension folder, to load it in the browser.
@@ -812,6 +856,30 @@ fn open_browser_extensions_page(browser: String) -> Result<(), String> {
 #[tauri::command]
 fn get_clipboard_watch(state: State<'_, AppState>) -> bool {
     clipboard_watch::enabled(&state.storage)
+}
+
+const SETTING_CTRL_V_AUTO_ADD: &str = "ctrl_v_auto_add";
+
+#[tauri::command]
+fn get_ctrl_v_auto_add(state: State<'_, AppState>) -> bool {
+    state
+        .storage
+        .get_setting(SETTING_CTRL_V_AUTO_ADD)
+        .ok()
+        .flatten()
+        .is_some_and(|value| value == "true")
+}
+
+#[tauri::command]
+fn set_ctrl_v_auto_add(state: State<'_, AppState>, enabled: bool) -> Result<bool, String> {
+    state
+        .storage
+        .set_setting(
+            SETTING_CTRL_V_AUTO_ADD,
+            if enabled { "true" } else { "false" },
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(get_ctrl_v_auto_add(state))
 }
 
 #[tauri::command]
@@ -842,6 +910,16 @@ fn set_start_with_windows(enabled: bool) -> Result<bool, String> {
 }
 
 const CLOSE_REQUESTED_EVENT: &str = "close-requested";
+
+#[tauri::command]
+fn request_close_confirmation(app: AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window is unavailable".to_owned())?;
+    window
+        .emit(CLOSE_REQUESTED_EVENT, ())
+        .map_err(|error| error.to_string())
+}
 
 /// True when closing the app would stop something: a transfer in progress or waiting, or an enabled schedule.
 fn has_background_work(state: &AppState) -> bool {
@@ -2651,6 +2729,10 @@ fn handle_launch_requests(app: &AppHandle, requests: Vec<LaunchRequest>) {
         return;
     };
 
+    // Direct file downloads from the browser are handled in the background;
+    // only link collection and explicit app commands should foreground Ratatoskr.
+    let should_show_main = launch_requests_show_main(&requests);
+
     for request in requests {
         match request {
             LaunchRequest::HandoffTasks(ids) => {
@@ -2713,7 +2795,18 @@ fn handle_launch_requests(app: &AppHandle, requests: Vec<LaunchRequest>) {
         }
     }
 
-    tray::show_main_window(app);
+    if should_show_main {
+        tray::show_main_window(app);
+    }
+}
+
+fn launch_requests_show_main(requests: &[LaunchRequest]) -> bool {
+    requests.iter().any(|request| {
+        matches!(
+            request,
+            LaunchRequest::GrabLinks(_) | LaunchRequest::Refresh(_) | LaunchRequest::Control(_, _)
+        )
+    })
 }
 
 /// Starts or queues a task that arrived from the browser, applying the same
@@ -2895,6 +2988,52 @@ async fn start_handoff(
     Ok(target)
 }
 
+/// Converts a completed image to the format chosen in the small download
+/// dialog. The downloaded source is preserved beside the converted copy.
+#[tauri::command]
+async fn convert_download_image(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    format: String,
+) -> Result<DownloadListItemResponse, String> {
+    let storage = Arc::clone(&state.storage);
+    tauri::async_runtime::spawn_blocking(move || {
+        let format = image_conversion::ImageFormatChoice::parse(&format)?;
+        let record = storage
+            .get_download(&id)
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| format!("download not found: {id}"))?;
+        if record.status != DownloadStatus::Completed {
+            return Err("image conversion is available after the download completes".to_owned());
+        }
+        let source = record
+            .destination_path
+            .as_deref()
+            .map(std::path::PathBuf::from)
+            .ok_or_else(|| "download has no saved file".to_owned())?;
+        let converted = image_conversion::convert_file(&source, format)?;
+        storage
+            .update_completed_image(
+                &id,
+                &converted.filename,
+                &converted.path.to_string_lossy(),
+                converted.mime_type,
+                converted.bytes,
+            )
+            .map_err(|error| error.to_string())?;
+        let updated = storage
+            .get_download(&id)
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| format!("download disappeared after conversion: {id}"))?;
+        let response = download_list_item_response(updated.clone());
+        EventPublisher::new(app).download_updated(updated);
+        Ok(response)
+    })
+    .await
+    .map_err(|error| format!("image conversion task failed: {error}"))?
+}
+
 /// One download, as the list shows it.
 #[tauri::command]
 fn get_download(
@@ -2925,7 +3064,11 @@ fn get_drop_box(state: State<'_, AppState>) -> bool {
 }
 
 #[tauri::command]
-fn set_drop_box(app: AppHandle, state: State<'_, AppState>, enabled: bool) -> Result<bool, String> {
+async fn set_drop_box(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<bool, String> {
     state
         .storage
         .set_setting(
@@ -2940,14 +3083,18 @@ fn set_drop_box(app: AppHandle, state: State<'_, AppState>, enabled: bool) -> Re
 /// Links dropped on the drop box (or pasted into it): they open where
 /// copied links do, the small add window or the main window's Add dialog.
 #[tauri::command]
-fn add_dropped_links(app: AppHandle, state: State<'_, AppState>, text: String) -> usize {
+async fn add_dropped_links(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    text: String,
+) -> Result<usize, String> {
     let links: Vec<String> = dm_core::linkgrabber::extract_links(&text)
         .into_iter()
         .map(|link| link.url)
         .take(500)
         .collect();
     if links.is_empty() {
-        return 0;
+        return Ok(0);
     }
     let count = links.len();
     if mini::compact(&state.storage) {
@@ -2956,7 +3103,7 @@ fn add_dropped_links(app: AppHandle, state: State<'_, AppState>, text: String) -
         tray::show_main_window(&app);
         let _ = app.emit(clipboard_watch::CLIPBOARD_LINKS_EVENT, links);
     }
-    count
+    Ok(count)
 }
 
 /// Opens the progress window of a download started from the add window.
@@ -3199,9 +3346,6 @@ fn receive_browser_session(
     }
 
     info!(download_id = %task_id, "browser handoff accepted with a browser session");
-    if !mini::compact(&state.storage) {
-        tray::show_main_window(app);
-    }
     HandoffReply::accepted()
 }
 
@@ -3378,11 +3522,8 @@ pub fn run() {
             // the small download window is all that should appear.
             let started_hidden = std::env::args().any(|argument| {
                 argument == dm_system::autostart::HIDDEN_ARGUMENT
-                    || (mini::compact(&storage)
-                        && matches!(
-                            argument.as_str(),
-                            ARG_HANDOFF_TASK | ARG_BROWSER_HANDOFF | ARG_GRAB_LINKS
-                        ))
+                    || matches!(argument.as_str(), ARG_HANDOFF_TASK | ARG_BROWSER_HANDOFF)
+                    || (mini::compact(&storage) && argument == ARG_GRAB_LINKS)
             });
             if started_hidden && tray_ready {
                 if let Some(window) = app.get_webview_window("main") {
@@ -3420,7 +3561,13 @@ pub fn run() {
                 destination_directory.clone(),
             ));
 
-            browser_setup::register_quietly(app.handle());
+            // Registering native messaging touches Windows registry keys and
+            // may be slow or blocked by browser/security software. Keep that
+            // work off the setup thread so the main window can finish loading.
+            let browser_registration_app = app.handle().clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                browser_setup::register_quietly(&browser_registration_app);
+            });
 
             tools::configure(app.handle(), &downloads);
             tauri::async_runtime::spawn(tools::run_maintenance(
@@ -3500,6 +3647,8 @@ pub fn run() {
             get_app_info,
             get_download_speed_limit,
             get_clipboard_watch,
+            get_ctrl_v_auto_add,
+            set_ctrl_v_auto_add,
             read_clipboard_links,
             get_start_with_windows,
             get_finish_sound,
@@ -3529,6 +3678,7 @@ pub fn run() {
             remove_download,
             create_download_task,
             handoff_browser_download,
+            convert_download_image,
             start_download,
             pause_download,
             resume_download,
@@ -3545,6 +3695,7 @@ pub fn run() {
             start_queue,
             stop_queue,
             set_queue_enabled,
+            set_queue_limits,
             list_queue_schedules,
             set_queue_schedule,
             list_categories,
@@ -3602,6 +3753,8 @@ pub fn run() {
             get_close_action,
             set_close_action,
             resolve_close,
+            request_close_confirmation,
+            inspect_existing_files,
             import_plugin,
             remove_plugin,
             set_plugin_enabled,
@@ -3654,6 +3807,17 @@ mod tests {
     }
 
     use super::{parse_launch_args, LaunchRequest};
+
+    #[test]
+    fn direct_browser_downloads_stay_in_the_background() {
+        assert!(!super::launch_requests_show_main(&[
+            LaunchRequest::HandoffTasks(vec!["task".to_owned()]),
+            LaunchRequest::BrowserUrl("https://example.com/file.zip".to_owned()),
+        ]));
+        assert!(super::launch_requests_show_main(&[
+            LaunchRequest::GrabLinks(vec!["https://example.com/video".to_owned(),])
+        ]));
+    }
 
     fn args(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_owned()).collect()

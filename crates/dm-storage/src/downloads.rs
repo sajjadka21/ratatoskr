@@ -198,6 +198,40 @@ impl Storage {
         stored.map(StoredDownloadRow::into_record).transpose()
     }
 
+    /// Updates the tracked file after a safe post-download transformation.
+    /// The row and its user-selected name change together only if it is still
+    /// completed; the source file is left to the caller to preserve.
+    pub fn update_completed_image(
+        &self,
+        id: &str,
+        filename: &str,
+        destination_path: &str,
+        mime_type: &str,
+        bytes: u64,
+    ) -> Result<()> {
+        let bytes = u64_to_i64(bytes, "total_bytes")?;
+        let mut connection = self.connection()?;
+        let transaction = connection.transaction()?;
+        let changed = transaction.execute(
+            "UPDATE downloads SET filename = ?2, destination_path = ?3,
+                mime_type = ?4, total_bytes = ?5, downloaded_bytes = ?5
+             WHERE id = ?1 AND status = 'completed';",
+            params![id, filename, destination_path, mime_type, bytes],
+        )?;
+        if changed == 0 {
+            let status = current_status(&transaction, id)?;
+            if status != DownloadStatus::Completed {
+                return Err(StorageError::DownloadNotCompleted(id.to_owned()));
+            }
+        }
+        transaction.execute(
+            "UPDATE download_names SET filename = ?2 WHERE download_id = ?1;",
+            params![id, filename],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub fn list_downloads(&self) -> Result<Vec<DownloadRecord>> {
         let connection = self.connection()?;
         let sql = format!("{DOWNLOAD_SELECT} ORDER BY created_at DESC, id ASC");
@@ -220,12 +254,6 @@ impl Storage {
             "{DOWNLOAD_SELECT}
              WHERE queue_id = ?1 AND status = 'queued'
              ORDER BY
-                CASE priority
-                    WHEN 'very_high' THEN 0
-                    WHEN 'high' THEN 1
-                    WHEN 'normal' THEN 2
-                    WHEN 'low' THEN 3
-                END,
                 queue_position ASC,
                 id ASC"
         );

@@ -7,6 +7,7 @@ import "./AppShell.css";
 
 type AppShellProps = {
   children: ReactNode;
+  actions?: ReactNode;
   title: string;
   subtitle?: string;
   page: WorkspacePage;
@@ -19,6 +20,8 @@ type AppShellProps = {
   onSection: (section: DownloadSection) => void;
   onPage: (page: WorkspacePage) => void;
   onAddDownload: () => void;
+  onSettingsClick: () => void;
+  onQuitClick: () => void;
   /// Pages with their own scroll and layout (the download table) fill the
   /// workspace instead of scrolling inside a padded column.
   fill?: boolean;
@@ -26,6 +29,7 @@ type AppShellProps = {
 
 export function AppShell({
   children,
+  actions,
   title,
   subtitle,
   page,
@@ -38,6 +42,8 @@ export function AppShell({
   onSection,
   onPage,
   onAddDownload,
+  onSettingsClick,
+  onQuitClick,
   fill = false,
 }: AppShellProps) {
   return (
@@ -60,6 +66,9 @@ export function AppShell({
           searchValue={searchValue}
           onSearchChange={onSearchChange}
           showSearch={page === "downloads"}
+          actions={actions}
+          onSettingsClick={onSettingsClick}
+          onQuitClick={onQuitClick}
         />
 
         <main className={fill ? "app-shell__content app-shell__content--fill" : "app-shell__content"}>

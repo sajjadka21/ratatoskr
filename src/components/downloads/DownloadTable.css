@@ -1,5 +1,5 @@
 .download-table {
-  --columns: 34px minmax(180px, 1fr) minmax(120px, 170px) 116px 104px 112px 64px;
+  --columns: 34px minmax(180px, 1fr) minmax(110px, 150px) 100px 90px 120px 112px 64px;
 
   container-type: inline-size;
   min-width: 0;
@@ -45,6 +45,7 @@
   min-height: 0;
   flex: 1;
   overflow-y: auto;
+  scrollbar-width: none;
   overflow-x: hidden;
 }
 
@@ -328,7 +329,7 @@
 @container (max-width: 900px) {
   .download-table__head,
   .download-table__row {
-    --columns: 34px minmax(160px, 1fr) 130px 108px 108px 64px;
+    --columns: 34px minmax(150px, 1fr) 110px 90px 115px 100px 64px;
   }
 
   .download-table__head > :nth-child(5),
@@ -341,7 +342,7 @@
 @container (max-width: 700px) {
   .download-table__head,
   .download-table__row {
-    --columns: 34px minmax(140px, 1fr) 110px 100px 64px;
+    --columns: 34px minmax(100px, 1fr) 90px 110px 90px 64px;
   }
 
   .download-table__head > :nth-child(4),
@@ -372,4 +373,16 @@
 
 .download-table__row--selected.download-table__row--odd {
   background: color-mix(in srgb, var(--accent) 7%, var(--bg-surface));
+}
+
+.download-table__scroll::-webkit-scrollbar { display: none; }
+.download-table__scroll { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--accent) 70%, transparent) transparent; }
+.download-table__scroll::-webkit-scrollbar { display: block; width: 7px; height: 7px; }
+.download-table__scroll::-webkit-scrollbar-track { background: transparent; }
+.download-table__scroll::-webkit-scrollbar-thumb { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 80%, white 10%), color-mix(in srgb, var(--accent) 52%, transparent)); border: 2px solid transparent; border-radius: 99px; background-clip: padding-box; }
+.download-table__scroll::-webkit-scrollbar-thumb:hover { background-color: var(--accent); }
+.download-table__cell--date { color: var(--text-muted); font-size: 10.5px; line-height: 1.5; }
+@container (max-width: 520px) {
+  .download-table__head, .download-table__row { --columns: 30px minmax(90px, 1fr) 80px 105px 64px; gap: 8px; }
+  .download-table__head > :nth-child(7), .download-table__row > :nth-child(7) { display: none; }
 }

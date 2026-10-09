@@ -1,4 +1,6 @@
 .topbar {
+  position: relative;
+  z-index: 60;
   min-height: var(--topbar-height);
   padding: 12px 24px;
 
@@ -75,3 +77,25 @@
 :root[lang="en"] .topbar__heading h1 {
   letter-spacing: 0.04em;
 }
+
+.topbar__actions { margin-inline-start: auto; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.topbar__actions + .topbar__search { margin-inline-start: 0; width: min(300px, 24vw); }
+.topbar__shortcut { min-width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 10px; color: var(--text-secondary); background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 9px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.topbar__shortcut:hover { color: var(--text-primary); border-color: var(--border-strong); }
+.topbar__shortcut--quit { color: var(--danger-text); }
+.topbar__shortcut--quit:hover { background: color-mix(in srgb, var(--danger) 10%, var(--bg-surface)); border-color: color-mix(in srgb, var(--danger) 40%, var(--border-subtle)); }
+.quick-queue { display: flex; align-items: center; gap: 6px; }
+.quick-queue select { max-width: 140px; min-width: 80px; height: 36px; padding-inline: 8px; color: var(--text-secondary); background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 9px; font-size: 12px; }
+.quick-queue button { height: 36px; display: flex; align-items: center; gap: 6px; padding: 0 12px; color: var(--accent-text); background: var(--accent-soft); border: 1px solid var(--border-subtle); border-radius: 9px; cursor: pointer; white-space: nowrap; font-size: 12px; }
+.quick-queue button:disabled { opacity: .45; cursor: default; }
+@media (max-width: 1100px) { .topbar { gap: 12px; padding-inline: 16px; } .topbar__heading span, .topbar__search kbd { display: none; } }
+@media (max-width: 800px) { .quick-queue button span { display: none; } .quick-queue button { width: 36px; padding: 0; justify-content: center; } .quick-queue select { max-width: 110px; } }
+@media (max-width: 1000px) { .topbar__shortcut span { display: none; } .topbar__shortcut { width: 36px; padding: 0; } }
+@media (max-width: 640px) { .topbar { flex-wrap: wrap; min-height: 64px; gap: 8px; padding: 8px 12px; } .topbar__heading { flex: 1; } .topbar__heading h1 { font-size: 17px; } .topbar__actions { margin-inline-start: 0; flex-wrap: wrap; } .topbar__search, .topbar__actions + .topbar__search { order: 3; width: 100%; margin: 0; } }
+.quick-queue { position: relative; flex-shrink: 0; }
+.quick-queue summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border: 1px solid var(--border-subtle); border-radius: 9px; background: var(--accent-soft); color: var(--accent-text); font-size: 13px; }
+.quick-queue summary::-webkit-details-marker { display: none; }
+.quick-queue__panel { position: absolute; z-index: 50; inset-inline-end: 0; top: 44px; width: 240px; display: grid; gap: 6px; padding: 10px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--bg-surface); box-shadow: 0 12px 36px #0005; }
+.quick-queue__panel select { width: 100%; max-width: none; }
+.quick-queue__panel button { width: 100%; justify-content: flex-start; padding: 0 12px !important; }
+.quick-queue__panel button span { display: inline !important; }

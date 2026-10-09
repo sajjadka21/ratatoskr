@@ -16,10 +16,12 @@ data class MobileTask(
     val validator: String = "", val createdAt: Long = System.currentTimeMillis(),
     /** Epoch millis before which the task must not start; 0 = as soon as allowed. */
     val startAt: Long = 0,
+    val groupName: String = "",
+    val queuePosition: Long = 0,
 )
 
 /** The mobile backend's job journal. A job exists before any network request. */
-class TaskStore internal constructor(context: Context, databaseName: String = "downloads.db") : SQLiteOpenHelper(context, databaseName, null, 3) {
+class TaskStore internal constructor(context: Context, databaseName: String = "downloads.db") : SQLiteOpenHelper(context, databaseName, null, 5) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE tasks (
             notification_id INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE,
@@ -29,7 +31,7 @@ class TaskStore internal constructor(context: Context, databaseName: String = "d
             mime TEXT NOT NULL DEFAULT '', selected_items TEXT NOT NULL DEFAULT '',
             bytes_done INTEGER NOT NULL DEFAULT 0, total_bytes INTEGER NOT NULL DEFAULT -1,
             validator TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
-            start_at INTEGER NOT NULL DEFAULT 0
+            start_at INTEGER NOT NULL DEFAULT 0, group_name TEXT NOT NULL DEFAULT '', queue_position INTEGER NOT NULL DEFAULT 0
         )""")
         db.execSQL("CREATE INDEX task_state ON tasks(state, created_at)")
         createOutputs(db)
@@ -38,6 +40,11 @@ class TaskStore internal constructor(context: Context, databaseName: String = "d
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) createOutputs(db)
         if (oldVersion < 3) db.execSQL("ALTER TABLE tasks ADD COLUMN start_at INTEGER NOT NULL DEFAULT 0")
+        if (oldVersion < 4) db.execSQL("ALTER TABLE tasks ADD COLUMN group_name TEXT NOT NULL DEFAULT ''")
+        if (oldVersion < 5) {
+            db.execSQL("ALTER TABLE tasks ADD COLUMN queue_position INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("UPDATE tasks SET queue_position=notification_id")
+        }
     }
 
     @Synchronized fun recordOutput(id: String, index: Int, result: SavedMedia) {
@@ -53,18 +60,21 @@ class TaskStore internal constructor(context: Context, databaseName: String = "d
         if (it.moveToFirst()) SavedMedia(it.getString(it.getColumnIndexOrThrow("uri")), it.getString(it.getColumnIndexOrThrow("name")), it.getString(it.getColumnIndexOrThrow("mime"))) else null
     }
 
-    @Synchronized fun enqueue(url: String, height: Int?, audio: Boolean, title: String, kind: String = "media", items: String = ""): MobileTask {
+    @Synchronized fun enqueue(url: String, height: Int?, audio: Boolean, title: String, kind: String = "media", items: String = "", options: IntakeOptions = IntakeOptions()): MobileTask {
+        options.validate()
         val canonical = LinkUtils.canonicalUrl(url)
         val existing = list().firstOrNull { LinkUtils.contentIdentity(it.url) == LinkUtils.contentIdentity(canonical) && it.height == height && it.audioOnly == audio &&
             it.kind == kind && it.selectedItems == items && it.state !in setOf(TaskState.COMPLETED, TaskState.CANCELLED, TaskState.FAILED) }
-        if (existing != null) return existing
+        if (existing != null && !options.allowDuplicate) return existing
         val now = System.currentTimeMillis()
         val id = UUID.randomUUID().toString()
         val values = ContentValues().apply {
-            put("id", id); put("url", canonical); put("title", title.take(300)); put("state", TaskState.QUEUED.name)
+            put("id", id); put("url", canonical); put("title", title.take(300)); put("state", options.initialState.name)
+            put("start_at", options.startAt); put("group_name", options.groupName.trim().take(80))
             if (height != null) put("height", height)
             put("audio", if (audio) 1 else 0); put("kind", kind); put("selected_items", items)
             put("created_at", now); put("updated_at", now)
+            put("queue_position", (list().maxOfOrNull { it.queuePosition } ?: 0L) + 1L)
         }
         writableDatabase.insertOrThrow("tasks", null, values)
         return get(id)!!
@@ -73,16 +83,31 @@ class TaskStore internal constructor(context: Context, databaseName: String = "d
     @Synchronized fun get(id: String): MobileTask? = readableDatabase.query("tasks", null, "id=?", arrayOf(id), null, null, null).use {
         if (it.moveToFirst()) read(it) else null
     }
-    @Synchronized fun list(): List<MobileTask> = readableDatabase.query("tasks", null, null, null, null, null, "created_at ASC").use {
+    @Synchronized fun list(): List<MobileTask> = readableDatabase.query("tasks", null, null, null, null, null, "queue_position ASC, notification_id ASC").use {
         buildList { while (it.moveToNext()) add(read(it)) }
     }
     @Synchronized fun update(id: String, values: ContentValues) {
         values.put("updated_at", System.currentTimeMillis())
         writableDatabase.update("tasks", values, "id=?", arrayOf(id))
     }
+    /** Reorder waiting work within its own group; running and completed tasks never move. */
+    @Synchronized fun move(id: String, up: Boolean): Boolean {
+        val task = get(id) ?: return false
+        val eligible = list().filter { it.groupName == task.groupName && it.state !in TaskPolicy.inFlight && it.state !in setOf(TaskState.COMPLETED, TaskState.CANCELLED) }
+        val index = eligible.indexOfFirst { it.id == id }
+        if (index < 0) return false
+        val neighbor = eligible.getOrNull(index + if (up) -1 else 1) ?: return false
+        writableDatabase.beginTransaction()
+        try {
+            update(task.id, ContentValues().apply { put("queue_position", neighbor.queuePosition) })
+            update(neighbor.id, ContentValues().apply { put("queue_position", task.queuePosition) })
+            writableDatabase.setTransactionSuccessful()
+        } finally { writableDatabase.endTransaction() }
+        return true
+    }
     @Synchronized fun begin(id: String): Boolean {
         val current = get(id) ?: return false
-        if (current.state !in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK)) return false
+        if (current.state !in setOf(TaskState.QUEUED, TaskState.WAITING_NETWORK) || !Schedule.isDue(current.startAt, System.currentTimeMillis())) return false
         state(id, TaskState.PROBING)
         return true
     }
@@ -119,7 +144,7 @@ class TaskStore internal constructor(context: Context, databaseName: String = "d
         if (task.state in setOf(TaskState.COMPLETED, TaskState.CANCELLED) || task.state in TaskPolicy.inFlight) return
         update(id, ContentValues().apply {
             put("start_at", startAt.coerceAtLeast(0))
-            if (task.state in setOf(TaskState.PAUSED, TaskState.FAILED, TaskState.WAITING_NETWORK)) { put("state", TaskState.QUEUED.name); put("error", "") }
+            if (task.state in setOf(TaskState.SAVED, TaskState.PAUSED, TaskState.FAILED, TaskState.WAITING_NETWORK)) { put("state", TaskState.QUEUED.name); put("error", "") }
         })
     }
     @Synchronized fun recover() {
@@ -138,7 +163,7 @@ class TaskStore internal constructor(context: Context, databaseName: String = "d
         return MobileTask(s("id"), s("url"), s("title"), TaskState.valueOf(s("state")),
             if (c.isNull(c.getColumnIndexOrThrow("height"))) null else n("height").toInt(), n("audio") == 1L,
             s("kind"), n("progress").toInt(), n("notification_id").toInt(), s("error"), s("uri"), s("file_name"),
-            s("mime"), s("selected_items"), n("bytes_done"), n("total_bytes"), s("validator"), n("created_at"), n("start_at"))
+            s("mime"), s("selected_items"), n("bytes_done"), n("total_bytes"), s("validator"), n("created_at"), n("start_at"), s("group_name"), n("queue_position"))
     }
     companion object {
         @Volatile private var instance: TaskStore? = null

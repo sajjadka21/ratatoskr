@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.3
+
+- Windows: image downloads from the browser extension now open Ratatoskr's normal download dialog. Choose the original image or a PNG, JPEG, or WebP copy there; the original is kept, and existing filenames receive a number instead of being overwritten.
+
+## 1.3.2
+
+- Desktop and Android: webpages outside the built-in common-site list are now detected from their response and handed to yt-dlp, so extractor coverage is no longer limited to a manually maintained site allowlist. Direct file responses stay on the native downloader.
+- Desktop and Android: detect HTML pages even when a server mislabels them as a binary file, preventing saved PHP/login/error pages from masquerading as video downloads.
+- Desktop and Android: add Pinterest pin URLs to the common-site routing and quality-selection hints.
+- Android version code 11; Windows and Android share version 1.3.2.
+
 ## 1.2.0
 
 - Desktop: the close button (X) now differs from minimising. Minimising never stops anything; X can keep going in the tray, quit, or ask when something is downloading or scheduled (Settings → close button). Existing yes/no choice is respected.

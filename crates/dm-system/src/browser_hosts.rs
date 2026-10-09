@@ -4,7 +4,7 @@
 //! they find in the registry. Registering it by hand was the hard part of
 //! installing the extension; the application does it for the current user
 //! (no administrator rights, nothing outside the user's own registry hive)
-//! every time it starts, pointing at the host program next to it.
+//! every time it starts, pointing at the bundled host program.
 //!
 //! The extension's IDs are fixed (the Chromium one by the key in its
 //! manifest, the Firefox one by `browser_specific_settings`), so only that
@@ -117,6 +117,16 @@ pub fn register(host: &Path, folder: &Path) -> io::Result<Vec<Browser>> {
             registered.push(browser);
         }
     }
+    // A successful manifest write is not enough: if every per-user registry
+    // write failed, the browser cannot discover the native host. Surface that
+    // failure to the Settings UI instead of reporting a misleading success.
+    #[cfg(windows)]
+    if registered.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Windows could not register the browser connector for this user",
+        ));
+    }
     Ok(registered)
 }
 
@@ -132,15 +142,28 @@ pub fn registered() -> Vec<Browser> {
         .collect()
 }
 
-/// The host program next to the application, if it is there.
-pub fn host_beside(application: &Path) -> Option<PathBuf> {
+/// Finds the native host next to the application or in its bundled resources.
+/// Portable builds put it beside the executable; installed Tauri builds put
+/// it in the resource directory.
+pub fn host_for(application: &Path, resources: Option<&Path>) -> Option<PathBuf> {
     let directory = application.parent()?;
     let name = if cfg!(windows) {
         "dm-native-host.exe"
     } else {
         "dm-native-host"
     };
-    Some(directory.join(name)).filter(|path| path.is_file())
+    [
+        Some(directory.join(name)),
+        resources.map(|folder| folder.join(name)),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|path| path.is_file())
+}
+
+/// The host program next to the application, if it is there.
+pub fn host_beside(application: &Path) -> Option<PathBuf> {
+    host_for(application, None)
 }
 
 fn write_if_changed(path: &Path, manifest: &serde_json::Value) -> io::Result<()> {
@@ -289,9 +312,12 @@ mod tests {
         let missing = directory.path().join("dm-native-host.exe");
         assert!(register(&missing, directory.path()).is_err());
 
-        std::fs::write(&missing, b"").unwrap();
         let folder = directory.path().join("hosts");
-        let _ = register(&missing, &folder).unwrap();
+        fs::create_dir_all(&folder).unwrap();
+        let host = directory.path().join("dm-native-host.exe");
+        fs::write(&host, b"").unwrap();
+        write_if_changed(&folder.join("chromium-host.json"), &manifest(&host, false)).unwrap();
+        write_if_changed(&folder.join("firefox-host.json"), &manifest(&host, true)).unwrap();
         let written: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(folder.join("firefox-host.json")).unwrap(),
         )
@@ -302,5 +328,44 @@ mod tests {
             host_beside(&directory.path().join("Ratatosk.exe")).is_some(),
             cfg!(windows)
         );
+    }
+
+    #[test]
+    fn installed_host_can_be_found_in_tauri_resources() {
+        let directory = tempfile::tempdir().unwrap();
+        let install = directory.path().join("install");
+        let resources = install.join("resources");
+        fs::create_dir_all(&resources).unwrap();
+        let application = install.join("Ratatoskr.exe");
+        let host = resources.join(if cfg!(windows) {
+            "dm-native-host.exe"
+        } else {
+            "dm-native-host"
+        });
+        fs::write(&host, b"host").unwrap();
+
+        assert_eq!(host_for(&application, Some(&resources)), Some(host));
+    }
+
+    #[test]
+    fn portable_host_next_to_application_takes_precedence() {
+        let directory = tempfile::tempdir().unwrap();
+        let resources = directory.path().join("resources");
+        fs::create_dir_all(&resources).unwrap();
+        let application = directory.path().join("Ratatoskr.exe");
+        let beside = directory.path().join(if cfg!(windows) {
+            "dm-native-host.exe"
+        } else {
+            "dm-native-host"
+        });
+        let bundled = resources.join(if cfg!(windows) {
+            "dm-native-host.exe"
+        } else {
+            "dm-native-host"
+        });
+        fs::write(&beside, b"portable host").unwrap();
+        fs::write(&bundled, b"bundled host").unwrap();
+
+        assert_eq!(host_for(&application, Some(&resources)), Some(beside));
     }
 }

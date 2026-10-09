@@ -17,3 +17,4 @@ Third-party dependencies keep their own licences:
 - Commons IO: Apache-2.0.
 
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License version 3 as published by the Free Software Foundation. This program is distributed without any warranty; see the full licence for details.
+- AB Download Manager Android UI and vectors: Apache-2.0; original licence, modifications and pinned source provenance are bundled in assets/third-party/ab-ui.

@@ -141,6 +141,7 @@ mod tests {
             final_url: "https://example.com/file.bin".to_owned(),
             filename: "file.bin".to_owned(),
             content_type: None,
+            html_page: false,
             total_bytes: Some(1_000),
             etag: Some("\"v1\"".to_owned()),
             last_modified: None,

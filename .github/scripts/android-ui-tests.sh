@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -uo pipefail
 result=0
+# Match the approved 400dp-wide reference; device chrome remains native.
+adb shell wm size 1200x2562
+adb shell wm density 480
 gradle --no-daemon :app:connectedDebugAndroidTest || result=$?
 mkdir -p build/ui-screenshots
 # Gradle uninstalls the test application; the shell-owned screenshots survive.

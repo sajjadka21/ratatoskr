@@ -132,6 +132,78 @@ pub fn evaluate_rules(
     })
 }
 
+/// A generic binary response describes transport, not the file category.
+/// Prefer the server's filename for classification while keeping actual MIME
+/// and the original source URL authoritative for explicit user rules.
+pub(crate) fn evaluate_file_rules(
+    source_url: &str,
+    filename: &str,
+    mime_type: Option<&str>,
+    size: Option<u64>,
+    rules: &[DownloadRule],
+    categories: &[CategoryRecord],
+) -> Option<RuleDecision> {
+    let decision = evaluate_rules(source_url, mime_type, size, rules, categories)?;
+    let generic = mime_type.is_none_or(|mime| {
+        matches!(
+            mime.split(';')
+                .next()
+                .unwrap_or(mime)
+                .trim()
+                .to_ascii_lowercase()
+                .as_str(),
+            "application/octet-stream" | "binary/octet-stream"
+        )
+    });
+    if decision.rule_id.is_some() {
+        return Some(decision);
+    }
+    // Some servers label archives as a generic application download. Their
+    // filename is more reliable than that broad MIME bucket for routing.
+    if decision.category_id.as_deref() == Some("applications") {
+        let extension = filename
+            .rsplit_once('.')
+            .map(|(_, extension)| extension.to_ascii_lowercase());
+        if let Some(archive) = extension.and_then(|extension| {
+            categories.iter().find(|category| {
+                category.id == "archives"
+                    && category
+                        .extensions
+                        .iter()
+                        .any(|item| item.eq_ignore_ascii_case(&extension))
+            })
+        }) {
+            let mut file_url = Url::parse(source_url).ok()?;
+            file_url.set_path(&format!("/{filename}"));
+            let mut corrected = evaluate_rules(file_url.as_str(), None, size, &[], categories)?;
+            corrected.category_id = Some(archive.id.clone());
+            corrected.category_name = Some(archive.name.clone());
+            return Some(corrected);
+        }
+    }
+    if matches!(
+        crate::media::classify_source(source_url, mime_type),
+        Some(crate::media::MediaKind::Hls | crate::media::MediaKind::Dash)
+    ) {
+        return evaluate_rules(source_url, Some("video/unknown"), size, &[], categories);
+    }
+    if !generic {
+        return Some(decision);
+    }
+    let mut file_url = Url::parse(source_url).ok()?;
+    file_url.set_path(&format!("/{filename}"));
+    let from_name = evaluate_rules(file_url.as_str(), None, size, &[], categories)?;
+    if from_name
+        .category_id
+        .as_deref()
+        .is_some_and(|id| id != "other")
+    {
+        Some(from_name)
+    } else {
+        evaluate_rules(source_url, None, size, &[], categories)
+    }
+}
+
 fn wildcard_match(pattern: &str, value: &str) -> bool {
     let pattern = pattern.to_ascii_lowercase();
     let value = value.to_ascii_lowercase();
@@ -227,6 +299,66 @@ mod tests {
         assert_eq!(decision.rule_id.as_deref(), Some("first"));
         assert_eq!(decision.priority, Some(DownloadPriority::High));
         assert!(decision.explanation.contains("first"));
+    }
+
+    #[test]
+    fn manifest_and_binary_video_categories_route_to_video() {
+        let categories = vec![
+            category("applications", "exe", "application/*", ""),
+            category("video", "mp4", "video/*", ""),
+            category("other", "", "", ""),
+        ];
+        for (url, name, mime) in [
+            (
+                "https://example.com/get",
+                "movie.mp4",
+                "application/octet-stream",
+            ),
+            (
+                "https://example.com/live.m3u8",
+                "live.m3u8",
+                "application/vnd.apple.mpegurl",
+            ),
+            (
+                "https://example.com/live.mpd",
+                "live.mpd",
+                "application/dash+xml",
+            ),
+        ] {
+            let decision =
+                evaluate_file_rules(url, name, Some(mime), None, &[], &categories).unwrap();
+            assert_eq!(decision.category_id.as_deref(), Some("video"));
+        }
+    }
+
+    #[test]
+    fn generic_application_mime_does_not_route_archives_to_applications() {
+        let mut categories = vec![
+            category("applications", "exe,msi", "application/*", ""),
+            category("archives", "zip", "application/zip", ""),
+            category("other", "", "", ""),
+        ];
+        categories[0].extensions = vec!["exe".to_owned(), "msi".to_owned()];
+        categories[1].extensions = ["zip", "rar", "7z", "tar", "gz", "bz2", "xz"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        for filename in ["season.zip", "package.rar", "backup.7z", "source.tar"] {
+            let decision = evaluate_file_rules(
+                "https://example.com/download?id=1",
+                filename,
+                Some("application/x-compressed"),
+                None,
+                &[],
+                &categories,
+            )
+            .unwrap();
+            assert_eq!(
+                decision.category_id.as_deref(),
+                Some("archives"),
+                "{filename}"
+            );
+        }
     }
 
     #[test]

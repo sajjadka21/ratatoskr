@@ -34,3 +34,7 @@
   margin: 0 auto;
   padding: 8px 24px 40px;
 }
+
+@media (max-width: 1050px) {
+  .app-shell__content-inner { padding-inline: 16px; }
+}

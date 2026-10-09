@@ -16,16 +16,30 @@ import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.button.MaterialButton
 
 abstract class MobileActivity : AppCompatActivity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        // AppCompat applies its locale override while attaching the base context.
+        // Setting it only in onCreate can render a first frame in the old language.
+        val language = MobilePreferences(newBase).language
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            // The framework locale service works before there is an active AppCompat delegate.
+            val manager = newBase.getSystemService(android.app.LocaleManager::class.java)
+            if (manager.applicationLocales.toLanguageTags() != language)
+                manager.applicationLocales = android.os.LocaleList.forLanguageTags(language)
+        } else if (AppCompatDelegate.getApplicationLocales().toLanguageTags() != language) {
+            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(language))
+        }
+        super.attachBaseContext(newBase)
+    }
     fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     val dark get() = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK == android.content.res.Configuration.UI_MODE_NIGHT_YES
-    val ink get() = Color.parseColor(if (dark) "#EEE5D7" else "#302D28")
-    val paper get() = Color.parseColor(if (dark) "#131820" else "#EAE5DC")
-    val surface get() = Color.parseColor(if (dark) "#202731" else "#F4F0E8")
+    val ink get() = Color.parseColor(if (dark) "#ECEEEB" else "#202829")
+    val paper get() = Color.parseColor(if (dark) "#12171B" else "#E6E5E1")
+    val surface get() = Color.parseColor(if (dark) "#20272B" else "#F0EFEA")
     val accent get() = Color.parseColor(when (MobilePreferences(this).brand) {
         "midnight-arcane" -> if (dark) "#C3A0EB" else "#673E9D"
         "forest-rune" -> if (dark) "#BAD47D" else "#526B1C"
         "frost-byte" -> if (dark) "#90D5F0" else "#14628D"
-        else -> if (dark) "#EBBA75" else "#955311"
+        else -> if (dark) "#D6B778" else "#896326"
     })
     override fun onCreate(savedInstanceState: Bundle?) {
         val prefs = MobilePreferences(this)
@@ -47,6 +61,12 @@ abstract class MobileActivity : AppCompatActivity() {
     private var appliedAppearance = emptyList<String>()
     override fun onResume() {
         super.onResume()
+        window.statusBarColor = paper
+        window.navigationBarColor = paper
+        androidx.core.view.WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !dark
+            isAppearanceLightNavigationBars = !dark
+        }
         val prefs = MobilePreferences(this)
         if (appliedAppearance != listOf(prefs.mode, prefs.brand, prefs.language)) {
             window.decorView.post { if (!isFinishing && !isDestroyed) recreate() }
@@ -74,7 +94,7 @@ abstract class MobileActivity : AppCompatActivity() {
     fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
     fun label(value: String, size: Float = 16f) = TextView(this).apply { text = value; textSize = size; setTextColor(ink); setPadding(0, dp(8), 0, dp(8)) }
     fun button(value: String, action: () -> Unit) = MaterialButton(this).apply {
-        text = value; minHeight = dp(48); cornerRadius = dp(12)
+        text = value; isAllCaps = false; textSize = 14f; minHeight = dp(48); cornerRadius = dp(12)
         backgroundTintList = ColorStateList.valueOf(surface); setTextColor(accent)
         setOnClickListener { action() }
     }

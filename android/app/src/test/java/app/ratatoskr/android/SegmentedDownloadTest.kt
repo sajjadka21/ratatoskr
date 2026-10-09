@@ -270,10 +270,10 @@ class SegmentedDownloadTest {
     }
 
     @Test fun aChangedFileRestartsInsteadOfStitchingVersions() {
-        run()
+        val first = run()
         // Pretend the server file changed: a journal with a different source is ignored.
-        File(directory, "transfer.json").delete()
-        File(directory, "big.bin").delete()
+        assertTrue(File(directory, "transfer.json").delete())
+        assertTrue(first.delete())
         assertArrayEquals(payload, run().readBytes())
     }
 

@@ -1,0 +1,9 @@
+.queue-settings-dialog { width: min(740px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); margin: auto; padding: 24px; overflow: auto; color: var(--text-primary); background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: 18px; box-shadow: 0 24px 80px #0007; }
+.queue-settings-dialog::backdrop { background: #0009; backdrop-filter: blur(4px); }
+.queue-settings-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.queue-settings-dialog > header h2 { margin: 0; overflow-wrap: anywhere; }
+.queue-settings-dialog button { cursor: pointer; color: var(--text-primary); background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 8px 14px; }
+.queue-settings-dialog__limits { display: flex; flex-wrap: wrap; gap: 24px; margin-block: 24px; }
+.queue-settings-dialog__limits label { display: flex; align-items: center; gap: 12px; }
+.queue-settings-dialog select { background: var(--bg-surface); color: var(--text-primary); padding: 8px; border: 1px solid var(--border-subtle); border-radius: 8px; }
+.queue-settings-dialog footer { display: flex; justify-content: flex-end; margin-top: 16px; }

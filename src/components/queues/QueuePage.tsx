@@ -157,6 +157,7 @@ export function QueuePage({
           <button
             type="button"
             aria-label={t("queues.create")}
+            title={t("queues.create")}
             onClick={() => setCreateOpen((current) => !current)}
           >
             <Plus size={15} />
@@ -264,7 +265,7 @@ export function QueuePage({
                 </p>
               </div>
               <div className="queue-page__header-actions">
-                {onConfigure ? <button type="button" className="queue-page__runner-button" onClick={() => onConfigure(selectedQueue.id)}><Settings2 size={16} />{t("queues.manageShortcut")}</button> : null}
+                {onConfigure ? <button type="button" className="queue-page__runner-button" title={t("queues.manageShortcut")} onClick={() => onConfigure(selectedQueue.id)}><Settings2 size={16} />{t("queues.manageShortcut")}</button> : null}
                 <label className="queue-page__limits">
                   {t("queues.concurrent")}
                   <select aria-label={t("queues.concurrent")} value={selectedQueue.maxConcurrent} disabled={busy}
@@ -302,6 +303,7 @@ export function QueuePage({
                 <button
                   type="button"
                   className="queue-page__runner-button"
+                  title={selectedQueue.state === "running" ? t("queues.stop") : t("queues.start")}
                   disabled={busy || !selectedQueue.enabled}
                   onClick={() =>
                     void run(() =>
@@ -363,11 +365,11 @@ export function QueuePage({
                       ))}
                     </select>
                     <div className="queue-page__order-actions">
-                      <button type="button" disabled={busy || index === 0} onClick={() => void moveInOrder(download.id, 0)} aria-label={t("queues.top")}><ChevronsUp size={14} /></button>
-                      <button type="button" disabled={busy || index === 0} onClick={() => void moveInOrder(download.id, index - 1)} aria-label={t("queues.up")}><ArrowUp size={14} /></button>
-                      <button type="button" disabled={busy || index === queueDownloads.length - 1} onClick={() => void moveInOrder(download.id, index + 1)} aria-label={t("queues.down")}><ArrowDown size={14} /></button>
-                      <button type="button" disabled={busy || index === queueDownloads.length - 1} onClick={() => void moveInOrder(download.id, queueDownloads.length - 1)} aria-label={t("queues.bottom")}><ChevronsDown size={14} /></button>
-                      <button type="button" disabled={busy} onClick={() => void run(() => onRemove(download.id))} aria-label={t("queues.remove")}><Unlink size={14} /></button>
+                      <button type="button" disabled={busy || index === 0} onClick={() => void moveInOrder(download.id, 0)} aria-label={t("queues.top")} title={t("queues.top")}><ChevronsUp size={14} /></button>
+                      <button type="button" disabled={busy || index === 0} onClick={() => void moveInOrder(download.id, index - 1)} aria-label={t("queues.up")} title={t("queues.up")}><ArrowUp size={14} /></button>
+                      <button type="button" disabled={busy || index === queueDownloads.length - 1} onClick={() => void moveInOrder(download.id, index + 1)} aria-label={t("queues.down")} title={t("queues.down")}><ArrowDown size={14} /></button>
+                      <button type="button" disabled={busy || index === queueDownloads.length - 1} onClick={() => void moveInOrder(download.id, queueDownloads.length - 1)} aria-label={t("queues.bottom")} title={t("queues.bottom")}><ChevronsDown size={14} /></button>
+                      <button type="button" disabled={busy} onClick={() => void run(() => onRemove(download.id))} aria-label={t("queues.remove")} title={t("queues.remove")}><Unlink size={14} /></button>
                     </div>
                   </article>
                 ))}

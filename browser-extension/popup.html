@@ -1,26 +1,45 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
-<meta charset="utf-8">
-<title>Ratatosk</title>
-<style>
-  :root { color-scheme: light dark; --accent: #0f8074; }
-  @media (prefers-color-scheme: dark) { :root { --accent: #34c3b4; } }
-  body { font: 13px system-ui, "Segoe UI", Tahoma, sans-serif; min-width: 240px; margin: 0; padding: 14px; }
-  header { display: flex; align-items: center; gap: 8px; }
-  header img { width: 24px; height: 24px; }
-  p { margin: 10px 0; line-height: 1.5; }
-  .muted { opacity: .7; }
-  button { font: inherit; padding: 6px 12px; border-radius: 7px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ratatoskr</title>
+  <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-<header><img src="icons/32.png" alt=""><strong data-i18n="name"></strong></header>
-<p id="status">…</p>
-<p id="takeover" class="muted"></p>
-<button id="checkConnection" data-i18n="checkConnection"></button>
-<button id="settings" data-i18n="openSettings"></button>
-<script src="i18n.js"></script>
-<script src="popup.js"></script>
+  <div class="popup-shell">
+    <header class="popup-header">
+      <img class="popup-header__logo" src="icons/32.png" alt="">
+      <div class="popup-header__brand">
+        <strong data-i18n="name"></strong>
+        <span data-i18n="popupTagline"></span>
+      </div>
+      <button id="settings" class="popup-header__settings" type="button" data-i18n="popupSettings" aria-label="Settings"></button>
+    </header>
+
+    <main class="popup-main">
+      <section class="connection-panel" id="connectionPanel" aria-live="polite">
+        <div class="connection-panel__heading">
+          <span class="connection-panel__dot" id="connectionDot" aria-hidden="true"></span>
+          <div>
+            <span class="panel-eyebrow" data-i18n="popupConnectionTitle"></span>
+            <strong id="status">…</strong>
+          </div>
+        </div>
+        <p id="takeover" class="connection-panel__detail"></p>
+      </section>
+
+    </main>
+
+    <footer class="popup-footer">
+      <button id="checkConnection" class="popup-footer__check" type="button">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 7v5h-5M4.7 9a7.5 7.5 0 0 1 12.6-2L20 12M4 17v-5h5m10.3 3a7.5 7.5 0 0 1-12.6 2L4 12"/></svg>
+        <span data-i18n="popupCheck"></span>
+      </button>
+      <span class="popup-footer__brand">RATATOSKR <i></i></span>
+    </footer>
+  </div>
+  <script src="i18n.js"></script>
+  <script src="popup.js"></script>
 </body>
 </html>

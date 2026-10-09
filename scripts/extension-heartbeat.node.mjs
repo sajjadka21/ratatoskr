@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { setImmediate } from "node:timers/promises";
 import test from "node:test";
@@ -67,7 +68,14 @@ async function worker({ userAgent = "Chrome/128.0", brave = false, existingAlarm
     i18n: { getMessage(key) { return key; } },
   };
   const navigator = { userAgent, ...(brave ? { brave: { isBrave: async () => true } } : {}) };
-  vm.runInNewContext(background, { chrome, navigator, URL, Date, console }, { filename: "background.js" });
+  const context = { chrome, navigator, URL, Date, console };
+  context.importScripts = (...scripts) => {
+    for (const script of scripts) {
+      const source = readFileSync(new URL(`../browser-extension/${script}`, import.meta.url), "utf8");
+      vm.runInNewContext(source, context, { filename: script });
+    }
+  };
+  vm.runInNewContext(background, context, { filename: "background.js" });
   await settle();
   return { chrome, alarms, sent, createdAlarms, effects, permissionChecks };
 }

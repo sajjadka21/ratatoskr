@@ -15,7 +15,7 @@ export function QuickQueueControls({ queues, selected, busy, ready, onSelect, on
   return <details className="quick-queue" onBlur={(event) => {
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false;
   }} onKeyDown={(event) => { if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }}>
-    <summary><ListOrdered size={16} /><span>{t("nav.queues")}</span><ChevronDown size={14} /></summary>
+    <summary aria-label={t("queues.control")} title={t("queues.control")}><ListOrdered size={16} /><span>{t("queues.control")}</span><ChevronDown size={14} /></summary>
     <div className="quick-queue__panel">
     <select aria-label={t("queues.quickSelect")} value={selected?.id ?? ""}
       disabled={busy || !queues.length} onChange={(event) => onSelect(event.target.value)}>

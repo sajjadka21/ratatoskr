@@ -629,7 +629,7 @@ impl DownloadService {
     fn windows_category_folder(category_id: &str) -> Option<&'static str> {
         match category_id {
             "applications" => Some("Applications"),
-            "archives" => Some("Archives"),
+            "archives" => Some("Compressed"),
             "documents" => Some("Documents"),
             "video" => Some("Video"),
             "audio" => Some("Audio"),
@@ -4604,7 +4604,7 @@ mod tests {
         let base = harness.destination.clone();
         let cases = [
             ("applications", "Applications"),
-            ("archives", "Archives"),
+            ("archives", "Compressed"),
             ("documents", "Documents"),
             ("video", "Video"),
             ("audio", "Audio"),
@@ -4634,7 +4634,7 @@ mod tests {
             );
         }
 
-        let archives = base.join("Archives");
+        let archives = base.join("Compressed");
         assert!(!archives.exists());
         harness
             .service

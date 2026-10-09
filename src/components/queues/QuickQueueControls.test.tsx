@@ -13,5 +13,5 @@ it.each(["running", "idle"])("offers only the valid queue action while %s", (sta
   const buttons = [...document.querySelectorAll("button")];
   expect(buttons[0].disabled).toBe(state === "running");
   expect(buttons[1].disabled).toBe(state !== "running");
-  expect(document.querySelector("summary")?.textContent).toBe("Queues");
+  expect(document.querySelector("summary")?.textContent).toBe("Queue controls");
 });

@@ -24,12 +24,12 @@ fn a_recent_ping_identifies_the_browser_that_actually_contacted_the_host() {
 }
 
 #[test]
-fn the_connection_window_includes_150_seconds_but_not_151() {
+fn the_connection_window_includes_90_seconds_but_not_91() {
     assert_eq!(
-        connected_browsers(&records(&[("browser_ping_edge", "850")]), 1_000),
+        connected_browsers(&records(&[("browser_ping_edge", "910")]), 1_000),
         vec!["edge"]
     );
-    assert!(connected_browsers(&records(&[("browser_ping_edge", "849")]), 1_000).is_empty());
+    assert!(connected_browsers(&records(&[("browser_ping_edge", "909")]), 1_000).is_empty());
 }
 
 #[test]
@@ -82,7 +82,7 @@ fn browser_names_are_unique_and_have_a_stable_order_independent_of_record_order(
 fn a_valid_recent_duplicate_is_not_hidden_by_an_expired_or_invalid_duplicate() {
     let values = records(&[
         ("browser_ping_chrome", "999"),
-        ("browser_ping_chrome", "849"),
+        ("browser_ping_chrome", "900"),
         ("browser_ping_chrome", "invalid"),
     ]);
     assert_eq!(connected_browsers(&values, 1_000), vec!["chrome"]);

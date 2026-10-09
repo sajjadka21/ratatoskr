@@ -189,6 +189,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
   const [inputMode, setInputMode] = useState<AddDownloadInputMode>("clipboard");
+  const [ctrlVAutoAdd, setCtrlVAutoAdd] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [downloadSettings, setDownloadSettings] = useState<DownloadSettings | null>(null);
@@ -1027,6 +1028,26 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     setModalOpen(true);
   }
 
+  useEffect(() => {
+    let current = true;
+    void invoke<boolean>("get_ctrl_v_auto_add").then((enabled) => { if (current) setCtrlVAutoAdd(enabled); }).catch(() => {});
+    return () => { current = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!ctrlVAutoAdd) return;
+    const handlePasteShortcut = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "v" || isTypingTarget(event.target) || modalOpen || welcomeOpen || creatingTasks) return;
+      event.preventDefault();
+      void invoke<string[]>("read_clipboard_links").then((links) => {
+        if (links.length) return createDownloadTasks({ kind: "start-now" }, links.join("\n"));
+        notify("info", t("toast.noLinks"));
+      }).catch((reason) => notify("error", String(reason)));
+    };
+    window.addEventListener("keydown", handlePasteShortcut, true);
+    return () => window.removeEventListener("keydown", handlePasteShortcut, true);
+  }, [ctrlVAutoAdd, modalOpen, welcomeOpen, creatingTasks, t]);
+
   // ---- selection ----------------------------------------------------------
 
   function clearSelection() {
@@ -1297,6 +1318,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
   }
 
   function goToPage(next: WorkspacePage) {
+    if (next === "settings") setSettingsInitialGroup("general");
     setPage(next);
     setContextMenu(null);
   }
@@ -1356,7 +1378,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
         onSection={goToSection}
         onPage={goToPage}
         onAddDownload={() => void openAddDownload()}
-        onSettingsClick={() => { setSettingsInitialGroup("general"); setPage("settings"); }}
+        onSettingsClick={() => goToPage("settings")}
         onQuitClick={() => void invoke("request_close_confirmation").catch((reason) => notify("error", String(reason)))}
         actions={<QuickQueueControls queues={queues} selected={quickQueue} busy={quickQueueBusy} ready={allReady}
           onSelect={setQuickQueueId} onToggle={() => void toggleQuickQueue()}
@@ -1612,8 +1634,8 @@ function App({ preferences, onPreferencesChange }: AppProps) {
         duplicateCount={
           modalOpen ? duplicateLinks.length : 0
         }
+        duplicateUrls={modalOpen ? duplicateLinks : []}
         completedDuplicateCount={modalOpen ? duplicateRecords.filter((item) => item.status.toLowerCase() === "completed").length : 0}
-        duplicateNames={modalOpen ? [...new Set(duplicateRecords.map((item) => item.filename).filter(Boolean))] as string[] : []}
         queues={queues}
         defaultDirectory={downloadSettings?.defaultDirectory ?? null}
         onUrlChange={setUrl}

@@ -7,14 +7,16 @@ are fixed: `ocefplbhcgfmihahfkaknodbdidflhle` in Chromium browsers (from the
 
 ## Connecting to the app
 
-Ratatosk registers the native messaging host (`dm-native-host.exe`, installed
-next to it) for the current Windows user every time it starts, for Chrome,
+Ratatosk registers the native messaging host (`dm-native-host.exe`) for the
+current Windows user every time it starts, for Chrome,
 Edge, Brave, Chromium and Firefox. No manual registry or manifest editing is
 needed. Settings → Browser extension shows what is connected.
 
-Until the extension is published in the browsers' stores it is loaded from the
-`browser-extension` folder installed with the app (Settings has buttons for
-the folder and each browser's extensions page). Once published, put the store
+The installed app locates the host in its bundled resources; the portable
+package keeps it beside `Ratatoskr.exe`. Until the extension is published in
+the browsers' stores it is loaded from the `browser-extension` folder installed
+with the app (Settings has buttons for the folder and each browser's extensions
+page). Once published, put the store
 addresses in `STORE_PAGES` in `src/components/settings/BrowserSection.tsx`.
 The private key that fixes the Chromium ID is kept outside the repository
 (`.signing/ratatosk-extension.pem`); keep it with the update signing key.
@@ -22,6 +24,11 @@ The private key that fixes the Chromium ID is kept outside the repository
 ## What it does
 
 - Right-click a link: **Download with Ratatosk**.
+- In Chrome, Edge and Brave, right-click an image and choose **Download with
+  Ratatoskr**. In the page that opens, send the original to Ratatoskr or choose
+  PNG, JPEG or WebP. The browser asks for site access only when conversion is
+  selected. Converted copies go to the browser's Downloads folder; very large
+  images are rejected before transfer to keep the browser responsive.
 - Right-click selected text: its links go to the link collector.
 - On YouTube, Aparat, Instagram and similar sites: **Download this video with
   Ratatosk** (downloaded with yt-dlp).
@@ -63,9 +70,14 @@ separate Chrome, Edge and Firefox ZIPs under `target/extension`. These packages
 are ready for submission; they are not approved or signed store downloads.
 Store-assigned Chromium IDs must be allowed by the native host before publication.
 
+For local testing, run `node scripts/package-extension.mjs --local-test`. Those
+packages go under `target/extension` with a `-local-test` suffix and keep the
+fixed development key so the installed app's native messaging host recognizes
+the extension. Add `--out-dir <folder>` to choose another output folder.
+
 The extension sends a passive one-minute connection check and never launches the
 desktop app for that check. Settings marks a browser as recently contacted only
-for 150 seconds after an identified native message. Missing or failed responses
+for 90 seconds after an identified native message. Missing or failed responses
 remove the previous green state.
 
 Firefox asks separately for optional technical data consent when the user presses

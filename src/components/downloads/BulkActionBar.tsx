@@ -48,7 +48,7 @@ export function BulkActionBar({ count, queues, onAction, onQueue, onClear }: Bul
           ))}
         </select>
       </label>
-      <button type="button" className="bulk-action-bar__close" onClick={onClear} aria-label={t("bulk.clear")}>
+      <button type="button" className="bulk-action-bar__close" onClick={onClear} aria-label={t("bulk.clear")} title={t("bulk.clear")}>
         <X size={15} />
       </button>
     </div>

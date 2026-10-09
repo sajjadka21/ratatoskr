@@ -47,12 +47,16 @@ export function prepareRelease({ input, output, version, repository, publicKey, 
   if (!/^\d+\.\d+\.\d+$/.test(version) || !/^[\w.-]+\/[\w.-]+$/.test(repository)) {
     throw new Error("Expected a stable semantic version and owner/repository");
   }
-  if (!["all", "windows"].includes(scope)) throw new Error("Release scope must be all or windows");
+  if (!["all", "windows", "windows-extensions"].includes(scope)) {
+    throw new Error("Release scope must be all, windows, or windows-extensions");
+  }
   const files = collect(input);
   const installer = `Ratatoskr_${version}_x64-setup.exe`;
   const windowsAssets = [installer, `${installer}.sig`, `Ratatoskr_${version}_x64_en-US.msi`,
     "Ratatoskr-portable.zip", "latest.json"];
-  const expected = scope === "windows" ? windowsAssets : [
+  const expected = scope === "windows" ? windowsAssets : scope === "windows-extensions" ? [
+    ...windowsAssets, "Ratatoskr-extension-chrome.zip", "Ratatoskr-extension-edge.zip", "Ratatoskr-extension-firefox.zip",
+  ] : [
     ...windowsAssets, "Ratatoskr-android.apk", "Ratatoskr-android-source.zip",
     "Ratatoskr-android-arm64-v8a.apk", "Ratatoskr-android-armeabi-v7a.apk", "Ratatoskr-android-x86_64.apk",
     "Ratatoskr-extension-chrome.zip", "Ratatoskr-extension-edge.zip", "Ratatoskr-extension-firefox.zip"];

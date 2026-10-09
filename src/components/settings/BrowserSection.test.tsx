@@ -56,7 +56,7 @@ describe("browser connector recent-contact status", () => {
 
   function expectNoContact(language: Language = "en") {
     expect(status().classList.contains("settings-page__ffmpeg--found")).toBe(false);
-    expect(status().textContent).toBe(createTranslator(language)("browser.notRegistered"));
+    expect(status().textContent).toBe(createTranslator(language)("browser.extensionNotResponding"));
   }
 
   it.each<Language>(["en", "fa"])("installed connector registration alone never becomes a green connection (%s)", async (language) => {
@@ -88,16 +88,39 @@ describe("browser connector recent-contact status", () => {
     expect(status().textContent).toBe(createTranslator("en")("browser.hostMissing"));
   });
 
+  it("explains when Windows has no browser connector registrations", async () => {
+    native.invoke.mockResolvedValue({ ...base, registered: [], connected: [] });
+    await render();
+    expect(status().textContent).toBe(createTranslator("en")("browser.registrationMissing"));
+  });
+
+  it("opens the extension setup steps even when Windows registration fails", async () => {
+    native.invoke.mockImplementation(async (command: string) => {
+      if (command === "connect_browsers") throw new Error("registry write failed");
+      return structuredClone(base);
+    });
+    await render();
+    const button = [...document.querySelectorAll<HTMLButtonElement>("button")]
+      .find((item) => item.textContent?.includes("Set up in Chrome"));
+    expect(button).toBeDefined();
+
+    await act(async () => { button!.click(); await Promise.resolve(); await Promise.resolve(); });
+
+    expect(native.invoke).toHaveBeenCalledWith("open_browser_extensions_page", { browser: "chrome" });
+    expect(native.invoke).toHaveBeenCalledWith("reveal_extension_folder");
+    expect(errors).toHaveBeenCalledWith("Error: registry write failed");
+  });
+
   it("refreshes contact state and removes green status after the heartbeat window expires", async () => {
     const pingAt = Date.now();
     native.invoke.mockImplementation(async (command: string) => {
       expect(command).toBe("get_browser_connection");
-      return { ...base, connected: Date.now() - pingAt <= 150_000 ? ["chrome"] : [] };
+      return { ...base, connected: Date.now() - pingAt <= 90_000 ? ["chrome"] : [] };
     });
     await render();
     expect(status().classList.contains("settings-page__ffmpeg--found")).toBe(true);
 
-    await act(async () => { await vi.advanceTimersByTimeAsync(150_000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(90_000); });
     expect(status().classList.contains("settings-page__ffmpeg--found")).toBe(true);
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
 

@@ -10,7 +10,14 @@
 
   background: var(--bg-sidebar);
   border-inline-end: 1px solid var(--border-subtle);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--accent) 52%, transparent) transparent;
 }
+.sidebar::-webkit-scrollbar { display: block; width: 5px; }
+.sidebar::-webkit-scrollbar-track { background: transparent; }
+.sidebar::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 99px; }
 
 .sidebar__brand {
   padding: 10px 8px;

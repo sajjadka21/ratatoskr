@@ -51,6 +51,7 @@ const MINI_LINKS_EVENT = "mini-links";
 const BATCH_START_LIMIT = 3;
 
 type Live = { bytesPerSecond: number | null; etaSeconds: number | null };
+type MiniImageFormat = "original" | "png" | "jpeg" | "webp";
 
 type TaskEvent = {
   kind: string;
@@ -437,6 +438,34 @@ function fallbackName(url: string): string {
   }
 }
 
+function isConvertibleImage(name: string): boolean {
+  return /\.(?:png|jpe?g|webp|bmp)$/i.test(name);
+}
+
+function ImageFormatField({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: MiniImageFormat;
+  onChange: (value: MiniImageFormat) => void;
+  disabled: boolean;
+}) {
+  const { t } = useI18n();
+  return (
+    <label className="mini__field">
+      <span>{t("mini.imageFormat")}</span>
+      <select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value as MiniImageFormat)}>
+        <option value="original">{t("mini.imageOriginal")}</option>
+        <option value="png">PNG</option>
+        <option value="jpeg">JPEG</option>
+        <option value="webp">WebP</option>
+      </select>
+      {value !== "original" ? <small>{t("mini.imageCopyHint")}</small> : null}
+    </label>
+  );
+}
+
 /** Where and under what name to save: `null` keeps what the app would choose. */
 type SaveChoice = { folder: string | null; name: string | null };
 
@@ -586,6 +615,9 @@ function TaskView({
   const [gone, setGone] = useState(false);
   const currentChoice = useRef<() => SaveChoice>(() => ({ folder: null, name: null }));
   const [serverName, setServerName] = useState<string | null>(null);
+  const [imageFormat, setImageFormat] = useState<MiniImageFormat>("original");
+  const [imageConverting, setImageConverting] = useState(false);
+  const conversionStarted = useRef(false);
 
   const load = useCallback(() => {
     invoke<DownloadListItem | null>("get_download", { id })
@@ -595,6 +627,16 @@ function TaskView({
       })
       .catch(() => {});
   }, [id]);
+
+  useEffect(() => {
+    if (confirming || imageFormat === "original" || item?.status.toLowerCase() !== "completed" || conversionStarted.current) return;
+    conversionStarted.current = true;
+    setImageConverting(true);
+    void invoke<DownloadListItem>("convert_download_image", { id, format: imageFormat })
+      .then(setItem)
+      .catch((reason) => setError(friendlyError(String(reason), t)))
+      .finally(() => setImageConverting(false));
+  }, [confirming, id, imageFormat, item?.status, t]);
 
   useEffect(() => {
     setGone(false);
@@ -722,6 +764,9 @@ function TaskView({
             register={(read) => (currentChoice.current = read)}
             disabled={busy}
           />
+          {isConvertibleImage(serverName ?? item.filename ?? fallbackName(item.sourceUrl)) ? (
+            <ImageFormatField value={imageFormat} onChange={setImageFormat} disabled={busy} />
+          ) : null}
           {error ? <div className="mini__error">{error}</div> : null}
         </div>
         <footer className="mini__footer">
@@ -759,6 +804,7 @@ function TaskView({
               <span>{total ? fmt.bytes(total) : null}</span>
             </div>
           </div>
+          {imageConverting ? <div className="mini__converting">{t("mini.convertingImage")}</div> : null}
           {error ? <div className="mini__error">{error}</div> : null}
         </div>
         <footer className="mini__footer">

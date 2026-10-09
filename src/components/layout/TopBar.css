@@ -91,7 +91,7 @@
 @media (max-width: 1100px) { .topbar { gap: 12px; padding-inline: 16px; } .topbar__heading span, .topbar__search kbd { display: none; } }
 @media (max-width: 800px) { .quick-queue button span { display: none; } .quick-queue button { width: 36px; padding: 0; justify-content: center; } .quick-queue select { max-width: 110px; } }
 @media (max-width: 1000px) { .topbar__shortcut span { display: none; } .topbar__shortcut { width: 36px; padding: 0; } }
-@media (max-width: 640px) { .topbar { flex-wrap: wrap; min-height: 64px; gap: 8px; padding: 8px 12px; } .topbar__heading { flex: 1; } .topbar__heading h1 { font-size: 17px; } .topbar__actions { margin-inline-start: 0; } .topbar__search, .topbar__actions + .topbar__search { order: 3; width: 100%; margin: 0; } }
+@media (max-width: 640px) { .topbar { flex-wrap: wrap; min-height: 64px; gap: 8px; padding: 8px 12px; } .topbar__heading { flex: 1; } .topbar__heading h1 { font-size: 17px; } .topbar__actions { margin-inline-start: 0; flex-wrap: wrap; } .topbar__search, .topbar__actions + .topbar__search { order: 3; width: 100%; margin: 0; } }
 .quick-queue { position: relative; flex-shrink: 0; }
 .quick-queue summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border: 1px solid var(--border-subtle); border-radius: 9px; background: var(--accent-soft); color: var(--accent-text); font-size: 13px; }
 .quick-queue summary::-webkit-details-marker { display: none; }

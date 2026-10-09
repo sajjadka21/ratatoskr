@@ -63,6 +63,28 @@ export function BrowserSection({ onError }: { onError: (message: string) => void
   const run = (command: string, args?: Record<string, unknown>) =>
     invoke(command, args).catch((reason) => onError(String(reason)));
 
+  async function setupChromium(browser: "chrome" | "edge" | "brave") {
+    const request = ++requestSequence.current;
+    const extensionFolder = connection?.extensionFolder;
+    let registrationError: unknown;
+    try {
+      await invoke("connect_browsers");
+      const value = await invoke<BrowserConnection>("get_browser_connection");
+      if (request === requestSequence.current) setConnection(value);
+    } catch (reason) {
+      registrationError = reason;
+    }
+    // Still open the extension page and folder when registry setup fails so
+    // the user can finish loading the extension and see the host error clearly.
+    try {
+      await invoke("open_browser_extensions_page", { browser });
+      if (extensionFolder) await invoke("reveal_extension_folder");
+    } catch (reason) {
+      onError(String(reason));
+    }
+    if (registrationError) onError(String(registrationError));
+  }
+
   async function reconnect() {
     const request = ++requestSequence.current;
     try {
@@ -76,6 +98,15 @@ export function BrowserSection({ onError }: { onError: (message: string) => void
 
   const connected = connection.hostFound ? connection.connected ?? [] : [];
   const registered = connected.map((name) => NAMES[name] ?? name).join(fmt.language === "fa" ? "، " : ", ");
+  const registeredNames = (connection.registered ?? []).map((name) => NAMES[name] ?? name)
+    .join(fmt.language === "fa" ? "، " : ", ");
+  const connectionState = !connection.hostFound
+    ? t("browser.hostMissing")
+    : !connection.registered?.length
+      ? t("browser.registrationMissing")
+      : connected.length
+        ? t("browser.ready", { browsers: registered })
+        : t("browser.extensionNotResponding");
 
   return (
     <div className="settings-page__section">
@@ -94,13 +125,12 @@ export function BrowserSection({ onError }: { onError: (message: string) => void
             <span className={`settings-page__ffmpeg ${connected.length ? "settings-page__ffmpeg--found" : ""}`}>
               {connected.length ? <CheckCircle2 size={14} aria-hidden="true" /> : <Plug size={14} aria-hidden="true" />}
               <span>
-                {!connection.hostFound
-                  ? t("browser.hostMissing")
-                  : connected.length
-                    ? t("browser.ready", { browsers: registered })
-                    : t("browser.notRegistered")}
+                {connectionState}
               </span>
             </span>
+            {connection.hostFound && connection.registered?.length ? (
+              <span>{t("browser.registeredFor", { browsers: registeredNames })}</span>
+            ) : null}
             {connection.hostFound ? (
               <span className="settings-page__button-row">
                 <button type="button" className="settings-page__secondary-button" onClick={() => void reconnect()}>
@@ -132,22 +162,26 @@ export function BrowserSection({ onError }: { onError: (message: string) => void
                 <>
                   <button
                     type="button"
-                    className="settings-page__secondary-button"
+                    className="settings-page__primary-button"
                     disabled={!connection.extensionFolder}
-                    onClick={() => void run("reveal_extension_folder")}
+                    onClick={() => void setupChromium("chrome")}
                   >
-                    <FolderOpen size={14} /> {t("browser.showFolder")}
+                    <ExternalLink size={14} /> {t("browser.setupIn", { browser: "Chrome" })}
                   </button>
-                  {(["chrome", "edge", "brave"] as const).map((browser) => (
+                  {(["edge", "brave"] as const).map((browser) => (
                     <button
                       key={browser}
                       type="button"
                       className="settings-page__secondary-button"
-                      onClick={() => void run("open_browser_extensions_page", { browser })}
+                      disabled={!connection.extensionFolder}
+                      onClick={() => void setupChromium(browser)}
                     >
-                      <ExternalLink size={14} /> {NAMES[browser]}
+                      <ExternalLink size={14} /> {t("browser.setupIn", { browser: NAMES[browser] })}
                     </button>
                   ))}
+                  <button type="button" className="settings-page__secondary-button" disabled={!connection.extensionFolder} onClick={() => void run("reveal_extension_folder")}>
+                    <FolderOpen size={14} /> {t("browser.showFolder")}
+                  </button>
                 </>
               ) : null}
             </span>

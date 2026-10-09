@@ -1,5 +1,9 @@
 const NATIVE_HOST = "com.download_manager.native";
 
+// Keep image-vs-link routing small and deterministic so image downloads don't
+// skip the format picker when a site wraps the image in an anchor.
+importScripts("context-menu-routing.js");
+
 const SESSION_PERMISSIONS = { permissions: ["cookies"], origins: ["<all_urls>"] };
 
 // After an Alt+click on a link, the next download for a few seconds stays in
@@ -132,7 +136,7 @@ function isVideoPage(url) {
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({ id: "download-manager-link", title: chrome.i18n.getMessage("menuLink"), contexts: ["link"] });
+    chrome.contextMenus.create({ id: "download-manager-link", title: chrome.i18n.getMessage("menuLink"), contexts: ["link", "image"] });
     chrome.contextMenus.create({ id: "download-manager-selection", title: chrome.i18n.getMessage("menuSelection"), contexts: ["selection"] });
     chrome.contextMenus.create({
       id: "download-manager-page",
@@ -144,7 +148,10 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.contextMenus.onClicked.addListener(async (info) => {
-  if (info.menuItemId === "download-manager-link" && info.linkUrl && isVideoPage(info.linkUrl)) {
+  const imageUrl = RatatoskrContextRouting.imageDownloadTarget(info);
+  if (info.menuItemId === "download-manager-link" && imageUrl) {
+    await sendLink(imageUrl, info.pageUrl);
+  } else if (info.menuItemId === "download-manager-link" && info.linkUrl && isVideoPage(info.linkUrl)) {
     await handoff({ type: "inspect", text: info.linkUrl });
   } else if (info.menuItemId === "download-manager-link" && info.linkUrl) {
     await sendLink(info.linkUrl, info.pageUrl);

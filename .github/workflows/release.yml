@@ -36,6 +36,8 @@ jobs:
           test -f "$notes" || { echo "::error::Missing release notes: $notes"; exit 1; }
           if grep -Fq '<!-- release-platforms: windows -->' "$notes"; then
             echo 'value=windows' >> "$GITHUB_OUTPUT"
+          elif grep -Fq '<!-- release-platforms: windows-extensions -->' "$notes"; then
+            echo 'value=windows-extensions' >> "$GITHUB_OUTPUT"
           else
             echo 'value=all' >> "$GITHUB_OUTPUT"
           fi
@@ -99,7 +101,7 @@ jobs:
   android:
     name: Android APK
     needs: [release_scope]
-    if: needs.release_scope.outputs.scope != 'windows'
+    if: needs.release_scope.outputs.scope == 'all'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -1,6 +1,9 @@
 /** Strings for the full pages: Settings, Queues, LinkGrabber, Categories. */
 export const pageEn = {
   "settings.search": "Search settings",
+  "settings.searchPlaceholder": "Try ‘download folder’ or ‘proxy’…",
+  "settings.autoPasteCtrlV": "Add links with Ctrl+V",
+  "settings.autoPasteCtrlVHint": "When the app is active and focus is outside a text field, Ctrl+V reads links from the clipboard and starts adding them immediately.",
   "settings.groups": "Settings groups",
   "settings.group.general": "General",
   "settings.group.downloads": "Downloads",
@@ -160,6 +163,7 @@ export const pageEn = {
   "queues.stop": "Stop queue",
   "queues.start": "Start queue",
   "queues.quickSelect": "Queue to start or stop",
+  "queues.control": "Queue controls",
   "queues.manageShortcut": "Queue settings",
   "queues.scheduleShortcut": "Queue schedules",
   "queues.waitingTasks": "Waiting downloads",
@@ -247,6 +251,9 @@ export type PageMessageKey = keyof typeof pageEn;
 
 export const pageFa: Record<PageMessageKey, string> = {
   "settings.search": "جست‌وجوی تنظیمات",
+  "settings.searchPlaceholder": "مثلاً «پوشهٔ دانلود» یا «پروکسی»…",
+  "settings.autoPasteCtrlV": "افزودن لینک با Ctrl+V",
+  "settings.autoPasteCtrlVHint": "وقتی برنامه فعال است و نشانگر داخل فیلد متنی نیست، Ctrl+V لینک‌های کلیپ‌بورد را می‌خواند و مستقیم به فهرست اضافه می‌کند.",
   "settings.groups": "بخش‌های تنظیمات",
   "settings.group.general": "عمومی",
   "settings.group.downloads": "دانلودها",
@@ -406,6 +413,7 @@ export const pageFa: Record<PageMessageKey, string> = {
   "queues.stop": "توقف صف",
   "queues.start": "شروع صف",
   "queues.quickSelect": "انتخاب صف برای شروع یا توقف",
+  "queues.control": "کنترل صف",
   "queues.manageShortcut": "تنظیمات صف انتخاب‌شده",
   "queues.scheduleShortcut": "زمان‌بندی صف‌ها",
   "queues.waitingTasks": "دانلودهای در انتظار",

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.3
+
+- Windows: image downloads from the browser extension now open Ratatoskr's normal download dialog. Choose the original image or a PNG, JPEG, or WebP copy there; the original is kept, and existing filenames receive a number instead of being overwritten.
+
 ## 1.3.2
 
 - Desktop and Android: webpages outside the built-in common-site list are now detected from their response and handed to yt-dlp, so extractor coverage is no longer limited to a manually maintained site allowlist. Direct file responses stay on the native downloader.

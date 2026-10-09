@@ -503,6 +503,9 @@ pub enum StorageError {
     #[error("download not found: {0}")]
     DownloadNotFound(String),
 
+    #[error("download is not complete and cannot have its final file updated: {0}")]
+    DownloadNotCompleted(String),
+
     #[error("invalid download status stored in database: {0}")]
     InvalidDownloadStatus(String),
 

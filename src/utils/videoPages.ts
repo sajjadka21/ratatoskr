@@ -54,6 +54,19 @@ export function isVideoPage(url: string): boolean {
 /** A height such as 720, the best there is, or the sound alone. */
 export type VideoQuality = number | "best" | "audio";
 
+/** Explicitly switch from a single YouTube video to its attached playlist. */
+export function youtubePlaylistUrl(value: string): string | null {
+  try {
+    const url = new URL(value.trim());
+    if (!/^https?:$/.test(url.protocol) || !(url.hostname === "youtu.be" || url.hostname === "youtube.com" || url.hostname.endsWith(".youtube.com"))) return null;
+    const list = url.searchParams.get("list");
+    if (!list || !/^[\w-]+$/.test(list)) return null;
+    return `https://www.youtube.com/playlist?list=${encodeURIComponent(list)}`;
+  } catch {
+    return null;
+  }
+}
+
 /** The quality chosen in a link, or null when the setting applies. */
 export function videoQualityOf(url: string): VideoQuality | null {
   const fragment = url.trim().split("#")[1];

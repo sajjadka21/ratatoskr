@@ -7,6 +7,7 @@ cd /d "%~dp0\.."
 
 call npm install || exit /b 1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\fetch-ytdlp.ps1 || exit /b 1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\fetch-deno.ps1 || exit /b 1
 call npx tauri build --no-bundle --config src-tauri\tauri.release.json || exit /b 1
 
 set "OUT=target\portable\Ratatoskr-portable"

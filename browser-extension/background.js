@@ -138,16 +138,23 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({ id: "download-manager-link", title: chrome.i18n.getMessage("menuLink"), contexts: ["link", "image"] });
     chrome.contextMenus.create({ id: "download-manager-selection", title: chrome.i18n.getMessage("menuSelection"), contexts: ["selection"] });
+    chrome.contextMenus.create({ id: "download-manager-video", title: chrome.i18n.getMessage("menuPage"), contexts: ["video"] });
     chrome.contextMenus.create({
       id: "download-manager-page",
       title: chrome.i18n.getMessage("menuPage"),
-      contexts: ["page", "video"],
+      contexts: ["page"],
       documentUrlPatterns: VIDEO_PAGES
     });
   });
 });
 
 chrome.contextMenus.onClicked.addListener(async (info) => {
+  if (info.menuItemId === "download-manager-video") {
+    const target = RatatoskrContextRouting.videoDownloadTarget(info);
+    if (target?.type === "inspect") await handoff({ type: "inspect", text: target.url });
+    else if (target) await sendLink(target.url, info.pageUrl);
+    return;
+  }
   const imageUrl = RatatoskrContextRouting.imageDownloadTarget(info);
   if (info.menuItemId === "download-manager-link" && imageUrl) {
     await sendLink(imageUrl, info.pageUrl);

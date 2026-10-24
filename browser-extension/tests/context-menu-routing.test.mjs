@@ -7,6 +7,17 @@ const source = await readFile(new URL("../context-menu-routing.js", import.meta.
 const context = { URL };
 vm.runInNewContext(source, context);
 const { imageDownloadTarget } = context.RatatoskrContextRouting;
+test("video context on YouTube inspects the page rather than a temporary blob", () => {
+  assert.deepEqual(JSON.parse(JSON.stringify(context.RatatoskrContextRouting.videoDownloadTarget({
+    pageUrl: "https://www.youtube.com/watch?v=abc", srcUrl: "blob:https://www.youtube.com/temp", mediaType: "video",
+  }))), { type: "inspect", url: "https://www.youtube.com/watch?v=abc" });
+});
+test("ordinary video context sends its direct HTTP media URL", () => {
+  assert.deepEqual(JSON.parse(JSON.stringify(context.RatatoskrContextRouting.videoDownloadTarget({
+    pageUrl: "https://example.com/page", srcUrl: "https://cdn.example.com/movie.mp4", mediaType: "video",
+  }))), { type: "download", url: "https://cdn.example.com/movie.mp4" });
+  assert.equal(context.RatatoskrContextRouting.videoDownloadTarget({ pageUrl: "https://example.com/page", srcUrl: "blob:https://example.com/temp" }), null);
+});
 
 test("image context uses the displayed image even when it is wrapped in a link", () => {
   assert.equal(imageDownloadTarget({

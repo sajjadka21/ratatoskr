@@ -154,6 +154,7 @@ enum Line {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct YtDlp {
     path: PathBuf,
+    javascript_runtime: Option<PathBuf>,
 }
 
 /// Whether a link is a page that yt-dlp should handle rather than a file.
@@ -233,7 +234,15 @@ pub fn format_selector(max_height: Option<u32>, has_ffmpeg: bool, audio_only: bo
 
 impl YtDlp {
     pub fn new(path: impl Into<PathBuf>) -> Self {
-        Self { path: path.into() }
+        let path = path.into();
+        let javascript_runtime = path
+            .parent()
+            .map(|dir| dir.join(if cfg!(windows) { "deno.exe" } else { "deno" }))
+            .filter(|path| path.is_file());
+        Self {
+            path,
+            javascript_runtime,
+        }
     }
 
     /// yt-dlp as configured (while that file exists), or else the first
@@ -243,7 +252,7 @@ impl YtDlp {
         // A chosen copy that has since been moved or deleted falls back to
         // the others rather than turning every video download into an error.
         if let Some(path) = configured.filter(|path| path.is_file()) {
-            return Some(Self::new(path));
+            return Some(Self::new(path).with_runtime_dirs(tool_dirs));
         }
         let beside_app = env::current_exe()
             .ok()
@@ -258,7 +267,16 @@ impl YtDlp {
             .chain(on_path)
             .map(|directory| directory.join(program_name()))
             .find(|candidate| candidate.is_file())
-            .map(Self::new)
+            .map(|path| Self::new(path).with_runtime_dirs(tool_dirs))
+    }
+
+    fn with_runtime_dirs(mut self, dirs: &[PathBuf]) -> Self {
+        self.javascript_runtime = self.javascript_runtime.or_else(|| {
+            dirs.iter()
+                .map(|dir| dir.join(if cfg!(windows) { "deno.exe" } else { "deno" }))
+                .find(|path| path.is_file())
+        });
+        self
     }
 
     /// Updates this copy in place with yt-dlp's own updater (`-U`), which
@@ -488,15 +506,7 @@ impl YtDlp {
     /// stops yt-dlp with everything it started) after `PROBE_TIMEOUT`.
     async fn dump(&self, url: &str, proxy: &ProxyChoice) -> Result<serde_json::Value, YtDlpError> {
         let mut command = self.command();
-        command.args([
-            "--dump-single-json",
-            "--flat-playlist",
-            "--no-playlist",
-            "--no-warnings",
-            "--no-color",
-            "--encoding",
-            "utf-8",
-        ]);
+        command.args(Self::probe_arguments(url));
         push_proxy(&mut command, proxy);
         command
             .arg("--")
@@ -545,8 +555,41 @@ impl YtDlp {
         })
     }
 
+    fn probe_arguments(url: &str) -> Vec<&'static str> {
+        let list = Url::parse(url).is_ok_and(|url| {
+            url.path() == "/playlist" && url.query_pairs().any(|(key, _)| key == "list")
+        });
+        let mut arguments = vec![
+            "--dump-single-json",
+            "--flat-playlist",
+            if list {
+                "--yes-playlist"
+            } else {
+                "--no-playlist"
+            },
+            "--playlist-end",
+            "500",
+            "--no-warnings",
+            "--no-color",
+            "--encoding",
+            "utf-8",
+        ];
+        if list {
+            arguments.push("--ignore-errors");
+        }
+        arguments
+    }
+
     fn command(&self) -> Command {
         let mut command = Command::new(&self.path);
+        // User-global yt-dlp configs must not override Ratatoskr's paths,
+        // playlist boundaries, format choices or progress protocol.
+        command.arg("--ignore-config");
+        if let Some(runtime) = &self.javascript_runtime {
+            command
+                .arg("--js-runtimes")
+                .arg(format!("deno:{}", runtime.display()));
+        }
         command
             .env("PYTHONIOENCODING", "utf-8")
             .env("PYTHONUTF8", "1");
@@ -981,6 +1024,44 @@ pub fn is_work_dir(path: &Path) -> bool {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn playlists_are_bounded_and_explicit_while_video_failures_remain_visible() {
+        let list = YtDlp::probe_arguments("https://www.youtube.com/playlist?list=PL123");
+        assert!(list.contains(&"--yes-playlist"));
+        assert!(
+            list.windows(2)
+                .any(|args| args == ["--playlist-end", "500"])
+        );
+        assert!(list.contains(&"--ignore-errors"));
+        let video = YtDlp::probe_arguments("https://www.youtube.com/watch?v=abc&list=PL123");
+        assert!(video.contains(&"--no-playlist"));
+        assert!(!video.contains(&"--ignore-errors"));
+    }
+
+    #[test]
+    fn managed_ytdlp_finds_the_bundled_runtime_in_a_separate_resource_folder() {
+        let root = tempdir().unwrap();
+        let managed = root.path().join("managed");
+        let bundled = root.path().join("bundled tools");
+        std::fs::create_dir_all(&managed).unwrap();
+        std::fs::create_dir_all(&bundled).unwrap();
+        std::fs::write(managed.join(program_name()), b"fixture").unwrap();
+        let runtime = bundled.join(if cfg!(windows) { "deno.exe" } else { "deno" });
+        std::fs::write(&runtime, b"fixture").unwrap();
+        let tool = YtDlp::locate(None, &[managed, bundled]).unwrap();
+        let args: Vec<_> = tool
+            .command()
+            .as_std()
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert!(args.contains(&"--ignore-config".to_owned()));
+        assert!(
+            args.windows(2)
+                .any(|args| args == ["--js-runtimes", &format!("deno:{}", runtime.display())])
+        );
+    }
 
     #[test]
     fn video_pages_go_to_ytdlp_and_files_do_not() {

@@ -63,6 +63,9 @@ jobs:
       - name: Fetch yt-dlp
         shell: pwsh
         run: ./scripts/fetch-ytdlp.ps1
+      - name: Fetch the verified YouTube JavaScript runtime
+        shell: pwsh
+        run: ./scripts/fetch-deno.ps1
       - name: Build and sign the installer
         shell: pwsh
         env:

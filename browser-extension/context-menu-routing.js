@@ -18,5 +18,20 @@
     return isImageUrl(info?.linkUrl) ? info.linkUrl : null;
   }
 
-  globalThis.RatatoskrContextRouting = { imageDownloadTarget };
+  function videoDownloadTarget(info) {
+    try {
+      const page = new URL(info.pageUrl);
+      const site = page.hostname.toLowerCase();
+      if (/^https?:$/.test(page.protocol) && ["youtube.com", "youtu.be", "youtube-nocookie.com", "vimeo.com", "aparat.com", "dailymotion.com", "twitch.tv", "pornhub.com", "pinterest.com"].some(host => site === host || site.endsWith(`.${host}`))) {
+        return { type: "inspect", url: page.href };
+      }
+    } catch { /* fall back to an actual media source */ }
+    try {
+      const source = new URL(info.srcUrl);
+      if (/^https?:$/.test(source.protocol)) return { type: "download", url: source.href };
+    } catch { /* blob/data URLs cannot be downloaded outside the browser */ }
+    return null;
+  }
+
+  globalThis.RatatoskrContextRouting = { imageDownloadTarget, videoDownloadTarget };
 })();

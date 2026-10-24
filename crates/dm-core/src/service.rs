@@ -2118,6 +2118,13 @@ impl DownloadService {
         use crate::ytdlp::{YtDlpError, YtDlpRequest};
 
         let ytdlp = self.ytdlp().ok_or(DownloadError::NeedsYtDlp)?;
+        // Modern sites commonly provide picture and sound separately. Prepare
+        // the verified helper once, rather than asking for a muxed format
+        // that YouTube no longer offers. User-chosen tools are never replaced.
+        let (max_height, audio_only) = self.quality_for(&task.source_url);
+        if !audio_only {
+            self.prepare_video_merger(&control).await?;
+        }
         let decision = self.rule_decision_for_url(&task.source_url)?;
         // A paused run continues in the folder it started in.
         let work_dir = match task.temp_path.as_deref().map(PathBuf::from) {
@@ -2153,8 +2160,6 @@ impl DownloadService {
         let proxy = self.tool_proxy_for(&task.source_url);
         let rule_cap = decision.as_ref().and_then(|decision| decision.speed_cap);
         let ffmpeg = self.ffmpeg();
-        let (max_height, audio_only) = self.quality_for(&task.source_url);
-
         // Picture and sound arrive one after the other, each counting from
         // zero; earlier parts are carried in `finished_parts`. A resumed part
         // (after a pause, or a restart for a new rate) starts from what is
@@ -2310,6 +2315,34 @@ impl DownloadService {
     /// Installs FFmpeg into `tools_dir` through the app's own route.
     pub async fn install_ffmpeg(&self, tools_dir: &Path) -> std::result::Result<PathBuf, String> {
         crate::ffmpeg::install_latest(&self.base_downloader(), tools_dir).await
+    }
+
+    async fn prepare_video_merger(&self, control: &TaskControl) -> Result<()> {
+        if let Some(reason) = control.stop_reason() {
+            return Err(DownloadError::Stopped(reason).into());
+        }
+        if !cfg!(windows) || self.ffmpeg().is_some() || self.ffmpeg_path_setting().is_some() {
+            return Ok(());
+        }
+        let folder = self
+            .tool_dirs
+            .read()
+            .ok()
+            .and_then(|dirs| dirs.first().cloned());
+        let Some(folder) = folder else {
+            return Ok(());
+        };
+        static INSTALL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+        tokio::select! {
+            reason = control.stopped() => Err(DownloadError::Stopped(reason).into()),
+            result = async {
+                let _guard = INSTALL.lock().await;
+                if self.ffmpeg().is_none() {
+                    self.install_ffmpeg(&folder).await.map_err(|message| DownloadError::YtDlp { message, temporary: true })?;
+                }
+                Ok(())
+            } => result,
+        }
     }
 
     pub fn ffmpeg_path_setting(&self) -> Option<String> {
@@ -2839,7 +2872,10 @@ impl DownloadService {
     pub async fn probe_video(&self, url: &str) -> Result<crate::ytdlp::VideoProbe> {
         let ytdlp = self.ytdlp().ok_or(DownloadError::NeedsYtDlp)?;
         let proxy = self.tool_proxy_for(url);
-        let has_ffmpeg = self.ffmpeg().is_some();
+        let has_ffmpeg = self.ffmpeg().is_some()
+            || (cfg!(windows)
+                && self.ffmpeg_path_setting().is_none()
+                && self.tool_dirs.read().is_ok_and(|dirs| !dirs.is_empty()));
         ytdlp.probe(url, &proxy, has_ffmpeg).await.map_err(|error| {
             let temporary = error.is_temporary();
             DownloadError::YtDlp {
@@ -4148,6 +4184,39 @@ mod tests {
             storage,
             service,
         }
+    }
+
+    #[tokio::test]
+    async fn video_helper_preparation_respects_cancel_before_touching_tools() {
+        let harness = harness();
+        let tools = harness._root.path().join("tools");
+        harness.service.set_tool_dirs(vec![tools.clone()]);
+        let control = TaskControl::new();
+        control.request(StopReason::Cancel);
+        assert!(matches!(
+            harness.service.prepare_video_merger(&control).await,
+            Err(DownloadServiceError::Download(DownloadError::Stopped(
+                StopReason::Cancel
+            )))
+        ));
+        assert!(!tools.exists());
+    }
+
+    #[tokio::test]
+    async fn video_helper_preparation_preserves_a_user_chosen_merger() {
+        let harness = harness();
+        let chosen = harness._root.path().join("custom-ffmpeg.exe");
+        std::fs::write(&chosen, b"user-managed fixture").unwrap();
+        harness.service.set_ffmpeg_path(Some(&chosen)).unwrap();
+        let managed = harness._root.path().join("tools");
+        harness.service.set_tool_dirs(vec![managed.clone()]);
+        harness
+            .service
+            .prepare_video_merger(&TaskControl::new())
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(chosen).unwrap(), b"user-managed fixture");
+        assert!(!managed.exists());
     }
 
     /// A body slow enough to be paused or cancelled part-way through.

@@ -1,9 +1,8 @@
 //! FFmpeg, when the user has it: joining a stream's separate picture and
 //! sound into one file, and rewrapping transport streams as MP4.
 //!
-//! FFmpeg is never downloaded or bundled by this application. It is found
-//! where the user put it — a path set in Settings, next to the application,
-//! or on `PATH` — and run with an argument list (never through a shell) on
+//! FFmpeg is found where the user put it, or installed from a checksum-verified
+//! upstream build when video merging needs it. It is run with an argument list on
 //! local files only. Only stream copying is used (`-c copy`), so nothing is
 //! re-encoded and a join takes seconds, not minutes.
 
@@ -83,7 +82,10 @@ impl Ffmpeg {
 
     /// The first line of `ffmpeg -version`, which names the build.
     pub async fn version(&self) -> Option<String> {
-        let output = Command::new(&self.path)
+        let mut command = Command::new(&self.path);
+        #[cfg(windows)]
+        command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW, including settings probes.
+        let output = command
             .arg("-version")
             .stdin(Stdio::null())
             .stderr(Stdio::null())
@@ -315,6 +317,18 @@ async fn extract_checked(
 pub(crate) mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn version_probe_preserves_output_from_a_helper_in_a_spaced_path() {
+        let root = tempdir().unwrap();
+        let path = root.path().join("ffmpeg version fixture.cmd");
+        std::fs::write(&path, "@echo off\r\necho ffmpeg version fixture\r\n").unwrap();
+        assert_eq!(
+            Ffmpeg::new(path).version().await.as_deref(),
+            Some("ffmpeg version fixture")
+        );
+    }
 
     fn build_archive(path: &Path) -> String {
         use sha2::{Digest, Sha256};

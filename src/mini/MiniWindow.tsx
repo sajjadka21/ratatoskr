@@ -225,7 +225,7 @@ function AddView({ onStarted }: { onStarted: (id: string) => void }) {
   const text = links.join("\n");
   const single = links.length === 1 ? links[0] : null;
   const video = single !== null && isVideoPage(single);
-  const waitingForList = lookingUp && video && Boolean(single?.match(/[?&]list=|\/playlist|\/@|\/channel\//));
+  const waitingForList = video && single !== null && /\/playlist\?|\/@|\/channel\//.test(single) && (lookingUp || !playlist?.length);
 
   async function add(start: boolean) {
     setBusy(true);

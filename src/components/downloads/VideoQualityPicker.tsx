@@ -1,11 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Clapperboard, ListVideo, Music } from "lucide-react";
+import { Clapperboard, ListVideo, Music, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { useI18n } from "../../i18n/I18n";
-import type { EngineSettings, VideoProbe } from "../../types/download";
+import type { EngineSettings, FfmpegStatus, VideoProbe } from "../../types/download";
 import { heightLabel } from "../../utils/streams";
-import { isVideoPage, videoQualityOf, type VideoQuality } from "../../utils/videoPages";
+import { isVideoPage, videoQualityOf, youtubePlaylistUrl, type VideoQuality } from "../../utils/videoPages";
+import { extractHttpUrls } from "../../utils/downloadLinks";
 
 /** Qualities offered before (or without) looking the video up. */
 const COMMON_HEIGHTS = [1080, 720, 480, 360];
@@ -47,9 +48,11 @@ export function VideoQualityPicker({
   const { t, fmt } = useI18n();
   const [fallback, setFallback] = useState<VideoQuality>("best");
   const [lookup, setLookup] = useState<Lookup>({ state: "idle" });
+  const [retry, setRetry] = useState(0);
+  const [firstVideoSetup, setFirstVideoSetup] = useState(false);
 
   const lines = useMemo(
-    () => text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
+    () => extractHttpUrls(text),
     [text],
   );
   const videos = lines.filter((line) => isVideoPage(line.split("#")[0]));
@@ -59,6 +62,9 @@ export function VideoQualityPicker({
     invoke<EngineSettings>("get_engine_settings")
       .then((settings) => setFallback(settings.streamMaxHeight ?? "best"))
       .catch(() => undefined);
+    void invoke<FfmpegStatus>("get_ffmpeg_status")
+      .then((status) => setFirstVideoSetup(status?.foundPath === null))
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -66,7 +72,7 @@ export function VideoQualityPicker({
       setLookup({ state: "idle" });
       return;
     }
-    const known = probes.get(single);
+    const known = retry === 0 ? probes.get(single) : null;
     if (known) {
       setLookup({ state: "done", probe: known });
       return;
@@ -77,6 +83,7 @@ export function VideoQualityPicker({
       invoke<VideoProbe>("probe_video", { url: single })
         .then((probe) => {
           probes.set(single, probe);
+          if (probes.size > 100) probes.delete(probes.keys().next().value!);
           if (!cancelled) setLookup({ state: "done", probe });
         })
         .catch((reason: unknown) => {
@@ -87,7 +94,7 @@ export function VideoQualityPicker({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [single]);
+  }, [single, retry]);
 
   const probe = lookup.state === "done" ? lookup.probe : null;
   const playlistLinks = probe?.isPlaylist ? probe.entries.map((entry) => entry.url) : null;
@@ -111,6 +118,7 @@ export function VideoQualityPicker({
   if (videos.length === 0) return null;
 
   const isList = Boolean(probe?.isPlaylist);
+  const attachedPlaylist = single && !isList && !new URL(single).pathname.startsWith("/playlist") ? youtubePlaylistUrl(single) : null;
   if (isList && probe && probe.entries.length === 0) {
     return (
       <div className="video-picker">
@@ -185,6 +193,14 @@ export function VideoQualityPicker({
         ) : null}
       </div>
 
+      {attachedPlaylist ? (
+        <div className="video-picker__list">
+          <button type="button" className="video-picker__expand" onClick={() => onReplaceLinks(attachedPlaylist)}>
+            <ListVideo size={14} aria-hidden="true" /> {t("video.wholePlaylist")}
+          </button>
+        </div>
+      ) : null}
+
       {isList && probe ? (
         <div className="video-picker__list">
           <p className="video-picker__note">
@@ -225,6 +241,12 @@ export function VideoQualityPicker({
           ? t("video.loading")
           : failure ?? (current === "audio" ? t("video.audioHint") : t("video.hint"))}
       </p>
+      {firstVideoSetup ? <p className="video-picker__note">{t("video.firstSetup")}</p> : null}
+      {lookup.state === "failed" ? (
+        <button type="button" className="video-picker__expand" onClick={() => setRetry((value) => value + 1)}>
+          <RefreshCw size={13} aria-hidden="true" /> {t("video.retry")}
+        </button>
+      ) : null}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "__MSG_name__",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "__MSG_description__",
   "default_locale": "en",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuU1qaYM82wkWvZUbK6dwMqD4hyoLbW6gvlOHQSseuAHpcZ9dF8+gMLDi1bOW8HXuI8IbhYqfxSwPYTM5Aqb0VDZxjTvuXVtnBk+tlUkYj9vLLp45bsoJu/1ZH6WuclGg7/gF1Go59vRyAadgXAywZ8E+EkjQ8iEzWSV7qRnP4f2loY6M01kT2m6JCSXxrOQSNcCndcalKjXM3opRe8qsM55H3Q1tMhSOIDp7O2WhC83QmwotB4eLPd5AQBls6gcuUx3IkZ9Px7rDQ093Iwc5MKtQcZaNNfDgCj61EjucqbWN2Z3RpoNMwLQIlrZgJkiHJUOsAH7BTRl6CmcLDM2AaQIDAQAB",
@@ -47,6 +47,11 @@
     }
   },
   "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["youtube-menu.js"],
+      "run_at": "document_idle"
+    },
     {
       "matches": [
         "*://*.youtube.com/*",

@@ -889,6 +889,13 @@ async fn read_clipboard_links(app: AppHandle) -> Result<Vec<String>, String> {
         .map_err(|_| "Could not read clipboard".to_owned())?
 }
 
+/// Parse the clipboard event's own snapshot rather than a later OS clipboard.
+/// Markup is inert and never rendered, saved or logged.
+#[tauri::command]
+fn extract_pasted_links(text: String, html: String) -> Vec<String> {
+    dm_core::clipboard_links::extract(Some(&text), Some(&html))
+}
+
 /// Whether the app starts (in the tray) when the user signs in to Windows.
 /// `None` where the app cannot start itself (outside Windows), so the
 /// setting is not offered.
@@ -3650,6 +3657,7 @@ pub fn run() {
             get_ctrl_v_auto_add,
             set_ctrl_v_auto_add,
             read_clipboard_links,
+            extract_pasted_links,
             get_start_with_windows,
             get_finish_sound,
             get_keep_server_time,

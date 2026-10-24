@@ -39,6 +39,22 @@ fn extracts_plain_text_when_html_is_absent() {
 }
 
 #[test]
+fn extracts_links_from_markdown_labels_and_adjacent_persian_text() {
+    assert_eq!(
+        extract(
+            Some(
+                "[بخش اول](https://files.example.com/one.zip)\nلینک:https://files.example.com/two.zip"
+            ),
+            None
+        ),
+        vec![
+            "https://files.example.com/one.zip",
+            "https://files.example.com/two.zip"
+        ]
+    );
+}
+
+#[test]
 fn extracts_anchor_destinations_from_labels_in_document_order_and_deduplicates() {
     let html = r#"<div><a href="https://files.example.com/part2.zip">بخش ۲</a>
         <A HREF='https://files.example.com/part1.zip'><strong>بخش ۱</strong></A>

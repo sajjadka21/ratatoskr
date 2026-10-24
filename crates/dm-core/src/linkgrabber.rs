@@ -35,10 +35,23 @@ pub fn extract_links(input: &str) -> Vec<LinkCandidate> {
     // sequence instead of sorting part10 before part2.
     let mut seen = std::collections::HashSet::new();
     let mut candidates = Vec::new();
-    for token in
-        input.split(|character: char| character.is_whitespace() || "<>\"'`".contains(character))
-    {
-        let token = token.trim_matches(|character: char| "<>\"'`([{".contains(character));
+    // Shared text often attaches a label without whitespace, e.g. Markdown
+    // or `لینک:https://…`. Start at the scheme instead of requiring a whole
+    // whitespace-delimited token to be a URL. Consume the complete token so
+    // a URL embedded in its query is not imported as a second download.
+    let lower = input.to_ascii_lowercase();
+    let mut cursor = 0;
+    while let Some(offset) = lower[cursor..].find("http") {
+        let start = cursor + offset;
+        cursor = start + 4;
+        if !lower[start..].starts_with("http://") && !lower[start..].starts_with("https://") {
+            continue;
+        }
+        let token = input[start..]
+            .split(|character: char| character.is_whitespace() || "<>\"'`".contains(character))
+            .next()
+            .unwrap_or_default();
+        cursor = start + token.len();
         let candidate = token.trim_end_matches([',', '.', ';', '!', '?', ')', ']', '}']);
         if let Some(link) = candidate_for(candidate)
             && seen.insert(link.url.clone())

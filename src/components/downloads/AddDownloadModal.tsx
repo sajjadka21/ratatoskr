@@ -17,6 +17,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type ClipboardEvent,
 } from "react";
 
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -70,7 +71,7 @@ export function AddDownloadModal({
   engineReady,
   error,
   linkCount,
-  duplicateCount = 0, duplicateUrls = [], completedDuplicateCount = 0,
+  duplicateUrls = [], completedDuplicateCount = 0,
   queues,
   defaultDirectory = null,
   onUrlChange,
@@ -93,6 +94,7 @@ export function AddDownloadModal({
     source: string;
     links: string[];
     confirmed: boolean;
+    duplicateKey?: string;
   } | null>(null);
   const selectionHeadingRef = useRef<HTMLHeadingElement>(null);
   const [videoQuality, setVideoQuality] = useState<VideoQuality | null>(null);
@@ -115,6 +117,36 @@ export function AddDownloadModal({
   }, [open, url, folder]);
   const [playlist, setPlaylist] = useState<string[] | null>(null);
   const [lookingUp, setLookingUp] = useState(false);
+  const pasteRevision = useRef(0);
+  const [parsingPaste, setParsingPaste] = useState(false);
+  useEffect(() => {
+    pasteRevision.current++;
+    setParsingPaste(false);
+    return () => { pasteRevision.current++; };
+  }, [url, open]);
+
+  async function pasteLinks(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const html = event.clipboardData.getData("text/html");
+    if (!html) return; // Preserve the browser's normal plain-text paste/undo.
+    event.preventDefault();
+    const text = event.clipboardData.getData("text/plain");
+    const { selectionStart: start, selectionEnd: end } = event.currentTarget;
+    const revision = ++pasteRevision.current;
+    setParsingPaste(true);
+    try {
+      const links = await invoke<string[]>("extract_pasted_links", { text, html });
+      if (pasteRevision.current !== revision) return;
+      const insertion = links.length ? links.join("\n") : text;
+      const before = url.slice(0, start);
+      const after = url.slice(end);
+      const separator = links.length > 0;
+      onUrlChange(before + (separator && before && !/\s$/.test(before) ? "\n" : "") + insertion + (separator && after && !/^\s/.test(after) ? "\n" : "") + after);
+    } catch {
+      if (pasteRevision.current === revision) onUrlChange(url.slice(0, start) + text + url.slice(end));
+    } finally {
+      if (pasteRevision.current === revision) setParsingPaste(false);
+    }
+  }
   const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false);
   const parsedLinks = extractHttpUrls(url);
   const isBatch = linkCount > 1;
@@ -127,13 +159,13 @@ export function AddDownloadModal({
     (linkSelection?.source === url ? linkSelection.links : defaultSelectedLinks).includes(link),
   );
   const selectedDuplicateCount = selectedBatchLinks.filter((link) => duplicateKeys.has(link.split("#")[0]!)).length;
-  const selectionConfirmed = linkSelection?.source === url && linkSelection.confirmed;
+  const selectionConfirmed = linkSelection?.source === url && linkSelection.confirmed && linkSelection.duplicateKey === historyDuplicates.join("\n");
   const batchNeedsReview = isBatch && historyDuplicates.length > 0 && !selectionConfirmed;
   useEffect(() => {
     setDuplicateAcknowledged(false);
     setLinkSelection(null);
     setSelectionOpen(false);
-  }, [url, open, duplicateCount, completedDuplicateCount]);
+  }, [url, open]);
 
   useEffect(() => {
     if (selectionOpen) selectionHeadingRef.current?.focus();
@@ -202,9 +234,9 @@ export function AddDownloadModal({
 
   // Until a playlist or channel link is looked up, adding it would take
   // only its first video.
-  const waitingForList = lookingUp && linkCount === 1 && looksLikeList(url);
+  const waitingForList = linkCount === 1 && looksLikeList(url) && (lookingUp || !playlist?.length);
   const actionsDisabled =
-    submitting || !engineReady || linkCount === 0 || (isBatch && selectedBatchLinks.length === 0) || waitingForList || batchNeedsReview || (selectedDuplicateCount > 0 && !isBatch && !duplicateAcknowledged);
+    submitting || parsingPaste || !engineReady || linkCount === 0 || (isBatch && selectedBatchLinks.length === 0) || waitingForList || batchNeedsReview || (selectedDuplicateCount > 0 && !isBatch && !duplicateAcknowledged);
 
   useEffect(() => {
     if (!open) return;
@@ -434,7 +466,7 @@ export function AddDownloadModal({
                       />
                       <span className="add-download-modal__selection-number">{fmt.number(index + 1)}</span>
                       <span className="add-download-modal__selection-copy">
-                        <strong title={description.name}>{description.name}</strong>
+                        <strong dir="auto" title={description.name}>{description.name}</strong>
                         <small dir="ltr" title={description.address}>{description.address}</small>
                       </span>
                       {duplicate ? <span className="add-download-modal__duplicate-tag">{t("add.duplicateTagNumber", { number: fmt.number(duplicateIndex + 1) })}</span> : <span className="add-download-modal__new-tag">{t("add.newLinkTag")}</span>}
@@ -465,7 +497,8 @@ export function AddDownloadModal({
               dir="ltr"
               value={url}
               rows={isBatch ? Math.min(Math.max(linkCount, 3), 7) : 1}
-              onChange={(event) => onUrlChange(event.target.value)}
+              onPaste={(event) => void pasteLinks(event)}
+              onChange={(event) => { pasteRevision.current++; setParsingPaste(false); onUrlChange(event.target.value); }}
               onKeyDown={(event) => {
                 if (
                   event.key === "Enter" &&
@@ -521,7 +554,7 @@ export function AddDownloadModal({
             <div className="add-download-modal__duplicate" role="status">
               <strong>{isBatch ? t("add.duplicateCount", { count: fmt.number(historyDuplicates.length) }) : completedDuplicateCount > 0 ? t("add.duplicateCompleted", { count: fmt.number(completedDuplicateCount) }) : t("add.duplicateOne")}</strong>
               {isBatch ? (
-                <span>{t("add.selectedCount", { selected: fmt.number(selectedBatchLinks.length), total: fmt.number(parsedLinks.length) })}</span>
+                <span>{t("add.selectedCount", { selected: fmt.number(selectedBatchLinks.length), total: fmt.number(parsedLinks.length) })}{batchNeedsReview ? ` · ${t("grabber.review")}` : ""}</span>
               ) : (
                 <label><input type="checkbox" checked={duplicateAcknowledged} onChange={(event) => setDuplicateAcknowledged(event.target.checked)} />{t("add.duplicateConfirm")}</label>
             )}
@@ -598,7 +631,7 @@ export function AddDownloadModal({
                 className="add-download-modal__submit"
                 disabled={selectedBatchLinks.length === 0}
                 onClick={() => {
-                  setLinkSelection({ source: url, links: selectedBatchLinks, confirmed: true });
+                  setLinkSelection({ source: url, links: selectedBatchLinks, confirmed: true, duplicateKey: historyDuplicates.join("\n") });
                   setSelectionOpen(false);
                 }}
               >

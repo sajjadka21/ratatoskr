@@ -40,7 +40,8 @@ describe("add-download modal keyboard navigation", () => {
   });
 
   const submitted = vi.fn();
-  async function renderModal(options: { open?: boolean; ready?: boolean; submitting?: boolean; duplicate?: boolean; duplicateUrls?: string[]; url?: string; linkCount?: number; queues?: DownloadQueue[] } = {}) {
+  const changed = vi.fn();
+  async function renderModal(options: { open?: boolean; ready?: boolean; submitting?: boolean; duplicate?: boolean; completedDuplicateCount?: number; duplicateUrls?: string[]; url?: string; linkCount?: number; queues?: DownloadQueue[] } = {}) {
     await act(async () => {
       root.render(
         <I18nProvider language="en">
@@ -53,9 +54,9 @@ describe("add-download modal keyboard navigation", () => {
             linkCount={options.linkCount ?? (options.ready ? 1 : 0)}
             queues={options.queues ?? []}
             duplicateCount={options.duplicate ? 1 : 0}
-            completedDuplicateCount={options.duplicate ? 1 : 0}
+            completedDuplicateCount={options.completedDuplicateCount ?? (options.duplicate ? 1 : 0)}
             duplicateUrls={options.duplicateUrls ?? (options.duplicate ? (options.url ?? "https://example.com/file.zip").split("\n") : [])}
-            onUrlChange={() => {}}
+            onUrlChange={changed}
             onClose={() => {}}
             onSubmit={submitted}
           />
@@ -70,6 +71,58 @@ describe("add-download modal keyboard navigation", () => {
   function dialog() {
     return document.querySelector<HTMLElement>('[role="dialog"]')!;
   }
+
+  function pasteLabel(text = "Download part one", html = '<a href="https://example.com/one.zip">Download part one</a>') {
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: { getData: (format: string) => format === "text/html" ? html : text } });
+    dialog().querySelector("textarea")!.dispatchEvent(event);
+    return event;
+  }
+
+  it("cannot silently download just the first playlist entry while its list is unavailable", async () => {
+    await renderModal({ ready: true, url: "https://www.youtube.com/playlist?list=PL123" });
+    expect(dialog().querySelector<HTMLButtonElement>(".add-download-modal__submit")!.disabled).toBe(true);
+  });
+
+  it("imports the destination of a copied linked label when pasted into Add", async () => {
+    await renderModal();
+    changed.mockClear();
+    vi.mocked(invoke).mockResolvedValue(["https://example.com/one.zip"]);
+    await act(async () => { expect(pasteLabel().defaultPrevented).toBe(true); });
+    expect(invoke).toHaveBeenCalledWith("extract_pasted_links", {
+      text: "Download part one", html: '<a href="https://example.com/one.zip">Download part one</a>',
+    });
+    expect(changed).toHaveBeenCalledWith("https://example.com/one.zip");
+  });
+
+  it("keeps ordinary rich text when it contains no link", async () => {
+    await renderModal();
+    changed.mockClear();
+    vi.mocked(invoke).mockResolvedValue([]);
+    await act(async () => { pasteLabel("A note", "<b>A note</b>"); });
+    expect(changed).toHaveBeenCalledWith("A note");
+  });
+
+  it("does not replace new typing with a late clipboard response", async () => {
+    await renderModal();
+    let resolve!: (value: string[]) => void;
+    vi.mocked(invoke).mockImplementation(() => new Promise<string[]>((done) => { resolve = done; }));
+    await act(async () => { pasteLabel(); });
+    await renderModal({ url: "https://example.com/new.zip", ready: true });
+    changed.mockClear();
+    await act(async () => { resolve(["https://example.com/one.zip"]); });
+    expect(changed).not.toHaveBeenCalled();
+  });
+
+  it("inserts extracted links at the selected range without deleting other links", async () => {
+    await renderModal({ ready: true });
+    const input = dialog().querySelector("textarea")!;
+    input.setSelectionRange(input.value.length, input.value.length);
+    changed.mockClear();
+    vi.mocked(invoke).mockResolvedValue(["https://example.com/one.zip"]);
+    await act(async () => { pasteLabel(); });
+    expect(changed).toHaveBeenCalledWith("https://example.com/file.zip\nhttps://example.com/one.zip");
+  });
   it("shows an actual folder match without history or blocking download", async () => {
     vi.mocked(invoke).mockResolvedValue({ matches: [{ sourceName: "file.zip", name: "file (1).zip", folder: "D:/Downloads", exact: false }], partial: false });
     await renderModal({ ready: true });
@@ -139,6 +192,7 @@ describe("add-download modal keyboard navigation", () => {
     expect(dialog().querySelector<HTMLButtonElement>(".add-download-modal__submit")!.disabled).toBe(true);
     await act(async () => dialog().querySelector<HTMLButtonElement>(".add-download-modal__manage-links")!.click());
     expect(dialog().querySelector(".add-download-modal__selection")!.textContent).toContain("Repeat #1");
+    expect(dialog().querySelector(".add-download-modal__selection-copy strong")!.getAttribute("dir")).toBe("auto");
     const choices = [...dialog().querySelectorAll<HTMLInputElement>(".add-download-modal__selection-row input")];
     expect(choices).toHaveLength(2);
     expect(choices[0]!.checked).toBe(false);
@@ -162,6 +216,16 @@ describe("add-download modal keyboard navigation", () => {
     submitted.mockClear();
     await act(async () => dialog().querySelector<HTMLButtonElement>(".add-download-modal__submit")!.click());
     expect(submitted).toHaveBeenCalledWith({ kind: "start-now" }, "https://example.com/one.zip", null, "new-only");
+  });
+
+  it("keeps link selection open when an existing download completes in the background", async () => {
+    const url = "https://example.com/one.zip\nhttps://example.com/two.zip";
+    const options = { ready: true, duplicate: true, url, linkCount: 2, duplicateUrls: ["https://example.com/one.zip"] };
+    await renderModal({ ...options, completedDuplicateCount: 0 });
+    await act(async () => dialog().querySelector<HTMLButtonElement>(".add-download-modal__manage-links")!.click());
+    await renderModal({ ...options, completedDuplicateCount: 1 });
+    expect(dialog().querySelector(".add-download-modal__selection")).not.toBeNull();
+    expect([...dialog().querySelectorAll<HTMLInputElement>(".add-download-modal__selection-row input")].map(input => input.checked)).toEqual([false, true]);
   });
 
   function enabledButtons() {

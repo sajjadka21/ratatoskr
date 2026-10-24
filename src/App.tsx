@@ -213,7 +213,6 @@ function App({ preferences, onPreferencesChange }: AppProps) {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [url, setUrl] = useState("");
-  const lastClipboardIntake = useRef("");
   const [queueSettingsId, setQueueSettingsId] = useState<string | null>(null);
   const duplicateLinks = useMemo(() => extractHttpUrls(url).filter((link) => knownLinks.has(link.split("#")[0]!)), [url, knownLinks]);
   const duplicateRecords = useMemo(() => downloads.filter((item) => duplicateLinks.some((link) => item.sourceUrl.split("#")[0] === link.split("#")[0])), [downloads, duplicateLinks]);
@@ -904,7 +903,6 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     // LinkGrabber submits without the dialog, so its errors need a toast.
     const report = modalOpen ? setAddError : (message: string) => notify("error", message);
     const detectedLinks = extractHttpUrls(inputValue);
-    if (modalOpen && detectedLinks.length > 0) lastClipboardIntake.current = extractHttpUrls(url).join("\n");
     if (detectedLinks.length === 0) return report(t("toast.noLinks"));
     const links = duplicateChoice === "new-only"
       ? detectedLinks.filter((link) => !knownLinks.has(link.split("#")[0]!))
@@ -1017,8 +1015,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     if (inputMode === "clipboard") {
       try {
         const clipboard = (await invoke<string[]>("read_clipboard_links")).join("\n");
-        setUrl(clipboard === lastClipboardIntake.current ? "" : clipboard);
-        lastClipboardIntake.current = clipboard;
+        setUrl(clipboard);
       } catch {
         setUrl("");
       }
@@ -1643,7 +1640,6 @@ function App({ preferences, onPreferencesChange }: AppProps) {
           if (creatingTasks) return;
           setAddError(null);
           setUrl("");
-          if (extractHttpUrls(url).length > 0) lastClipboardIntake.current = extractHttpUrls(url).join("\n");
           setModalOpen(false);
         }}
         onSubmit={(action, links, folder, duplicateChoice) => void createDownloadTasks(action, links, folder, duplicateChoice)}

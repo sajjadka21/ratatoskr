@@ -25,6 +25,7 @@ jobs:
       - run: node --test scripts/prepare-release.node.mjs scripts/extension-manifest.node.mjs scripts/extension-heartbeat.node.mjs
       - run: npx tsc --noEmit
       - run: npx vitest run
+      - run: node --test browser-extension/tests/*.test.mjs
       - run: npm run build
 
   rust:

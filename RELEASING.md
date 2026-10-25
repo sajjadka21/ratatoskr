@@ -4,6 +4,14 @@ Installed copies update themselves from a signed release. The app accepts an
 update only if the installer's signature matches the public key built into it
 (`plugins.updater.pubkey` in `src-tauri/tauri.conf.json`).
 
+`requireSignedVersion` is also enabled: the Minisign trusted comment must
+contain a signed `version:` field matching `latest.json`. Keep the pinned
+Tauri CLI in `package-lock.json`; older CLIs produced a valid signature
+without that field, which installed clients correctly reject. `tauri build`
+records the version automatically with the compatible CLI. Manual signing
+must pass `--app-version <version>`. The release verifier checks this before
+publishing; do not disable the installed client's version requirement.
+
 ## The signing key
 
 The private key is `.signing/ratatosk-updater.key` (it has no password). It is

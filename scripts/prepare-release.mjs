@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 
 // Verify the Tauri/Minisign envelope with the public key shipped in the app.
 // Format: https://github.com/jedisct1/rust-minisign-verify
-export function verifyUpdater(data, encodedSignature, encodedPublicKey) {
+export function verifyUpdater(data, encodedSignature, encodedPublicKey, expectedVersion) {
   const keyLines = Buffer.from(encodedPublicKey, "base64").toString("utf8").trim().split(/\r?\n/);
   const lines = Buffer.from(encodedSignature, "base64").toString("utf8").trim().split(/\r?\n/);
   const key = Buffer.from(keyLines[1] ?? "", "base64");
@@ -26,6 +26,15 @@ export function verifyUpdater(data, encodedSignature, encodedPublicKey) {
   if (!verify(null, message, publicKey, signature) ||
       !verify(null, Buffer.concat([signature, comment]), publicKey, globalSignature)) {
     throw new Error("Updater signature does not verify with the app public key");
+  }
+  // Match requireSignedVersion in the installed app. A valid Minisign
+  // signature alone is insufficient when an older CLI omitted this field.
+  if (expectedVersion !== undefined) {
+    const signedVersion = comment.toString("utf8").split("\t")
+      .find((field) => field.startsWith("version:"))?.slice("version:".length);
+    if (!signedVersion || signedVersion.replace(/^v/, "") !== expectedVersion.replace(/^v/, "")) {
+      throw new Error("Updater signed version is missing or does not match the release");
+    }
   }
 }
 
@@ -70,7 +79,7 @@ export function prepareRelease({ input, output, version, repository, publicKey, 
   const signature = readFileSync(files.get(`${installer}.sig`), "utf8").trim();
   if (latest.version !== version || platform?.url !== url || platform?.signature !== signature ||
       !Number.isFinite(Date.parse(latest.pub_date))) throw new Error("Updater metadata does not match this release");
-  verifyUpdater(readFileSync(files.get(installer)), signature, publicKey);
+  verifyUpdater(readFileSync(files.get(installer)), signature, publicKey, version);
   // Refuse to reuse a staging folder: stale files must never enter a release.
   mkdirSync(output);
   const manifest = [];

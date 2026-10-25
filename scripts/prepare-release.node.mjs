@@ -17,13 +17,13 @@ const browserPackages = [
   "Ratatoskr-extension-firefox.zip",
 ];
 
-function signed(data, algorithm = "ED") {
+function signed(data, algorithm = "ED", version = "1.0.1") {
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
   const id = Buffer.from("12345678");
   const key = Buffer.concat([Buffer.from("Ed"), id, publicKey.export({ type: "spki", format: "der" }).subarray(-32)]);
   const message = algorithm === "ED" ? createHash("blake2b512").update(data).digest() : data;
   const signature = sign(null, message, privateKey);
-  const comment = "timestamp:1\tfile:installer\tprehashed";
+  const comment = "timestamp:1\tfile:installer\tprehashed" + (version === null ? "" : `\tversion:${version}`);
   const global = sign(null, Buffer.concat([signature, Buffer.from(comment)]), privateKey);
   return {
     publicKey: Buffer.from(`untrusted comment: public key\n${key.toString("base64")}\n`).toString("base64"),
@@ -31,7 +31,7 @@ function signed(data, algorithm = "ED") {
   };
 }
 
-function fixture(t) {
+function fixture(t, signedVersion = "1.0.1") {
   const root = mkdtempSync(join(tmpdir(), "ratatoskr-release-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const input = join(root, "input");
@@ -40,7 +40,7 @@ function fixture(t) {
   mkdirSync(join(input, "portable"));
   mkdirSync(join(input, "release", "bundle", "msi"));
   const data = Buffer.from("an installer");
-  const keys = signed(data);
+  const keys = signed(data, "ED", signedVersion);
   const name = "Ratatoskr_1.0.1_x64-setup.exe";
   writeFileSync(join(windows, name), data);
   writeFileSync(join(windows, `${name}.sig`), keys.signature);
@@ -172,3 +172,29 @@ test("Minisign legacy and prehashed signatures verify; a different key fails", (
     assert.throws(() => verifyUpdater(data, keys.signature, signed(data).publicKey), /key ID|does not verify/);
   }
 });
+
+test("the updater rejects signatures without the required signed application version", () => {
+  const data = Buffer.from("known installer");
+  const keys = signed(data, "ED", null);
+  assert.throws(() => verifyUpdater(data, keys.signature, keys.publicKey, "1.0.1"), /signed version/i);
+});
+
+test("the updater rejects a genuine signature for a different application version", () => {
+  const data = Buffer.from("known installer");
+  const keys = signed(data, "ED", "1.0.0");
+  assert.throws(() => verifyUpdater(data, keys.signature, keys.publicKey, "1.0.1"), /signed version/i);
+});
+
+test("the updater accepts a genuine signature with the announced application version", () => {
+  const data = Buffer.from("known installer");
+  for (const version of ["1.0.1", "v1.0.1"]) {
+    const keys = signed(data, "ED", version);
+    verifyUpdater(data, keys.signature, keys.publicKey, "1.0.1");
+  }
+});
+
+for (const version of [null, "1.0.0"]) {
+  test(`publication rejects a cryptographically valid installer with signed version ${version}`, (t) => {
+    assert.throws(() => prepareRelease(fixture(t, version)), /signed version/i);
+  });
+}

@@ -24,6 +24,8 @@ function metadata(lang){
 }
 let persian=en.replace('<html lang="en">','<html lang="fa" dir="rtl">').replace('<a class="language-switch" href="/fa/" lang="fa" hreflang="fa">فارسی</a>','<a class="language-switch" href="/" lang="en" hreflang="en">English</a>');
 for(const [original,translation] of Object.entries(fa).sort((a,b)=>b[0].length-a[0].length))persian=persian.replaceAll(original,translation);
+// Screens of the desktop app are captured in each language.
+persian=persian.replace(/(\/assets\/(?:hero-1\.3\.7|screen-[a-z-]+|sample-[a-z]+))-en\.webp/g,'$1-fa.webp');
 await fs.writeFile(path.join(dist,'index.html'),previewContent(releaseContent(en,config,'en',escape),config,'en',escape).replace('<!-- SITE_META -->',metadata('en')));
 await fs.mkdir(path.join(dist,'fa'),{recursive:true});await fs.writeFile(path.join(dist,'fa','index.html'),previewContent(releaseContent(persian,config,'fa',escape),config,'fa',escape).replace('<!-- SITE_META -->',metadata('fa')));
 await fs.writeFile(path.join(dist,'site-config.json'),JSON.stringify(config,null,2));
@@ -32,7 +34,7 @@ if(config.siteUrl){const o=escape(config.siteUrl);await fs.writeFile(path.join(d
 await fs.writeFile(path.join(dist,'404.html'),'<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Page not found — Ratatoskr</title><link rel="stylesheet" href="/styles.css"><main class="wrap section"><h1>That path leads elsewhere.</h1><p>The page you’re looking for isn’t here.</p><a class="button button-gold" href="/">Return to Ratatoskr</a><p lang="fa" dir="rtl">این صفحه پیدا نشد. <a href="/fa/">بازگشت به صفحهٔ فارسی</a></p></main></html>');
 console.log('Built English + Persian static pages for '+(config.siteUrl||'a preview domain'));
 const releaseAssets={};
-for(const [name,type] of [['app.js','text/javascript; charset=utf-8'],['header.css','text/css; charset=utf-8'],['assets/hero-1.3.0.svg','image/svg+xml'],['assets/android-home-1.3.0.webp','image/webp'],['assets/android-settings-1.3.0.webp','image/webp']]){
+for(const [name,type] of [['app.js','text/javascript; charset=utf-8'],['header.css','text/css; charset=utf-8'],['assets/hero-1.3.7-en.webp','image/webp'],['assets/hero-1.3.7-fa.webp','image/webp'],['assets/android-home-1.3.0.webp','image/webp'],['assets/android-settings-1.3.0.webp','image/webp']]){
  releaseAssets['/'+name]={type,base64:(await fs.readFile(path.join(dist,name))).toString('base64')};
 }
 await fs.writeFile(path.join(dist,'release-assets.json'),JSON.stringify(releaseAssets));

@@ -24,6 +24,13 @@ Building locally needs the WebKitGTK development packages
 Debian/Ubuntu), then `bash scripts/fetch-linux-tools.sh` and
 `npx tauri build --config src-tauri/tauri.linux.release.json`.
 
+## Website
+
+The landing site at https://ratatoskr.hivenest.ir lives in `website/`: a
+Cloudflare Worker with static assets that keeps download links current from
+GitHub Releases. `cd website && npm ci && npm run build` builds it,
+`npm run preview` serves it locally and `npm run deploy` publishes it.
+
 ## Architecture
 
 Rust is the authoritative application layer.

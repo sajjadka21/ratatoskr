@@ -49,8 +49,9 @@ export function previewContent(html,config,lang,escape){
   ['وقتی دانلود ناموفق است','دلیل خطا به زبان خودت نمایش داده می‌شود. اگر خود لینک منقضی شده یا رد شده باشد، به‌جای تلاش دوباره‌ای که باز شکست می‌خورد، تازه‌سازی لینک پیشنهاد می‌شود. ردیف دانلودهای تمام‌شده دکمهٔ «نمایش در پوشه» دارد.']:
   ['Clearer when a download fails','A failed row says why, in your language. When the link itself has expired or is refused, Ratatoskr offers a fresh link instead of a retry that would fail again. Finished rows offer Show in folder.']);
  if(linuxFiles&&atLeast(preview.version,'1.3.6'))features.unshift(fa?
-  ['حالا روی لینوکس','دبیان، اوبونتو، فدورا، اوپن‌سوزه، آرچ و بقیه: بستهٔ .deb یا .rpm، فایل AppImage یا فایل فشردهٔ ساده. افزونهٔ مرورگر، اجرا هنگام ورود و کارهای پایان دانلود آن‌جا هم کار می‌کنند.']:
+  ['حالا روی لینوکس','دبیان، اوبونتو، فدورا، اوپن‌سوزه، آرچ و بقیه: بستهٔ ⁦.deb⁩ یا ⁦.rpm⁩، فایل AppImage یا فایل فشردهٔ ساده. افزونهٔ مرورگر، اجرا هنگام ورود و کارهای پایان دانلود آن‌جا هم کار می‌کنند.']:
   ['Now on Linux','Debian, Ubuntu, Fedora, openSUSE, Arch and more: a .deb or .rpm package, an AppImage or a plain archive. The browser extension, start at sign-in and after-download actions work there too.']);
+ features.splice(6);
  const screenshotVersion=preview.androidScreenshotVersion||preview.version;
  if(!/^\d+\.\d+\.\d+$/.test(screenshotVersion))throw Error('Invalid screenshot version');
  const screenshotSuffix=preview.androidScreenshotVersion?'-'+screenshotVersion:'';

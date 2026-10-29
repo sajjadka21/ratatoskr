@@ -11,7 +11,7 @@
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
-    "run_worker_first": ["/", "/index.html", "/fa", "/fa/", "/fa/index.html", "/site-config.json", "/app.js", "/header.css", "/assets/hero-1.3.0.svg", "/assets/android-home-1.3.0.webp", "/assets/android-settings-1.3.0.webp"],
+    "run_worker_first": ["/", "/index.html", "/fa", "/fa/", "/fa/index.html", "/site-config.json", "/app.js", "/header.css", "/assets/android-home-1.3.0.webp", "/assets/android-settings-1.3.0.webp"],
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "404-page"
   },

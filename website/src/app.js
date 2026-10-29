@@ -18,7 +18,7 @@ document.addEventListener('keydown',event=>{if(event.key==='Escape'&&header.data
 document.addEventListener('click',event=>{if(!header.contains(event.target))setMenu(false)});
 const mobileQuery=matchMedia('(max-width: 900px)');
 mobileQuery.addEventListener('change',()=>setMenu(false));
-const sections=[...document.querySelectorAll('.hero,#about,#themes,#faq,#download')];
+const sections=[...document.querySelectorAll('.hero,#about,#themes,#samples,#faq,#download')];
 const navObserver=new IntersectionObserver(entries=>{
   const visible=entries.filter(entry=>entry.isIntersecting).sort((a,b)=>b.intersectionRatio-a.intersectionRatio)[0];
   if(!visible)return;
@@ -62,7 +62,7 @@ function selectTheme(slug,focus=false){
   if (!Object.hasOwn(themes,slug)) return;
   const theme=themes[slug];
   document.querySelector('.hero-art').dataset.theme=slug;
-  const nextPreview='/assets/screen-'+slug+'.jpg';
+  const nextPreview='/assets/screen-'+slug+(isFa?'-fa':'-en')+'.webp';
   document.querySelector('.themes-section').dataset.theme=slug;
   for(const tab of tabs){const active=tab.dataset.theme===slug;tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;if(active&&focus)tab.focus();}
   document.querySelector('#theme-panel').setAttribute('aria-labelledby','tab-'+slug);

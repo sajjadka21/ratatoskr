@@ -112,29 +112,38 @@
   text-align: start;
 }
 
-[dir="rtl"] .download-table__name {
-  text-align: end;
-}
-
+/* One line: whatever does not fit wraps onto a hidden second line, so a
+   chip is either shown whole or not at all. */
 .download-table__meta {
   min-width: 0;
+  max-height: 18px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 0 8px;
   overflow: hidden;
   color: var(--text-muted);
   font-size: 11.5px;
+  line-height: 18px;
   white-space: nowrap;
 }
 
-.download-table__meta > * {
+.download-table__meta--notice {
+  flex-wrap: nowrap;
+}
+
+.download-table__meta--notice > * {
   flex-shrink: 0;
 }
 
-.download-table__chip {
+.download-table__meta > .download-table__host {
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.download-table__chip {
   max-width: 14em;
-  flex-shrink: 20;
   overflow: hidden;
   text-overflow: ellipsis;
   padding: 0 7px;
@@ -150,8 +159,9 @@
 }
 
 .download-table__meta > .download-table__message {
-  min-width: 3em;
+  min-width: 0;
   flex: 0 1 auto;
+  white-space: nowrap;
 }
 
 .download-table__message {
@@ -271,6 +281,12 @@
   color: var(--tone);
   font-size: 12px;
   white-space: nowrap;
+}
+
+.status-pill__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .status-pill__dot {

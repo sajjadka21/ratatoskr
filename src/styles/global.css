@@ -61,6 +61,16 @@ textarea:focus-visible,
   unicode-bidi: isolate;
 }
 
+/* A file name reads in its own direction (dir="auto": «گزارش ۱۴۰۵.pdf»
+   right to left, report.pdf left to right) but lines up with the interface. */
+:root[dir="rtl"] .file-name {
+  text-align: right;
+}
+
+:root[dir="ltr"] .file-name {
+  text-align: left;
+}
+
 [dir="rtl"] .sparkline {
   transform: scaleX(-1);
 }
@@ -91,4 +101,17 @@ textarea:focus-visible,
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
   }
+}
+
+/* Hints are prose: they use the interface font even in fields typed in a
+   monospace font, and in Persian an empty left-to-right field (a link, a
+   path) shows its hint right-to-left until something is typed. */
+input::placeholder,
+textarea::placeholder {
+  font-family: var(--font-ui);
+}
+
+:root[dir="rtl"] input[dir="ltr"]:placeholder-shown,
+:root[dir="rtl"] textarea[dir="ltr"]:placeholder-shown {
+  direction: rtl;
 }

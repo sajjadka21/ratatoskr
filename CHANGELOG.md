@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.7
+
+- Desktop: finished rows offer Show in folder and open on double-click; failures caused by the link itself (expired, 401/403, 404) offer Refresh link instead of Retry, with the reason shown first; Quit moved from the top bar to the sidebar and the command palette.
+- Desktop: Persian file names read right to left; the built-in queue is named in the interface language; interface polish from a full Persian/English, light/dark and small-window review (chips, top bar icons, speed placeholder, English plurals, details drawer over the top bar, queue and settings wording, Persian digits, Linux tray wording).
+
 ## 1.3.6
 
 - Linux: new .deb, .rpm, AppImage and a distribution-independent .tar.gz archive. Browser connector, login handoff over a private socket, start at sign-in, power actions, keep-awake, free-space checks and finish sounds use Linux facilities; Windows-only options are hidden or worded for Linux.

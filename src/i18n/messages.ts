@@ -302,6 +302,9 @@ const en = {
 
   "shortcuts.hint": "Ctrl+K commands · Ctrl+N add · Ctrl+F search · Space pause/resume · Del remove",
 
+  "queue.defaultName": "Default queue",
+  "action.sendToPhone": "Send link to phone",
+  "table.showInFolderHint": "Show in folder. Double-click the row to open the file.",
   "crash.title": "This view stopped working",
   "crash.body": "Your downloads are safe: they keep running in the background. Go back to the list, or reload the window if this happens again.",
   "crash.back": "Back to downloads",
@@ -602,6 +605,9 @@ const coreFa: Record<CoreKey, string> = {
 
   "shortcuts.hint": "Ctrl+K فرمان‌ها · Ctrl+N افزودن · Ctrl+F جستجو · Space توقف/ادامه · Del حذف",
 
+  "queue.defaultName": "صف پیش‌فرض",
+  "action.sendToPhone": "ارسال لینک به گوشی",
+  "table.showInFolderHint": "نمایش در پوشه. با دوبار کلیک روی ردیف، خود فایل باز می‌شود.",
   "crash.title": "این بخش از کار افتاد",
   "crash.body": "دانلودهای شما سالم‌اند و در پس‌زمینه ادامه دارند. به فهرست دانلودها برگردید، یا اگر دوباره رخ داد پنجره را از نو بارگذاری کنید.",
   "crash.back": "بازگشت به دانلودها",
@@ -611,6 +617,29 @@ const coreFa: Record<CoreKey, string> = {
 const enAll = { ...en, ...pageEn, ...engineEn, ...insightEn };
 export type MessageKey = keyof typeof enAll;
 const faAll: Record<MessageKey, string> = { ...coreFa, ...pageFa, ...engineFa, ...insightFa };
+
+/**
+ * English sentences for a count of exactly one, where the general form says
+ * "1 items" or "1 links are". Persian nouns stay singular after a number, so
+ * it needs none.
+ */
+export const enSingular: Partial<Record<MessageKey, string>> = {
+  "table.items": "{count} item",
+  "add.subtitleBatch": "{count} unique link found.",
+  "add.detectedBatch": "{count} unique link",
+  "add.duplicateCompleted": "Already downloaded: {count} completed download is in your history.",
+  "add.duplicateCount": "{count} link is already in your download history.",
+  "add.duplicateSome": "{count} of these links is already in your downloads. Adding it again makes a second copy.",
+  "remove.count": "{count} download",
+  "toast.pausedAll": "Paused {count} download",
+  "settings.describe.connections": "at most {count} connection",
+  "queues.count": "{count} queue",
+  "grabber.unreachableCount": "{count} unreachable",
+  "plugins.rules": "{count} rule",
+  "stats.days": "{count} day",
+  "stats.dayFiles": "{count} file finished",
+  "stats.files": "{count} file",
+};
 
 /** Wording that names Windows, said the Linux way on Linux. */
 export const linuxEn: Partial<Record<MessageKey, string>> = {
@@ -626,6 +655,8 @@ export const linuxEn: Partial<Record<MessageKey, string>> = {
   "settings.systemFolder": "Downloads folder",
   "settings.useSystemFolder": "Use the Downloads folder",
   "settings.keepAwakeHint": "Stops the computer from sleeping while a download is running.",
+  "welcome.tipTray": "Closing the window keeps Ratatoskr in the system tray, so downloads carry on.",
+  "close.body": "Downloads or schedules are still active. You can keep them going from the system tray icon, or quit now: running downloads are paused and continue the next time you open the app. Minimising the window never stops anything.",
 };
 
 export const linuxFa: Partial<Record<MessageKey, string>> = {
@@ -640,6 +671,8 @@ export const linuxFa: Partial<Record<MessageKey, string>> = {
   "settings.themeSystem": "هماهنگ با سیستم",
   "settings.keepAwakeHint": "تا وقتی دانلودی در حال انجام است، کامپیوتر به حالت خواب نمی‌رود.",
   "settings.closeToTrayHint": "با زدن دکمه‌ی بستن، برنامه به سینی سیستم می‌رود و دانلودها ادامه پیدا می‌کنند. برای خروج کامل از آیکون سینی سیستم استفاده کنید.",
+  "welcome.tipTray": "بستن پنجره، راتاتوسک را در سینی سیستم نگه می‌دارد تا دانلودها ادامه پیدا کنند.",
+  "close.body": "هنوز دانلود یا زمان‌بندی فعال است. می‌توانید آن‌ها را از آیکون سینی سیستم ادامه بدهید، یا همین حالا خارج شوید: دانلودهای در حال اجرا متوقف می‌شوند و دفعه‌ی بعد که برنامه را باز کنید ادامه پیدا می‌کنند. کوچک کردن پنجره (مینیمایز) هیچ‌وقت چیزی را متوقف نمی‌کند.",
 };
 
 export const messages = {

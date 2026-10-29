@@ -103,7 +103,7 @@ export function DownloadContextMenu({
   const [newQueue, setNewQueue] = useState("");
   const [runAt, setRunAt] = useState("");
   const [stopAt, setStopAt] = useState("");
-  const { t, language } = useI18n();
+  const { t } = useI18n();
   const menuRef = useRef<HTMLDivElement>(null);
 
   const [position, setPosition] = useState({
@@ -275,9 +275,6 @@ export function DownloadContextMenu({
       }}
       role="menu"
     >
-      {onSendToPhone ? <button type="button" role="menuitem" onClick={() => { onSendToPhone(item); onClose(); }}>
-        <QrCode size={15} /><span>{language === "fa" ? "ارسال لینک به گوشی" : "Send link to phone"}</span>
-      </button> : null}
       {actions.length > 0 ? (
         <>
           {actions.map((action) => {
@@ -391,6 +388,13 @@ export function DownloadContextMenu({
           {copied === "path" ? t("action.copied") : t("action.copyPath")}
         </span>
       </button>
+
+      {onSendToPhone ? (
+        <button type="button" role="menuitem" onClick={() => { onSendToPhone(item); onClose(); }}>
+          <QrCode size={15} />
+          <span>{t("action.sendToPhone")}</span>
+        </button>
+      ) : null}
 
       <div className="download-context-menu__divider" />
 

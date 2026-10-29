@@ -71,7 +71,7 @@ export function PartInfo({ id, live }: { id: string; live: boolean }) {
       </div>
       <button type="button" className="parts__toggle" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
         {open ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-        {t("mini.partInfo")} · {parts.length}
+        {t("mini.partInfo")} · {fmt.number(parts.length)}
       </button>
       {open ? (
         <div className="parts__scroll">
@@ -87,7 +87,7 @@ export function PartInfo({ id, live }: { id: string; live: boolean }) {
           <tbody>
             {parts.map((part) => (
               <tr key={part.index}>
-                <td>{part.index + 1}</td>
+                <td>{fmt.number(part.index + 1)}</td>
                 <td>{t(`mini.part.${part.status === "completed" ? "completed" : part.status === "downloading" ? "downloading" : "pending"}` as "mini.part.pending")}</td>
                 <td>{fmt.bytes(part.downloaded)}</td>
                 <td>{fmt.bytes(part.total)}</td>

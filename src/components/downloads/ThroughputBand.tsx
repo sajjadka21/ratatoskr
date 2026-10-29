@@ -67,7 +67,13 @@ export function ThroughputBand({
 
   const moving = activeCount > 0;
   const rate = fmt.rate(bytesPerSecond);
-  const [value, unit] = moving && rate ? splitValue(rate) : [t("band.idle"), ""];
+  // Before the first bytes arrive a dash reads better than "0 B/s"; a large
+  // Persian zero is a dot that looks like a bullet.
+  const [value, unit] = !moving
+    ? [t("band.idle"), ""]
+    : rate && bytesPerSecond > 0
+      ? splitValue(rate)
+      : ["—", ""];
   const eta = fmt.duration(etaSeconds);
   const quota = quotaState(traffic);
   const presets = speedLimit !== null && !LIMIT_PRESETS.includes(speedLimit)

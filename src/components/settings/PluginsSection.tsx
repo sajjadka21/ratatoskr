@@ -1,10 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { Plus, Trash2 } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { ExternalLink, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { useI18n } from "../../i18n/I18n";
 import { Switch } from "./Switch";
+
+/** The plugin format, with examples, for people who have only the app. */
+const PLUGIN_GUIDE = "https://github.com/sajjadka21/ratatoskr/blob/main/docs/PLUGINS.md";
 
 type InstalledPlugin = { id: string; name: string; version: string; rules: number; enabled: boolean };
 
@@ -75,9 +79,14 @@ export function PluginsSection({ onError }: { onError: (message: string) => void
             <span>{t("plugins.format")}</span>
           </div>
           <div className="settings-page__row-control">
-            <button type="button" className="settings-page__primary-button" onClick={() => void add()}>
-              <Plus size={15} /> {t("plugins.add")}
-            </button>
+            <span className="settings-page__button-row">
+              <button type="button" className="settings-page__secondary-button" onClick={() => void openUrl(PLUGIN_GUIDE).catch((reason) => onError(String(reason)))}>
+                <ExternalLink size={14} /> {t("plugins.guide")}
+              </button>
+              <button type="button" className="settings-page__primary-button" onClick={() => void add()}>
+                <Plus size={15} /> {t("plugins.add")}
+              </button>
+            </span>
           </div>
         </div>
       </div>

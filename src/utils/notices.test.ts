@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createTranslator } from "../i18n/I18n";
-import { isAlarm, noticeDetail, noticeText } from "./notices";
+import { isAlarm, needsFreshLink, noticeDetail, noticeText } from "./notices";
 
 describe("notices", () => {
   it("keeps warnings about a finished file visible", () => {
@@ -31,5 +31,12 @@ describe("notices", () => {
     expect(noticeText("not_found", "status 404", fa, "fa")).toContain("پیدا نشد");
     expect(noticeDetail("rate_limited", "status 429")).toBeNull();
     expect(noticeDetail("filesystem_error", "filesystem error: access denied")).toContain("access denied");
+  });
+});
+
+describe("fresh links", () => {
+  it("sends stale, missing and login-only links to a fresh link, and everything else to a retry", () => {
+    expect(["link_expired", "access_denied", "not_found"].every(needsFreshLink)).toBe(true);
+    expect(["network_error", "server_busy", "rate_limited", null].some(needsFreshLink)).toBe(false);
   });
 });

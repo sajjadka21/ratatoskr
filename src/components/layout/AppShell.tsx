@@ -57,6 +57,7 @@ export function AppShell({
         onSection={onSection}
         onPage={onPage}
         onAddDownload={onAddDownload}
+        onQuit={onQuitClick}
       />
 
       <div className="app-shell__workspace">
@@ -68,7 +69,6 @@ export function AppShell({
           showSearch={page === "downloads"}
           actions={actions}
           onSettingsClick={onSettingsClick}
-          onQuitClick={onQuitClick}
         />
 
         <main className={fill ? "app-shell__content app-shell__content--fill" : "app-shell__content"}>

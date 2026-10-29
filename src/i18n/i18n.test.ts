@@ -28,6 +28,17 @@ describe("translations", () => {
   });
 });
 
+describe("counts", () => {
+  it("says one thing in English without a plural, and leaves Persian as it is", () => {
+    const en = createTranslator("en");
+    const fa = createTranslator("fa");
+    expect(en("table.items", { count: "1" })).toBe("1 item");
+    expect(en("table.items", { count: "8" })).toBe("8 items");
+    expect(en("add.duplicateCompleted", { count: "1" })).toBe("Already downloaded: 1 completed download is in your history.");
+    expect(fa("table.items", { count: "۱" })).toBe("۱ مورد");
+  });
+});
+
 describe("Persian formatting", () => {
   const fa = createFormatter("fa");
 

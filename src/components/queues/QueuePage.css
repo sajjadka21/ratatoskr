@@ -18,12 +18,15 @@
 .queue-page__queue:hover, .queue-page__queue--selected { color: var(--text-primary); background: var(--accent-soft); }
 .queue-page__queue > span { min-width: 0; display: grid; gap: 3px; }
 .queue-page__queue strong, .queue-page__queue small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.queue-page__queue strong { font-size: 11px; }.queue-page__queue small { color: var(--text-muted); font-size: 10.5px; text-transform: capitalize; }
+.queue-page__queue strong { font-size: 11px; }.queue-page__queue small { color: var(--text-muted); font-size: 10.5px; }
 .queue-page__content { padding: 20px; }
 .queue-page__header { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; padding-bottom: 18px; border-bottom: 1px solid var(--border-subtle); }
-.queue-page__header h2 { margin: 5px 0 0; font-size: 18px; }.queue-page__header p { margin: 5px 0 0; color: var(--text-muted); font-size: 11px; text-transform: capitalize; }
+.queue-page__header h2 { margin: 5px 0 0; font-size: 18px; }.queue-page__header p { margin: 5px 0 0; color: var(--text-muted); font-size: 11px; }
 .queue-page__state { color: var(--text-muted); font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }.queue-page__state--running { color: var(--success); }
 .queue-page__runner-button { display: inline-flex; align-items: center; gap: 7px; }
+/* Settings sits beside the start/stop button, so only start/stop is filled. */
+.queue-page__runner-button--quiet { color: var(--text-primary); background: var(--bg-surface); border: 1px solid var(--border-subtle); }
+.queue-page__runner-button--quiet:hover { border-color: var(--border-strong); }
 .queue-page button:disabled { cursor: not-allowed; opacity: .45; }
 .queue-page__error { margin-top: 14px; padding: 10px 12px; color: var(--danger-text); background: color-mix(in srgb, var(--danger) 8%, transparent); border: 1px solid color-mix(in srgb, var(--danger) 20%, transparent); border-radius: 8px; font-size: 11px; }
 .queue-page__task-heading { margin: 18px 0 10px; display: flex; justify-content: space-between; color: var(--text-muted); font-size: 10.5px; }.queue-page__task-heading strong { color: var(--text-secondary); font-size: 11px; }
@@ -58,7 +61,7 @@
 .queue-page__limits { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 12px; }
 .queue-page__limits select { padding: 6px 10px; background: var(--bg-surface); color: var(--text-primary); border: 1px solid var(--border-subtle); border-radius: 8px; }
 
-.queue-page__limits input { width: 65px; padding: 6px; background: var(--bg-surface); color: var(--text-primary); border: 1px solid var(--border-subtle); border-radius: 8px; }
+.queue-page__limits input { width: 80px; padding: 6px; background: var(--bg-surface); color: var(--text-primary); border: 1px solid var(--border-subtle); border-radius: 8px; }
 .queue-page__header-actions { flex-wrap: wrap; justify-content: flex-end; }
 @media (max-width: 760px) {
   .queue-page { grid-template-columns: minmax(0, 1fr); min-height: 0; }

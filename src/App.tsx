@@ -387,6 +387,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     clearLiveMetrics,
     refreshDownloads,
     onTaskUpdated: onQueueTaskUpdated,
+    defaultQueueName: t("queue.defaultName"),
   });
 
   const [quickQueueId, setQuickQueueId] = useState("default");
@@ -1118,6 +1119,20 @@ function App({ preferences, onPreferencesChange }: AppProps) {
     (item: DownloadListItem, action: TaskAction) => rowHandlers.current.action(item, action),
     [],
   );
+  const handleOpenFile = useCallback(
+    (item: DownloadListItem) =>
+      void invoke("open_download_file", { id: item.id }).catch((reason) =>
+        reportError(t("context.openFailed", { reason: String(reason) })),
+      ),
+    [reportError, t],
+  );
+  const handleShowInFolder = useCallback(
+    (item: DownloadListItem) =>
+      void invoke("reveal_download_file", { id: item.id }).catch((reason) =>
+        reportError(t("context.revealFailed", { reason: String(reason) })),
+      ),
+    [reportError, t],
+  );
   const handleRowContextMenu = useCallback(
     (item: DownloadListItem, x: number, y: number) => rowHandlers.current.contextMenu(item, x, y),
     [],
@@ -1159,6 +1174,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
       { id: "go-categories", group: "go", label: t("nav.categories"), keywords: "categories folders", run: () => goToPage("categories") },
       { id: "go-stats", group: "go", label: t("nav.stats"), keywords: "statistics stats chart traffic آمار", run: () => goToPage("stats") },
       { id: "go-settings", group: "go", label: t("nav.settings"), hint: "Ctrl+,", keywords: "settings preferences options proxy quota", run: () => goToPage("settings") },
+      { id: "quit", group: "action", label: t("close.quit"), keywords: "quit exit close خروج بستن", run: () => void invoke("request_close_confirmation").catch((reason) => notify("error", String(reason))) },
     ];
     for (const item of downloads.slice(0, 500)) {
       commands.push({
@@ -1487,6 +1503,9 @@ function App({ preferences, onPreferencesChange }: AppProps) {
                   onDetails={handleRowDetails}
                   onAction={handleRowAction}
                   onContextMenu={handleRowContextMenu}
+                  onOpenFile={handleOpenFile}
+                  onShowInFolder={handleShowInFolder}
+                  onRefreshLink={setRefreshCandidate}
                 />
               </div>
 

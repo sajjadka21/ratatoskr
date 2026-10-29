@@ -211,7 +211,7 @@ export function BrowserSection({ onError }: { onError: (message: string) => void
                   className="settings-page__secondary-button"
                   onClick={() => void run("open_browser_extensions_page", { browser: "firefox" })}
                 >
-                  <ExternalLink size={14} /> Firefox
+                  <ExternalLink size={14} /> {t("browser.setupIn", { browser: "Firefox" })}
                 </button>
               )}
             </span>

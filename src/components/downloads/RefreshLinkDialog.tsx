@@ -70,7 +70,7 @@ export function RefreshLinkDialog({ item, onCancel, onSubmit }: RefreshLinkDialo
           <RefreshCw size={18} aria-hidden="true" />
           <div>
             <h2 id="refresh-dialog-title">{t("refresh.title")}</h2>
-            <span className="ltr">{displayName(current)}</span>
+            <span className="file-name" dir="auto">{displayName(current)}</span>
           </div>
           <button type="button" onClick={onCancel} aria-label={t("add.close")} disabled={saving}>
             <X size={16} />

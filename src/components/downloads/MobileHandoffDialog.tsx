@@ -16,12 +16,14 @@ export function MobileHandoffDialog({ source, onClose }: { source: string; onClo
     return () => { if (dialog.open) dialog.close(); };
   }, []);
   return <dialog ref={ref} className="mobile-handoff" dir={dir} aria-labelledby="handoff-title"
-    onCancel={onClose} onClose={onClose}>
+    // A close queued by an earlier mount (React re-runs effects in development)
+    // arrives while the dialog is open again and must not dismiss it.
+    onCancel={onClose} onClose={() => { if (!ref.current?.open) onClose(); }}>
     <button className="mobile-handoff__close" autoFocus type="button" onClick={onClose}
       aria-label={fa ? "بستن" : "Close"}><X size={20} /></button>
     <h2 id="handoff-title">{fa ? "ارسال لینک به گوشی" : "Send link to your phone"}</h2>
     {payload ? <>
-      <p>{fa ? "Ratatoskr را روی اندروید نصب کن، سپس این کد را با دوربین یا اسکنر QR باز کن. انتخاب دانلود در گوشی انجام می‌شود." :
+      <p>{fa ? "راتاتوسک را روی اندروید نصب کن، سپس این کد را با دوربین یا اسکنر QR باز کن. انتخاب دانلود در گوشی انجام می‌شود." :
         "Install Ratatoskr on Android, then open this code with your camera or QR scanner. Choose your download on your phone."}</p>
       <div className="mobile-handoff__qr"><QRCodeSVG value={payload} size={256} level="M" marginSize={4}
         title={fa ? "لینک دانلود برای اندروید" : "Android download link"} /></div>

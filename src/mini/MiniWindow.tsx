@@ -411,7 +411,7 @@ function FileFacts({ url, onName }: { url: string; onName?: (name: string) => vo
     <div className="mini__file">
       <FileBadge name={name} />
       <div className="mini__file-text">
-        <strong className="ltr" title={name}>
+        <strong className="file-name" dir="auto" title={name}>
           {name}
         </strong>
         <span>
@@ -798,7 +798,7 @@ function TaskView({
             <CheckCircle2 size={26} />
             <div>
               <h1>{t("mini.done")}</h1>
-              <strong className="ltr" title={name}>
+              <strong className="file-name" dir="auto" title={name}>
                 {name}
               </strong>
               <span>{total ? fmt.bytes(total) : null}</span>
@@ -837,7 +837,7 @@ function TaskView({
         <div className="mini__task">
           <FileBadge item={item} />
           <div className="mini__file-text">
-            <strong className="ltr" title={name}>
+            <strong className="file-name" dir="auto" title={name}>
               {name}
             </strong>
             <span>

@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 
 import { createFormatter, type Formatter } from "./format";
-import { messages, type Language, type MessageKey } from "./messages";
+import { enSingular, messages, type Language, type MessageKey } from "./messages";
 
 export type Translate = (key: MessageKey, values?: Record<string, string | number>) => string;
 
@@ -15,7 +15,8 @@ type I18nValue = {
 export function createTranslator(language: Language): Translate {
   const table = messages[language];
   return (key, values) => {
-    const template: string = table[key] ?? messages.en[key] ?? key;
+    const singular = language === "en" && String(values?.count) === "1" ? enSingular[key] : undefined;
+    const template: string = singular ?? table[key] ?? messages.en[key] ?? key;
     if (!values) return template;
     return template.replace(/\{(\w+)\}/g, (match, name: string) =>
       name in values ? String(values[name]) : match,

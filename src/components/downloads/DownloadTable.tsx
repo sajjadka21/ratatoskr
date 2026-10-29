@@ -1,6 +1,8 @@
 import {
   ArrowDownNarrowWide,
   ArrowUpNarrowWide,
+  FolderOpen,
+  Link2,
   MoreHorizontal,
   Pause,
   Play,
@@ -19,7 +21,7 @@ import {
 } from "react";
 
 import { useI18n } from "../../i18n/I18n";
-import { isAlarm, noticeText } from "../../utils/notices";
+import { isAlarm, needsFreshLink, noticeText } from "../../utils/notices";
 import type { MessageKey } from "../../i18n/messages";
 import type { DownloadListItem, TaskAction, TransferMetrics } from "../../types/download";
 import { displayName } from "../../utils/fileKind";
@@ -62,6 +64,11 @@ type DownloadTableProps = {
   onDetails: (item: DownloadListItem) => void;
   onAction: (item: DownloadListItem, action: TaskAction) => void;
   onContextMenu: (item: DownloadListItem, x: number, y: number) => void;
+  /** A finished file: open it (double-click) or show it in its folder. */
+  onOpenFile?: (item: DownloadListItem) => void;
+  onShowInFolder?: (item: DownloadListItem) => void;
+  /** A failure a retry cannot fix: offer a fresh link instead. */
+  onRefreshLink?: (item: DownloadListItem) => void;
 };
 
 /**
@@ -83,6 +90,9 @@ export function DownloadTable({
   onDetails,
   onAction,
   onContextMenu,
+  onOpenFile,
+  onShowInFolder,
+  onRefreshLink,
 }: DownloadTableProps) {
   const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -182,6 +192,9 @@ export function DownloadTable({
                   onDetails={onDetails}
                   onAction={onAction}
                   onContextMenu={onContextMenu}
+                  onOpenFile={onOpenFile}
+                  onShowInFolder={onShowInFolder}
+                  onRefreshLink={onRefreshLink}
                 />
               );
             })}
@@ -206,6 +219,9 @@ type RowProps = {
   onDetails: DownloadTableProps["onDetails"];
   onAction: DownloadTableProps["onAction"];
   onContextMenu: DownloadTableProps["onContextMenu"];
+  onOpenFile?: DownloadTableProps["onOpenFile"];
+  onShowInFolder?: DownloadTableProps["onShowInFolder"];
+  onRefreshLink?: DownloadTableProps["onRefreshLink"];
 };
 
 const DownloadTableRow = memo(function DownloadTableRow({
@@ -222,6 +238,9 @@ const DownloadTableRow = memo(function DownloadTableRow({
   onDetails,
   onAction,
   onContextMenu,
+  onOpenFile,
+  onShowInFolder,
+  onRefreshLink,
 }: RowProps) {
   const { t, fmt, language } = useI18n();
   const notice = noticeText(item.errorCode, item.errorMessage, t, language);
@@ -257,6 +276,8 @@ const DownloadTableRow = memo(function DownloadTableRow({
 
   const action = primaryAction(item);
   const ActionIcon = action ? ACTION_ICONS[action] : null;
+  const finishedFile = status === "completed" && Boolean(item.destinationPath);
+  const freshLinkFirst = status === "failed" && needsFreshLink(item.errorCode) && Boolean(onRefreshLink);
   const connections =
     transferring && metrics?.activeConnections
       ? t("table.connections", {
@@ -286,6 +307,9 @@ const DownloadTableRow = memo(function DownloadTableRow({
       aria-selected={selected}
       tabIndex={0}
       onClick={(event) => onSelect(item, index, event)}
+      onDoubleClick={() => {
+        if (finishedFile) onOpenFile?.(item);
+      }}
       onContextMenu={openMenu}
       onKeyDown={(event: KeyboardEvent) => {
         if (event.key === "Enter" && event.target === event.currentTarget) {
@@ -300,28 +324,33 @@ const DownloadTableRow = memo(function DownloadTableRow({
       </span>
 
       <span role="gridcell" className="download-table__cell download-table__cell--name">
-        <span className="download-table__name ltr" title={displayName(item)}>
+        <span className="download-table__name file-name" dir="auto" title={displayName(item)}>
           {displayName(item)}
         </span>
-        <span className="download-table__meta">
-          <span className="ltr">{formatHost(item.resolvedUrl ?? item.sourceUrl)}</span>
-          {size ? <span className="num">{size}</span> : null}
-          {/* The reason comes before the chips: on a narrow row it is what the user needs to see. */}
-          {notice && (status !== "completed" || isAlarm(item.errorCode)) ? (
+        {/* A reason to act replaces size and chips: on a narrow row it is what the user needs to read. */}
+        {notice && (status !== "completed" || isAlarm(item.errorCode)) ? (
+          <span className="download-table__meta download-table__meta--notice">
             <span
+              dir="auto"
               className={`download-table__message download-table__message--${status === "failed" || isAlarm(item.errorCode) ? "error" : "notice"}`}
               title={notice}
             >
               {notice}
             </span>
-          ) : null}
-          {queueName ? (
-            <span className="download-table__chip" title={queueName}>
-              {queueName}
-            </span>
-          ) : null}
-          {connections ? <span className="download-table__chip download-table__chip--accent num">{connections}</span> : null}
-        </span>
+            <span className="download-table__host ltr">{formatHost(item.resolvedUrl ?? item.sourceUrl)}</span>
+          </span>
+        ) : (
+          <span className="download-table__meta">
+            {size ? <span className="num">{size}</span> : null}
+            <span className="download-table__host ltr">{formatHost(item.resolvedUrl ?? item.sourceUrl)}</span>
+            {queueName ? (
+              <span className="download-table__chip" title={queueName}>
+                {queueName}
+              </span>
+            ) : null}
+            {connections ? <span className="download-table__chip download-table__chip--accent num">{connections}</span> : null}
+          </span>
+        )}
       </span>
 
       <span role="gridcell" className="download-table__cell download-table__cell--progress">
@@ -354,14 +383,27 @@ const DownloadTableRow = memo(function DownloadTableRow({
       </span>
 
       <span role="gridcell" className="download-table__cell">
-        <span className={`status-pill status-pill--${status}`}>
+        <span className={`status-pill status-pill--${status}`} title={t(`status.${status}` as MessageKey)}>
           <span className="status-pill__dot" />
-          {t(`status.${status}` as MessageKey)}
+          <span className="status-pill__label">{t(`status.${status}` as MessageKey)}</span>
         </span>
       </span>
 
       <span role="gridcell" className="download-table__cell download-table__cell--actions">
-        {action && ActionIcon ? (
+        {freshLinkFirst ? (
+          <button
+            type="button"
+            className="download-table__action"
+            aria-label={t("action.refreshSource")}
+            title={t("action.refreshSource")}
+            onClick={(event) => {
+              event.stopPropagation();
+              onRefreshLink?.(item);
+            }}
+          >
+            <Link2 size={14} strokeWidth={2.2} />
+          </button>
+        ) : action && ActionIcon ? (
           <button
             type="button"
             className="download-table__action"
@@ -373,6 +415,19 @@ const DownloadTableRow = memo(function DownloadTableRow({
             }}
           >
             <ActionIcon size={14} strokeWidth={2.2} />
+          </button>
+        ) : finishedFile && onShowInFolder ? (
+          <button
+            type="button"
+            className="download-table__action"
+            aria-label={t("action.reveal")}
+            title={t("table.showInFolderHint")}
+            onClick={(event) => {
+              event.stopPropagation();
+              onShowInFolder(item);
+            }}
+          >
+            <FolderOpen size={14} strokeWidth={2.2} />
           </button>
         ) : null}
         <button

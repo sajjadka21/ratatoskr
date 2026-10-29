@@ -9,6 +9,7 @@ import {
   Layers3,
   List,
   Plus,
+  Power,
   ScanLine,
   Settings,
 } from "lucide-react";
@@ -32,6 +33,8 @@ type SidebarProps = {
   onSection: (section: DownloadSection) => void;
   onPage: (page: WorkspacePage) => void;
   onAddDownload: () => void;
+  /** Quits after asking, from the window itself: some desktops hide tray icons. */
+  onQuit?: () => void;
 };
 
 const SECTIONS: Array<{
@@ -75,6 +78,7 @@ export function Sidebar({
   onSection,
   onPage,
   onAddDownload,
+  onQuit,
 }: SidebarProps) {
   const { t, fmt } = useI18n();
   const engineLabel: MessageKey =
@@ -156,6 +160,18 @@ export function Sidebar({
           <Settings size={17} strokeWidth={1.9} />
           <span className="sidebar__label">{t("nav.settings")}</span>
         </button>
+        {onQuit ? (
+          <button
+            type="button"
+            className="sidebar__item sidebar__item--quiet"
+            aria-label={t("close.quit")}
+            title={t("close.quit")}
+            onClick={onQuit}
+          >
+            <Power size={17} strokeWidth={1.9} />
+            <span className="sidebar__label">{t("top.quit")}</span>
+          </button>
+        ) : null}
       </div>
     </aside>
   );

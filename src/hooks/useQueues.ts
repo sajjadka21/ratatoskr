@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -41,7 +41,19 @@ type UseQueuesOptions = {
   refreshDownloads: () => Promise<void>;
   /** A row a queue changed: handled like any other engine update. */
   onTaskUpdated: (record: DownloadListItem) => void;
+  /** The built-in queue's name in the interface language. */
+  defaultQueueName?: string;
 };
+
+/** The name the backend gives the built-in queue until the user renames it. */
+export const STORED_DEFAULT_QUEUE_NAME = "Default Queue";
+
+/** Shows the untouched built-in queue in the interface language; stored names never change. */
+export function localizeQueue(queue: DownloadQueue, defaultQueueName: string | undefined): DownloadQueue {
+  return defaultQueueName && queue.id === "default" && queue.name === STORED_DEFAULT_QUEUE_NAME
+    ? { ...queue, name: defaultQueueName }
+    : queue;
+}
 
 export function useQueues({
   upsertDownloads,
@@ -49,8 +61,13 @@ export function useQueues({
   clearLiveMetrics,
   refreshDownloads,
   onTaskUpdated,
+  defaultQueueName,
 }: UseQueuesOptions) {
-  const [queues, setQueues] = useState<DownloadQueue[]>([]);
+  const [storedQueues, setQueues] = useState<DownloadQueue[]>([]);
+  const queues = useMemo(
+    () => storedQueues.map((queue) => localizeQueue(queue, defaultQueueName)),
+    [storedQueues, defaultQueueName],
+  );
 
   const upsertQueues = useCallback((records: DownloadQueue[]) => {
     setQueues((current) => {

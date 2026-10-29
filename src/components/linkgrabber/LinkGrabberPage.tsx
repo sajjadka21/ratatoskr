@@ -256,7 +256,7 @@ export function LinkGrabberPage({ queues, engineReady, submitting = false, onSub
     <section className="linkgrabber-page__results">
       <div className="linkgrabber-page__results-head">
         <div><strong>{t("grabber.candidates")}</strong><span>{t("grabber.review")}</span></div>
-        <div className="linkgrabber-page__filters"><label><Filter size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("grabber.filter")} aria-label={t("grabber.filter")} /></label><select value={kind} onChange={(event) => setKind(event.target.value)}><option value="all">{t("grabber.allTypes")}</option>{types.map((type) => <option key={type} value={type}>{type}</option>)}</select></div>
+        <div className="linkgrabber-page__filters"><label><Filter size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("grabber.filter")} aria-label={t("grabber.filter")} /></label><select value={kind} onChange={(event) => setKind(event.target.value)} aria-label={t("grabber.typeFilter")}><option value="all">{t("grabber.allTypes")}</option>{types.map((type) => <option key={type} value={type}>{type}</option>)}</select></div>
       </div>
       <div className="linkgrabber-page__select-row">
         <button type="button" onClick={() => setSelected(new Set(visible.map((item) => item.url)))}><Check size={14} /> {t("grabber.selectVisible")}</button>

@@ -265,7 +265,7 @@ export function QueuePage({
                 </p>
               </div>
               <div className="queue-page__header-actions">
-                {onConfigure ? <button type="button" className="queue-page__runner-button" title={t("queues.manageShortcut")} onClick={() => onConfigure(selectedQueue.id)}><Settings2 size={16} />{t("queues.manageShortcut")}</button> : null}
+                {onConfigure ? <button type="button" className="queue-page__runner-button queue-page__runner-button--quiet" title={t("queues.manageShortcut")} onClick={() => onConfigure(selectedQueue.id)}><Settings2 size={16} />{t("queues.manageShortcut")}</button> : null}
                 <label className="queue-page__limits">
                   {t("queues.concurrent")}
                   <select aria-label={t("queues.concurrent")} value={selectedQueue.maxConcurrent} disabled={busy}
@@ -276,7 +276,7 @@ export function QueuePage({
                 <label className="queue-page__limits">
                   {t("queues.perHost")}
                   <input type="number" min={1} aria-label={t("queues.perHost")} key={`${selectedQueue.id}:${selectedQueue.maxConcurrentPerHost}`} defaultValue={selectedQueue.maxConcurrentPerHost ?? ""}
-                    placeholder={t("queues.perHostNone")} disabled={busy}
+                    placeholder={t("queues.perHostAny")} title={t("queues.perHostNone")} disabled={busy}
                     onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
                     onBlur={(event) => { const limit = event.target.value === "" ? null : Number(event.target.value); if (limit !== selectedQueue.maxConcurrentPerHost && (limit === null || (Number.isInteger(limit) && limit > 0))) void run(() => onSetQueueLimits(selectedQueue.id, selectedQueue.maxConcurrent, limit)); }} />
                 </label>
@@ -347,7 +347,7 @@ export function QueuePage({
                   >
                     <GripVertical size={16} />
                     <div className="queue-page__task-copy">
-                      <strong className="ltr">{displayName(download)}</strong>
+                      <strong className="file-name" dir="auto">{displayName(download)}</strong>
                       <span className="ltr">{formatHost(download.sourceUrl)}</span>
                     </div>
                     <select

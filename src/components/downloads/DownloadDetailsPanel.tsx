@@ -15,7 +15,7 @@ import { useEffect, useState } from "react";
 
 import { useI18n } from "../../i18n/I18n";
 import { explainRule, type RuleExplanation } from "../../utils/categories";
-import { engineReasonText, noticeDetail, noticeText } from "../../utils/notices";
+import { engineReasonText, needsFreshLink, noticeDetail, noticeText } from "../../utils/notices";
 import type { MessageKey } from "../../i18n/messages";
 import type { DownloadListItem, TaskAction, TransferMetrics } from "../../types/download";
 import { displayName, fileKind } from "../../utils/fileKind";
@@ -129,19 +129,21 @@ export function DownloadDetailsPanel({
   }
 
   const canRefresh = ["created", "queued", "paused", "failed", "cancelled"].includes(status);
+  // A stale, missing or login-only link is not fixed by retrying it.
+  const freshLinkFirst = status === "failed" && canRefresh && needsFreshLink(current.errorCode);
 
   return (
     <aside className="details" aria-label={t("details.label")}>
       <header className="details__header">
         <FileBadge item={current} size="lg" />
         <div className="details__identity">
-          <strong className="ltr" title={displayName(current)}>
+          <strong className="file-name" dir="auto" title={displayName(current)}>
             {displayName(current)}
           </strong>
-          <span>
+          <span title={current.mimeType ?? undefined}>
             <span className="ltr">{formatHost(current.resolvedUrl ?? current.sourceUrl)}</span>
             {" · "}
-            {current.mimeType ?? kindLabel(current, t)}
+            {kindLabel(current, t)}
           </span>
         </div>
         <button type="button" className="details__close" onClick={onClose} aria-label={t("details.close")}>
@@ -207,6 +209,14 @@ export function DownloadDetailsPanel({
           </section>
         ) : null}
 
+        {current.errorMessage ? (
+          <div className={`details__failure details__failure--${status === "failed" ? "error" : "notice"}`}>
+            <strong>{status === "failed" ? t("details.failed") : t("details.attention")}</strong>
+            <span>{noticeText(current.errorCode, current.errorMessage, t, language)}</span>
+            {noticeDetail(current.errorCode, current.errorMessage) ? (
+              <small dir="ltr">{noticeDetail(current.errorCode, current.errorMessage)}</small>
+            ) : null}
+
         <div className="details__actions">
           {availableActions(current).map((action) => {
             const Icon = ACTION_ICONS[action];
@@ -214,7 +224,7 @@ export function DownloadDetailsPanel({
               <button
                 key={action}
                 type="button"
-                className={action === "pause" || action === "resume" || action === "start" || action === "retry" ? "details__primary" : undefined}
+                className={action === "pause" || action === "resume" || action === "start" || (action === "retry" && !freshLinkFirst) ? "details__primary" : undefined}
                 onClick={() => onAction(current, action)}
               >
                 <Icon size={14} />
@@ -230,19 +240,12 @@ export function DownloadDetailsPanel({
             <FolderOpen size={14} />
             {t("action.reveal")}
           </button>
-          <button type="button" onClick={() => onRefreshSource(current)} disabled={!canRefresh}>
+          <button type="button" className={freshLinkFirst ? "details__primary details__lead" : undefined} onClick={() => onRefreshSource(current)} disabled={!canRefresh}>
             <RefreshCw size={14} />
             {t("action.refreshSource")}
           </button>
         </div>
 
-        {current.errorMessage ? (
-          <div className={`details__failure details__failure--${status === "failed" ? "error" : "notice"}`}>
-            <strong>{status === "failed" ? t("details.failed") : t("details.attention")}</strong>
-            <span>{noticeText(current.errorCode, current.errorMessage, t, language)}</span>
-            {noticeDetail(current.errorCode, current.errorMessage) ? (
-              <small dir="ltr">{noticeDetail(current.errorCode, current.errorMessage)}</small>
-            ) : null}
           </div>
         ) : null}
 

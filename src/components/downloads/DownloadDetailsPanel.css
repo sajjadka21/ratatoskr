@@ -33,10 +33,6 @@
   text-align: start;
 }
 
-[dir="rtl"] .details__identity strong {
-  text-align: end;
-}
-
 .details__identity > span {
   color: var(--text-muted);
   font-size: 12px;
@@ -364,7 +360,9 @@
     position: fixed;
     inset-block: 0;
     inset-inline-end: 0;
-    z-index: 15;
+    /* A drawer over the whole window, top bar included, so its header and
+       close button are never hidden. */
+    z-index: 70;
     box-shadow: var(--shadow-modal);
   }
 }
@@ -559,3 +557,8 @@
 .details__disclosure[open] > summary { margin-bottom: 10px; color: var(--text-primary); }
 
 .details__body::-webkit-scrollbar { display: none; }
+
+/* The recommended next step comes first, before the general actions. */
+.details__actions .details__lead {
+  order: -1;
+}

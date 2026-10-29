@@ -43,6 +43,14 @@ export function noticeDetail(code: string | null, message: string | null): strin
 }
 
 /**
+ * Failures a retry cannot fix: the link itself is stale, gone or needs a
+ * login, so the way forward is a fresh link from its page.
+ */
+export function needsFreshLink(code: string | null): boolean {
+  return code === "link_expired" || code === "access_denied" || code === "not_found";
+}
+
+/**
  * Notices about a finished file that must stay visible: the file is
  * damaged or dangerous even though the download itself completed.
  */

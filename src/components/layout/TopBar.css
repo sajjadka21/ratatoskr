@@ -99,3 +99,6 @@
 .quick-queue__panel select { width: 100%; max-width: none; }
 .quick-queue__panel button { width: 100%; justify-content: flex-start; padding: 0 12px !important; }
 .quick-queue__panel button span { display: inline !important; }
+/* Icons keep their size when the bar is tight; the labels give way instead. */
+.topbar__shortcut svg, .quick-queue summary svg { flex-shrink: 0; }
+.topbar__shortcut span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }

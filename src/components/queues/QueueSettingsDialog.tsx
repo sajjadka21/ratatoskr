@@ -11,7 +11,7 @@ export function QueueSettingsDialog({ queue, onClose, onLimits, onEnabled }: {
   onLimits: (id: string, concurrent: number, perHost: number | null) => Promise<void>;
   onEnabled: (id: string, enabled: boolean) => Promise<void>;
 }) {
-  const { t, dir } = useI18n();
+  const { t, dir, fmt } = useI18n();
   const ref = useRef<HTMLDialogElement>(null);
   const [schedule, setSchedule] = useState<QueueSchedule | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,7 +41,7 @@ export function QueueSettingsDialog({ queue, onClose, onLimits, onEnabled }: {
     {error ? <p role="alert">{error}</p> : null}
     <div className="queue-settings-dialog__limits">
       <label>{t("queues.concurrent")}<select value={queue.maxConcurrent} disabled={busy} onChange={(event) => void save(() => onLimits(queue.id, Number(event.target.value), queue.maxConcurrentPerHost))}>
-        {[...new Set([1, 2, 3, 4, 5, 8, 10, 16, queue.maxConcurrent])].sort((a,b) => a-b).map((value) => <option key={value}>{value}</option>)}
+        {[...new Set([1, 2, 3, 4, 5, 8, 10, 16, queue.maxConcurrent])].sort((a,b) => a-b).map((value) => <option key={value} value={value}>{fmt.number(value)}</option>)}
       </select></label>
       <label>{t("queues.enabled")}<input type="checkbox" checked={queue.enabled} disabled={busy} onChange={(event) => void save(() => onEnabled(queue.id, event.target.checked))} /></label>
     </div>

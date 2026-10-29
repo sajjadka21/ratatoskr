@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Power, Search, Settings } from "lucide-react";
+import { Search, Settings } from "lucide-react";
 
 import { useI18n } from "../../i18n/I18n";
 
@@ -13,10 +13,9 @@ type TopBarProps = {
   showSearch?: boolean;
   actions?: ReactNode;
   onSettingsClick: () => void;
-  onQuitClick: () => void;
 };
 
-export function TopBar({ title, subtitle, searchValue, onSearchChange, showSearch = true, actions, onSettingsClick, onQuitClick }: TopBarProps) {
+export function TopBar({ title, subtitle, searchValue, onSearchChange, showSearch = true, actions, onSettingsClick }: TopBarProps) {
   const { t } = useI18n();
 
   return (
@@ -30,9 +29,6 @@ export function TopBar({ title, subtitle, searchValue, onSearchChange, showSearc
         {actions}
         <button type="button" className="topbar__shortcut" aria-label={t("nav.settings")} title={t("nav.settings")} onClick={onSettingsClick}>
           <Settings size={16} /><span>{t("nav.settings")}</span>
-        </button>
-        <button type="button" className="topbar__shortcut topbar__shortcut--quit" aria-label={t("close.quit")} title={t("close.quit")} onClick={onQuitClick}>
-          <Power size={16} /><span>{t("close.quit")}</span>
         </button>
       </div>
       {showSearch ? (

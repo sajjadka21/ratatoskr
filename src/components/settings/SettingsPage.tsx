@@ -285,7 +285,7 @@ export function SettingsPage({
           ) : (
             <div className="settings-page__stack">
               {queues.map((queue) => (
-                onQueueSettings ? <button key={queue.id} type="button" className="settings-page__group" onClick={() => onQueueSettings(queue.id)}>{queue.name} — {t("settings.schedules")}</button> : <ScheduleEditor
+                onQueueSettings ? <button key={queue.id} type="button" className="settings-page__group" onClick={() => onQueueSettings(queue.id)}>{t("settings.scheduleFor", { name: queue.name })}</button> : <ScheduleEditor
                   key={queue.id}
                   queue={queue}
                   schedule={

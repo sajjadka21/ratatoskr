@@ -62,12 +62,7 @@ function selectTheme(slug,focus=false){
   if (!Object.hasOwn(themes,slug)) return;
   const theme=themes[slug];
   document.querySelector('.hero-art').dataset.theme=slug;
-  document.querySelector('#hero-theme-name').textContent=theme.name;
-  const heroPreview=document.querySelector('#hero-preview');
   const nextPreview='/assets/screen-'+slug+'.jpg';
-  if(heroPreview.getAttribute('src')!==nextPreview){heroPreview.src=nextPreview;heroPreview.decode().then(()=>{if(heroPreview.getAttribute('src')===nextPreview)animatePreview(heroPreview)}).catch(()=>{});}
-  heroPreview.alt=isFa?'تصویر رابط واقعی راتاتوسک در تم '+theme.name:theme.name+' actual interface, captured in a browser';
-  document.querySelectorAll('[data-preview-theme]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.previewTheme===slug)));
   document.querySelector('.themes-section').dataset.theme=slug;
   for(const tab of tabs){const active=tab.dataset.theme===slug;tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;if(active&&focus)tab.focus();}
   document.querySelector('#theme-panel').setAttribute('aria-labelledby','tab-'+slug);

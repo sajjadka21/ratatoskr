@@ -1,11 +1,17 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ratatoskr-site",
+  "main": "worker.mjs",
+  "rules": [
+    { "type": "Text", "globs": ["**/*.html", "**/site-config.json", "**/release-assets.json"], "fallthrough": true }
+  ],
   "account_id": "29dab81db949743646b76d7b213a054b",
   "compatibility_date": "2026-09-30",
   "workers_dev": true,
   "assets": {
     "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/", "/index.html", "/fa", "/fa/", "/fa/index.html", "/site-config.json", "/app.js", "/header.css", "/assets/hero-1.3.0.svg", "/assets/android-home-1.3.0.webp", "/assets/android-settings-1.3.0.webp"],
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "404-page"
   },

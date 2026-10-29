@@ -1,5 +1,11 @@
 # Deployment record
 
+Latest update: 2026-10-29. Worker `ratatoskr-site`, version `3f89a06b-d343-4bd3-a176-efb78fa281ec`. Release 1.3.7 with a Linux card (.deb, .rpm, AppImage, .tar.gz) in both languages; the Worker now also keeps Linux links current, labels each button with its own version (no stale desktop version, no doubled Android version) and updates checksum links by id. All 11 live download links returned 200; English and Persian checked at 1280px and 390px, light and dark.
+
+Latest update: 2026-10-02 (Asia/Tehran). Worker `ratatoskr-site`, deployment `fa6f7ba29956470bb45d37fde9e505e6`. The verified public 1.1.1 prerelease is available in a bilingual feature/preview section; stable 1.0.2 downloads and updater remain intact. Both live pages, preview/stable links, security headers and genuine 404 verified. All five feature cards, 390px width, light/dark modes and English/Persian verified in the browser without console warnings/errors. Proof: `../ratatoskr-1.1.1-site-proof.jpg`. Full release verification: `../ratatoskr-1.1.1-release-report.md`.
+
+The entries below record the preceding stable deployment.
+
 Updated: 2026-10-01
 
 - Production: https://ratatoskr.hivenest.ir/

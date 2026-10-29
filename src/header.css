@@ -23,3 +23,65 @@ html[data-appearance='dark']{color-scheme:dark;--bg:#161b19;--text:#e7e4d9;--mut
 html[data-appearance='dark'] body .world-strip{background:var(--bg)}html[data-appearance='dark'] body .themes-section{background:var(--surface)}html[data-appearance='dark'] .hero-actions .text-link,html[data-appearance='dark'] .hero-actions .text-link:hover{background:transparent}html[data-appearance='dark'] body .skip-link{background:var(--surface)}
 
 .platforms .download-file{display:flex;margin-top:12px;justify-content:center;font-size:13px;min-height:46px}.platforms .download-file.secondary{background:transparent;color:var(--text);border:1px solid var(--line);box-shadow:none}.platforms .download-file.secondary:hover{background:var(--surface)}
+.preview-features{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;margin:32px 0}.preview-features article{padding:24px;border:1px solid var(--line);border-radius:16px;background:var(--surface)}.preview-features article:first-child{grid-column:1/-1}.preview-features h3{font-size:21px;margin:0 0 12px}.preview-features p,.preview-caution{line-height:1.85;color:var(--muted)}.preview-caution{max-width:850px}.preview-section .hero-actions{flex-wrap:wrap}@media(max-width:640px){.preview-features{grid-template-columns:1fr;gap:14px}.preview-section .button{width:100%}}
+.preview-android{display:flex;justify-content:center;align-items:flex-start;gap:32px;flex-wrap:wrap;margin:40px 0}.preview-android figure{margin:0;width:min(280px,100%)}.preview-android img{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:20px}.preview-android figcaption{text-align:center;color:var(--muted);margin-top:12px}
+
+/* Product workbench: clear typography and quiet depth, inspired by AB's
+   compact controls, with Ratatoskr's own brass accent and artwork. */
+:root { --bg:#eae6df; --surface:#f2eee7; --text:#252b32; --muted:#646870; --line:#cfcac1; --gold:#825822; --header-surface:#eae6dff2; --nav-surface:#ded8cd; }
+html[data-appearance='dark'] { --bg:#121820; --surface:#1c242f; --text:#e9edf2; --muted:#acb5c2; --line:#303a47; --gold:#ddb477; --header-surface:#121820f2; --nav-surface:#222d3b; }
+.site-header { min-height:80px; gap:32px; border-bottom:1px solid var(--line); }
+.primary-nav { justify-content:center; gap:28px; }
+.header-brand small { letter-spacing:.04em; }
+.hero { grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr); gap:58px; padding-top:92px; padding-bottom:112px; }
+.hero h1 { font-family:Manrope,sans-serif; font-size:clamp(42px,4.8vw,66px); line-height:1.1; letter-spacing:-.045em; font-weight:750; }
+.hero h1 em { font-style:normal; color:var(--gold); }
+[dir='rtl'] .hero h1 { font-family:Vazirmatn,sans-serif; font-size:clamp(38px,4.5vw,59px); line-height:1.4; letter-spacing:-.035em; }
+.hero-description { font-size:17px; line-height:1.85; max-width:440px; }
+.hero-note { font-size:12px; line-height:1.8; }
+.hero-art { padding-bottom:34px; position:relative; }
+.hero-window,[dir='rtl'] .hero-window { transform:none; border-radius:15px; border:1px solid var(--line); overflow:hidden; box-shadow:0 28px 60px #10182022; }
+.hero-window img { width:100%; display:block; }
+.hero-device { position:absolute; z-index:3; width:126px; inset-inline-end:-18px; bottom:-18px; }
+.hero-device img { display:block; width:100%; height:auto; border:5px solid #26303a; border-radius:20px; box-shadow:0 16px 40px #10182033; }
+.hero-device span { display:block; text-align:center; font-size:10px; color:var(--muted); margin-top:8px; }
+.hero-rune { opacity:.08; }
+.hero-theme-picker { justify-content:flex-start; padding-inline-end:115px; }
+.capture-caption { max-width:350px; text-align:start; font-size:11px; padding-inline-end:45px; }
+.button { min-height:50px; border-radius:12px; font-size:14px; transition:transform .2s,background .2s,box-shadow .2s; }
+.button:hover { transform:translateY(-2px); box-shadow:0 7px 18px #10182015; }
+.button:active { transform:translateY(0); }
+.hero-actions .button-gold { background:var(--gold); color:#faf4e9; }
+html[data-appearance='dark'] .hero-actions .button-gold { background:var(--gold); color:#171d24; }
+.world-strip { border-block:1px solid var(--line); background:transparent; }
+.world-strip .wrap { padding-block:21px; }
+.section { padding-block:76px; }
+.feature-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:30px; }
+.feature-list article { padding:22px 0; border-bottom:1px solid var(--line); }
+.feature-list h3 { font-size:19px; line-height:1.4; }
+.feature-list p { font-size:14px; line-height:1.9; }
+.themes-section { border-radius:24px; }
+.preview-features { grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+.preview-features article,.preview-features article:first-child { grid-column:auto; padding:20px; border:0; border-radius:14px; background:var(--surface); }
+.preview-features h3 { font-size:17px; line-height:1.5; }
+.preview-features p { font-size:14px; }
+.preview-android img { max-height:460px; width:auto; max-width:100%; margin-inline:auto; border-radius:16px; box-shadow:0 16px 30px #10182015; }
+.preview-android figure { width:auto; max-width:260px; }
+.preview-caution { font-size:13px; }
+.platforms article { border-radius:18px; }
+.site-header a:focus-visible,.button:focus-visible { outline:2px solid var(--gold); outline-offset:5px; }
+@media(max-width:1000px) { .hero{gap:30px}.hero-device{width:108px;inset-inline-end:-8px}.preview-features{grid-template-columns:repeat(2,minmax(0,1fr))} }
+@media(max-width:700px) { .wrap{width:calc(100% - 40px)}.site-header{min-height:76px;gap:12px}.hero{grid-template-columns:1fr;padding-block:44px 64px;gap:42px}.hero h1{font-size:45px}[dir='rtl'] .hero h1{font-size:38px}.hero-description{font-size:16px}.hero-art{margin-inline:0 14px;padding-bottom:56px}.hero-device{width:108px;bottom:0;inset-inline-end:-14px}.hero-theme-picker{padding-inline-end:96px}.feature-list{grid-template-columns:1fr;gap:10px}.preview-features{grid-template-columns:1fr}.section{padding-block:56px}.preview-android{gap:20px}.preview-android img{max-height:380px}.preview-android figure{max-width:46%}.hero-actions{gap:16px}.hero .hero-actions .button{width:auto;flex:1}.hero .hero-actions .text-link{font-size:13px}.capture-caption{max-width:calc(100% - 92px);padding:0}.primary-nav{gap:0} }
+@media(prefers-reduced-motion:reduce) { .button:hover{transform:none} }
+
+/* One product composition, inspired by the clean AB presentation. */
+.hero {display:flex;flex-direction:column;align-items:center;gap:32px;padding-block:70px 30px;min-height:0;text-align:center}
+.hero-copy {max-width:800px;width:100%}.hero h1 {font-size:clamp(38px,5vw,66px);line-height:1.2;letter-spacing:-.045em}.hero h1 em{color:var(--text)}
+[dir='rtl'] .hero h1 {font-size:clamp(34px,4.5vw,58px);line-height:1.55;letter-spacing:-.02em}
+.hero-description{max-width:680px;margin-inline:auto}.hero-eyebrow,.hero-actions{justify-content:center}.hero-note{margin-inline:auto}.hero .release-pill{display:inline-flex}
+.hero-art{width:100%;max-width:1180px;margin:0!important;padding:0!important;animation:preview-enter .6s ease both}.hero-art::before{display:none}
+.hero-product-image{display:block;width:100%;height:auto;filter:none}.hero-art .capture-caption{max-width:none;text-align:center;padding:0;margin:0;font-size:12px}
+@media(max-width:700px){.hero{padding-block:40px 28px;gap:22px}.hero h1{font-size:38px}[dir='rtl'] .hero h1{font-size:34px}.hero-description{font-size:15px}.hero .hero-actions{flex-wrap:wrap}.hero .hero-actions .button{flex:initial}.hero-art .capture-caption{font-size:10px}.hero-product-image{margin-block:0}}
+/* Windows, Linux and Android side by side on wide screens; in between, a lone last card fills its row. */
+@media(min-width:1000px){.platforms{grid-template-columns:repeat(3,1fr)}}
+@media(min-width:601px) and (max-width:999px){.platforms>article:last-child:nth-child(odd){grid-column:1/-1}}

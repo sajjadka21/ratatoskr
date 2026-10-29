@@ -127,7 +127,16 @@
   white-space: nowrap;
 }
 
+.download-table__meta > * {
+  flex-shrink: 0;
+}
+
 .download-table__chip {
+  min-width: 0;
+  max-width: 14em;
+  flex-shrink: 20;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 0 7px;
   color: var(--text-secondary);
   background: var(--bg-sunken);
@@ -138,6 +147,11 @@
 .download-table__chip--accent {
   color: var(--accent-text);
   background: var(--accent-soft);
+}
+
+.download-table__meta > .download-table__message {
+  min-width: 3em;
+  flex: 0 1 auto;
 }
 
 .download-table__message {

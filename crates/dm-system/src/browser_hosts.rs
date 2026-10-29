@@ -1,10 +1,11 @@
 //! Connecting the browser extension to this computer's Ratatosk.
 //!
 //! Browsers talk to a local program only through a "native messaging host"
-//! they find in the registry. Registering it by hand was the hard part of
-//! installing the extension; the application does it for the current user
-//! (no administrator rights, nothing outside the user's own registry hive)
-//! every time it starts, pointing at the bundled host program.
+//! they find in the registry (Windows) or in a folder of their own profile
+//! (Linux). Registering it by hand was the hard part of installing the
+//! extension; the application does it for the current user (no
+//! administrator rights, nothing outside the user's own registry hive or
+//! home folder) every time it starts, pointing at the bundled host program.
 //!
 //! The extension's IDs are fixed (the Chromium one by the key in its
 //! manifest, the Firefox one by `browser_specific_settings`), so only that
@@ -113,7 +114,7 @@ pub fn register(host: &Path, folder: &Path) -> io::Result<Vec<Browser>> {
         } else {
             &chromium
         };
-        if platform::set_default_value(&browser.registry_key(), &path.to_string_lossy()).is_ok() {
+        if platform::point(browser, path).is_ok() {
             registered.push(browser);
         }
     }
@@ -134,11 +135,7 @@ pub fn register(host: &Path, folder: &Path) -> io::Result<Vec<Browser>> {
 pub fn registered() -> Vec<Browser> {
     Browser::ALL
         .into_iter()
-        .filter(|browser| {
-            platform::default_value(&browser.registry_key())
-                .map(PathBuf::from)
-                .is_some_and(|path| path.is_file())
-        })
+        .filter(|browser| platform::pointed(*browser).is_some_and(|path| path.is_file()))
         .collect()
 }
 
@@ -176,7 +173,9 @@ fn write_if_changed(path: &Path, manifest: &serde_json::Value) -> io::Result<()>
 
 #[cfg(windows)]
 mod platform {
+    use super::Browser;
     use std::io;
+    use std::path::{Path, PathBuf};
     use std::ptr::{null, null_mut};
     use windows_sys::Win32::System::Registry::{
         HKEY, HKEY_CURRENT_USER, KEY_SET_VALUE, REG_OPTION_NON_VOLATILE, REG_SZ, RRF_RT_REG_SZ,
@@ -187,7 +186,17 @@ mod platform {
         text.encode_utf16().chain(std::iter::once(0)).collect()
     }
 
-    pub fn set_default_value(key: &str, value: &str) -> io::Result<()> {
+    /// Points the browser's registry key at the manifest.
+    pub fn point(browser: Browser, manifest: &Path) -> io::Result<()> {
+        set_default_value(&browser.registry_key(), &manifest.to_string_lossy())
+    }
+
+    /// The manifest the browser's registry key points at.
+    pub fn pointed(browser: Browser) -> Option<PathBuf> {
+        default_value(&browser.registry_key()).map(PathBuf::from)
+    }
+
+    fn set_default_value(key: &str, value: &str) -> io::Result<()> {
         let key = wide(key);
         let value = wide(value);
         let mut handle: HKEY = null_mut();
@@ -230,7 +239,7 @@ mod platform {
         Ok(())
     }
 
-    pub fn default_value(key: &str) -> Option<String> {
+    fn default_value(key: &str) -> Option<String> {
         let key = wide(key);
         let mut buffer = vec![0_u16; 1024];
         let mut size = (buffer.len() * 2) as u32;
@@ -256,16 +265,99 @@ mod platform {
     }
 }
 
-#[cfg(not(windows))]
+/// Linux: each browser reads `<HOST_NAME>.json` from a folder in the user's
+/// profile. Only browsers whose profile folder exists are registered, so
+/// nothing is created for browsers the user does not have.
+#[cfg(target_os = "linux")]
 mod platform {
-    use std::io;
+    use super::Browser;
+    use std::{
+        fs, io,
+        path::{Path, PathBuf},
+    };
 
-    // Only Windows is supported; elsewhere nothing is registered.
-    pub fn set_default_value(_key: &str, _value: &str) -> io::Result<()> {
-        Err(io::Error::new(io::ErrorKind::Unsupported, "Windows only"))
+    pub fn point(browser: Browser, manifest: &Path) -> io::Result<()> {
+        let home = home()?;
+        point_in(&home, &xdg_config(&home), browser, manifest)
     }
 
-    pub fn default_value(_key: &str) -> Option<String> {
+    pub fn pointed(browser: Browser) -> Option<PathBuf> {
+        let home = home().ok()?;
+        Some(host_file(&home, &xdg_config(&home), browser).1)
+    }
+
+    fn home() -> io::Result<PathBuf> {
+        std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no home folder"))
+    }
+
+    fn xdg_config(home: &Path) -> PathBuf {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .unwrap_or_else(|| home.join(".config"))
+    }
+
+    /// The browser's profile folder and the host file inside it.
+    pub(super) fn host_file(home: &Path, config: &Path, browser: Browser) -> (PathBuf, PathBuf) {
+        let (profile, folder) = match browser {
+            Browser::Chrome => (config.join("google-chrome"), "NativeMessagingHosts"),
+            Browser::Edge => (config.join("microsoft-edge"), "NativeMessagingHosts"),
+            Browser::Brave => (
+                config.join("BraveSoftware/Brave-Browser"),
+                "NativeMessagingHosts",
+            ),
+            Browser::Chromium => (config.join("chromium"), "NativeMessagingHosts"),
+            Browser::Firefox => (home.join(".mozilla"), "native-messaging-hosts"),
+        };
+        let file = profile
+            .join(folder)
+            .join(format!("{}.json", super::HOST_NAME));
+        (profile, file)
+    }
+
+    pub(super) fn point_in(
+        home: &Path,
+        config: &Path,
+        browser: Browser,
+        manifest: &Path,
+    ) -> io::Result<()> {
+        let (profile, file) = host_file(home, config, browser);
+        if !profile.is_dir() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "this browser is not set up for the user",
+            ));
+        }
+        if let Some(folder) = file.parent() {
+            fs::create_dir_all(folder)?;
+        }
+        let text = fs::read_to_string(manifest)?;
+        if fs::read_to_string(&file).is_ok_and(|current| current == text) {
+            return Ok(());
+        }
+        fs::write(&file, text)
+    }
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+mod platform {
+    use super::Browser;
+    use std::{
+        io,
+        path::{Path, PathBuf},
+    };
+
+    // Elsewhere nothing is registered.
+    pub fn point(_browser: Browser, _manifest: &Path) -> io::Result<()> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "not supported on this system",
+        ))
+    }
+
+    pub fn pointed(_browser: Browser) -> Option<PathBuf> {
         None
     }
 }
@@ -367,5 +459,32 @@ mod tests {
         fs::write(&bundled, b"bundled host").unwrap();
 
         assert_eq!(host_for(&application, Some(&resources)), Some(beside));
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_hosts_go_only_to_browsers_the_user_has() {
+        let home = tempfile::tempdir().unwrap();
+        let config = home.path().join(".config");
+        fs::create_dir_all(config.join("google-chrome")).unwrap();
+        fs::create_dir_all(home.path().join(".mozilla")).unwrap();
+        let manifest_file = home.path().join("chromium-host.json");
+        fs::write(&manifest_file, "{}").unwrap();
+
+        platform::point_in(home.path(), &config, Browser::Chrome, &manifest_file).unwrap();
+        platform::point_in(home.path(), &config, Browser::Firefox, &manifest_file).unwrap();
+        assert!(platform::point_in(home.path(), &config, Browser::Brave, &manifest_file).is_err());
+
+        let (_, chrome) = platform::host_file(home.path(), &config, Browser::Chrome);
+        assert_eq!(
+            chrome,
+            config.join("google-chrome/NativeMessagingHosts/com.download_manager.native.json")
+        );
+        assert_eq!(fs::read_to_string(chrome).unwrap(), "{}");
+        let (_, firefox) = platform::host_file(home.path(), &config, Browser::Firefox);
+        assert!(
+            firefox.ends_with(".mozilla/native-messaging-hosts/com.download_manager.native.json")
+        );
+        assert!(firefox.is_file());
+        assert!(!config.join("BraveSoftware").exists());
     }
 }

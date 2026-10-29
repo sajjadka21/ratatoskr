@@ -34,6 +34,10 @@ dist/
 
 # Helper programs fetched at release time (scripts/fetch-ytdlp.ps1).
 /src-tauri/extras/*.exe
+# Linux helper programs fetched at release time (scripts/fetch-linux-tools.sh).
+/src-tauri/extras-linux/yt-dlp
+/src-tauri/extras-linux/deno
+/src-tauri/extras-linux/DENO-LICENSE.txt
 
 __pycache__/
 .pytest_cache/

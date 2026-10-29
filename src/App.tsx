@@ -28,6 +28,7 @@ import { StatsPage } from "./components/stats/StatsPage";
 import { CompletionBanner } from "./components/feedback/CompletionBanner";
 import { UpdatePrompt } from "./components/update/UpdatePrompt";
 import { CloseDialog } from "./components/feedback/CloseDialog";
+import { ViewBoundary } from "./components/feedback/ViewBoundary";
 import { Toasts, type Toast, type ToastKind } from "./components/feedback/Toasts";
 import { AppShell } from "./components/layout/AppShell";
 import type { DownloadSection, SidebarCounts, WorkspacePage } from "./components/layout/Sidebar";
@@ -1383,6 +1384,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
           onSchedule={() => setQueueSettingsId(quickQueue?.id ?? null)} />}
         fill={page === "downloads"}
       >
+        <ViewBoundary resetKey={page} onBack={page === "downloads" ? undefined : () => setPage("downloads")}>
         {page === "settings" ? (
           <SettingsPage
             initialGroup={settingsInitialGroup}
@@ -1511,6 +1513,7 @@ function App({ preferences, onPreferencesChange }: AppProps) {
             />
           </div>
         )}
+        </ViewBoundary>
       </AppShell>
 
       <DownloadContextMenu

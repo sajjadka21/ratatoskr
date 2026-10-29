@@ -1,6 +1,6 @@
 ﻿# Ratatoskr
 
-A modern local-first download manager for Windows, Persian first and bilingual.
+A modern local-first download manager for Windows and Linux, Persian first and bilingual.
 
 Named after Ratatoskr, the squirrel of Norse myth who runs up and down the
 world tree carrying messages between its top and its roots: this one brings
@@ -12,6 +12,17 @@ Windows release `1.0.0` builds from the Rust download engine and Tauri UI.
 Persistent tasks, queues, recovery, segmented/resumable transfers, adaptive
 connections, categories/rules, schedules, LinkGrabber inspection, browser
 handoff validation, media classification, and safety guards are implemented.
+
+## Linux
+
+Release `1.3.6` adds Linux packages for any 64-bit distribution with
+WebKitGTK 4.1: `.deb` (Debian/Ubuntu/Mint), `.rpm` (Fedora/openSUSE/RHEL),
+an AppImage, and a plain `.tar.gz` archive that needs neither a package
+manager nor AppImage (`./install.sh` adds a menu entry for the current user).
+Building locally needs the WebKitGTK development packages
+(`libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev` on
+Debian/Ubuntu), then `bash scripts/fetch-linux-tools.sh` and
+`npx tauri build --config src-tauri/tauri.linux.release.json`.
 
 ## Architecture
 
@@ -26,7 +37,7 @@ Main crates:
 - dm-storage - SQLite persistence
 - dm-ipc - IPC contracts
 - dm-native-host - Chrome/Edge/Firefox Native Messaging stdio host
-- dm-system - Windows power, sleep, sparse files, locating the app
+- dm-system - Windows/Linux power, sleep, autostart, browser connector, locating the app
 - dm-cli - `tosk`, the command-line tool
 - src-tauri - desktop application host
 

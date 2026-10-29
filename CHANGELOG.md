@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.6
+
+- Linux: new .deb, .rpm, AppImage and a distribution-independent .tar.gz archive. Browser connector, login handoff over a private socket, start at sign-in, power actions, keep-awake, free-space checks and finish sounds use Linux facilities; Windows-only options are hidden or worded for Linux.
+- Desktop: a failed download's reason stays visible on narrow rows; a view that fails to draw offers a way back instead of an empty window.
+- Windows portable and the Linux archive announce new versions and open the download page instead of running an installer.
+
 ## 1.3.3
 
 - Windows: image downloads from the browser extension now open Ratatoskr's normal download dialog. Choose the original image or a PNG, JPEG, or WebP copy there; the original is kept, and existing filenames receive a number instead of being overwritten.

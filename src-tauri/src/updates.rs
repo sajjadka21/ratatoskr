@@ -24,6 +24,8 @@ pub const UPDATE_PROGRESS_EVENT: &str = "update-progress";
 const FIRST_CHECK_DELAY: Duration = Duration::from_secs(90);
 const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 const NOT_CONFIGURED: &str = "not_configured";
+/// The copy was not installed by a package the updater can replace.
+const MANUAL_UPDATE: &str = "manual_update";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,6 +33,9 @@ pub struct UpdateInfo {
     pub version: String,
     pub current_version: String,
     pub notes: Option<String>,
+    /// This copy is replaced by hand (a portable folder or the Linux
+    /// archive): the newer version is announced, not installed.
+    pub manual: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -38,6 +43,22 @@ pub struct UpdateInfo {
 pub struct UpdateProgress {
     pub downloaded: u64,
     pub total: Option<u64>,
+}
+
+/// Whether this copy can install an update itself. The updater replaces
+/// what installed it: the Windows setup, or a Linux .deb, .rpm or AppImage.
+/// A portable folder or the plain Linux archive has no installer to rerun;
+/// running one would add a second, separate copy.
+pub fn installs_itself() -> bool {
+    can_install_itself(
+        crate::portable::data_folder().is_some(),
+        cfg!(target_os = "linux"),
+        tauri::utils::platform::bundle_type().is_some(),
+    )
+}
+
+fn can_install_itself(portable: bool, linux: bool, packaged: bool) -> bool {
+    !portable && (!linux || packaged)
 }
 
 /// On unless the user turned it off.
@@ -81,12 +102,16 @@ pub async fn check<R: Runtime>(
         version: update.version.clone(),
         current_version: update.current_version.clone(),
         notes: update.body.clone(),
+        manual: !installs_itself(),
     }))
 }
 
 /// Downloads, verifies and installs the newer version, then restarts into
 /// it. Returns only when there was nothing to install or it failed.
 pub async fn install<R: Runtime>(app: &AppHandle<R>, storage: &Storage) -> Result<(), String> {
+    if !installs_itself() {
+        return Err(MANUAL_UPDATE.to_owned());
+    }
     let updater = updater(app, storage)?;
     let Some(update) = updater.check().await.map_err(|error| error.to_string())? else {
         return Ok(());
@@ -123,5 +148,23 @@ pub async fn run_background_checks(app: AppHandle, storage: Arc<Storage>) {
             }
         }
         tokio::time::sleep(CHECK_INTERVAL).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::can_install_itself;
+
+    #[test]
+    fn only_installed_copies_replace_themselves() {
+        // Windows setup and Linux packages.
+        assert!(can_install_itself(false, false, true));
+        assert!(can_install_itself(false, true, true));
+        // A Windows build that was not made by the setup still updates through it.
+        assert!(can_install_itself(false, false, false));
+        // The Linux archive and portable folders are replaced by hand.
+        assert!(!can_install_itself(false, true, false));
+        assert!(!can_install_itself(true, false, true));
+        assert!(!can_install_itself(true, true, true));
     }
 }

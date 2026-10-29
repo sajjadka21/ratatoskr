@@ -306,12 +306,7 @@ const DownloadTableRow = memo(function DownloadTableRow({
         <span className="download-table__meta">
           <span className="ltr">{formatHost(item.resolvedUrl ?? item.sourceUrl)}</span>
           {size ? <span className="num">{size}</span> : null}
-          {queueName ? (
-            <span className="download-table__chip">
-              {queueName}
-            </span>
-          ) : null}
-          {connections ? <span className="download-table__chip download-table__chip--accent num">{connections}</span> : null}
+          {/* The reason comes before the chips: on a narrow row it is what the user needs to see. */}
           {notice && (status !== "completed" || isAlarm(item.errorCode)) ? (
             <span
               className={`download-table__message download-table__message--${status === "failed" || isAlarm(item.errorCode) ? "error" : "notice"}`}
@@ -320,6 +315,12 @@ const DownloadTableRow = memo(function DownloadTableRow({
               {notice}
             </span>
           ) : null}
+          {queueName ? (
+            <span className="download-table__chip" title={queueName}>
+              {queueName}
+            </span>
+          ) : null}
+          {connections ? <span className="download-table__chip download-table__chip--accent num">{connections}</span> : null}
         </span>
       </span>
 

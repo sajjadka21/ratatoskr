@@ -31,10 +31,12 @@ fn manifests_folder<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
 
 fn host_program<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
     let executable = std::env::current_exe().ok()?;
-    let resources = app
-        .path()
-        .resolve("dm-native-host.exe", BaseDirectory::Resource)
-        .ok();
+    let name = if cfg!(windows) {
+        "dm-native-host.exe"
+    } else {
+        "dm-native-host"
+    };
+    let resources = app.path().resolve(name, BaseDirectory::Resource).ok();
     browser_hosts::host_for(&executable, resources.as_deref())
 }
 
@@ -114,14 +116,37 @@ pub fn install_in_firefox<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> 
 /// Opens a browser's extensions page, where the extension folder is loaded.
 /// Only these fixed pages and programs are ever started.
 pub fn open_extensions_page(browser: &str) -> Result<(), String> {
-    let (program, page) = match browser {
-        "chrome" => ("chrome", "chrome://extensions"),
-        "edge" => ("msedge", "edge://extensions"),
-        "brave" => ("brave", "brave://extensions"),
-        "firefox" => ("firefox", "about:debugging#/runtime/this-firefox"),
+    let (programs, page) = match browser {
+        "chrome" => (
+            &["chrome", "google-chrome", "google-chrome-stable"][..],
+            "chrome://extensions",
+        ),
+        "edge" => (
+            &["msedge", "microsoft-edge", "microsoft-edge-stable"][..],
+            "edge://extensions",
+        ),
+        "brave" => (
+            &["brave", "brave-browser", "brave-browser-stable"][..],
+            "brave://extensions",
+        ),
+        "firefox" => (&["firefox"][..], "about:debugging#/runtime/this-firefox"),
         _ => return Err("unknown browser".to_owned()),
     };
-    launch(program, page)
+    // Windows finds every browser by its App Paths name (the first); Linux
+    // distributions install them under different command names.
+    let names = if cfg!(windows) || programs.len() == 1 {
+        &programs[..1]
+    } else {
+        &programs[1..]
+    };
+    let mut last = Err("the browser was not found".to_owned());
+    for program in names {
+        last = launch(program, page);
+        if last.is_ok() {
+            break;
+        }
+    }
+    last
 }
 
 /// Starts a browser program with one argument. Only fixed browser names

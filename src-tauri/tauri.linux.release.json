@@ -1,0 +1,12 @@
+{
+  "bundle": {
+    "createUpdaterArtifacts": true,
+    "resources": {
+      "../target/release/dm-native-host": "dm-native-host",
+      "../target/release/tosk": "tosk"
+    }
+  },
+  "build": {
+    "beforeBuildCommand": "npm run build && cargo build --release -p dm-native-host -p dm-cli"
+  }
+}

@@ -1,15 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { Download, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { useI18n } from "../../i18n/I18n";
 import { Switch } from "./Switch";
+import { RELEASES_PAGE } from "../update/updateOffer";
 
 const UPDATE_PROGRESS_EVENT = "update-progress";
 
-type UpdateInfo = { version: string; currentVersion: string; notes: string | null };
+type UpdateInfo = { version: string; currentVersion: string; notes: string | null; manual?: boolean };
 type UpdateProgress = { downloaded: number; total: number | null };
 
 type State =
@@ -67,7 +69,9 @@ export function UpdateSection({ onError }: { onError: (message: string) => void 
       case "latest":
         return t("update.latest");
       case "available":
-        return t("update.available", { version: state.update.version });
+        return state.update.manual
+          ? `${t("update.available", { version: state.update.version })} ${t("update.manualHint")}`
+          : t("update.available", { version: state.update.version });
       case "installing":
         return state.progress?.total
           ? t("update.downloading", {
@@ -99,7 +103,15 @@ export function UpdateSection({ onError }: { onError: (message: string) => void 
           </div>
           <div className="settings-page__row-control settings-page__row-control--stack">
             <span className="settings-page__button-row">
-              {state.kind === "available" ? (
+              {state.kind === "available" && state.update.manual ? (
+                <button
+                  type="button"
+                  className="settings-page__primary-button"
+                  onClick={() => void openUrl(RELEASES_PAGE).catch((reason) => onError(String(reason)))}
+                >
+                  <Download size={14} /> {t("update.openPage")}
+                </button>
+              ) : state.kind === "available" ? (
                 <button type="button" className="settings-page__primary-button" onClick={() => void install(state.update)}>
                   <Download size={14} /> {t("update.install")}
                 </button>

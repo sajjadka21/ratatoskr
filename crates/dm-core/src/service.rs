@@ -4650,8 +4650,10 @@ mod tests {
 
     #[test]
     fn video_destination_uses_the_standard_folder_unless_the_user_selected_a_download_folder() {
-        let base = PathBuf::from("C:/Users/test/Downloads");
-        let standard = PathBuf::from("C:/Users/test/Videos");
+        // Absolute on every system: a relative standard folder is ignored.
+        let home = std::env::temp_dir();
+        let base = home.join("Downloads");
+        let standard = home.join("Videos");
         assert_eq!(
             DownloadService::choose_video_directory(&base, false, Some(standard.clone())),
             standard
@@ -6890,10 +6892,12 @@ mkdir -p \"$w\"
         assert_eq!(record.filename.as_deref(), Some("My clip [abc].mp4"));
         let path = PathBuf::from(record.destination_path.unwrap());
         assert_eq!(std::fs::read(&path).unwrap(), b"abcdefgh");
-        assert_eq!(path.parent().unwrap(), harness.destination.as_path());
+        // Videos are filed in the Video category folder.
+        assert_eq!(path.parent().unwrap(), harness.destination.join("Video"));
         assert!(
             !harness
                 .destination
+                .join("Video")
                 .join(format!("{}{}", crate::ytdlp::WORK_DIR_PREFIX, task.id))
                 .exists(),
             "the working folder is removed"

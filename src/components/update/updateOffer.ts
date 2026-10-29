@@ -1,6 +1,15 @@
 const SKIPPED_KEY = "ratatoskr.update.skipped";
 
-export type OfferedUpdate = { version: string; currentVersion?: string; notes?: string | null };
+export type OfferedUpdate = {
+  version: string;
+  currentVersion?: string;
+  notes?: string | null;
+  /** The copy is replaced by hand (portable folder, Linux archive). */
+  manual?: boolean;
+};
+
+/** Where a copy that cannot install updates downloads the new version. */
+export const RELEASES_PAGE = "https://github.com/sajjadka21/ratatoskr/releases/latest";
 
 /** The version the user chose not to be asked about again, if any. */
 export function skippedVersion(storage: Pick<Storage, "getItem"> | undefined): string | null {

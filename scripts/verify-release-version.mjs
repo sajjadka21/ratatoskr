@@ -13,7 +13,7 @@ for (const path of ["src-tauri/Cargo.toml", "crates/dm-cli/Cargo.toml"]) {
 }
 const android = readFileSync("android/app/build.gradle.kts", "utf8");
 const notes = readFileSync(`docs/releases/${version}.md`, "utf8");
-const windowsRelease = /<!-- release-platforms: windows(?:-extensions)? -->/.test(notes);
-if (!windowsRelease) assert.equal(android.match(/versionName = "([^"]+)"/)?.[1], version);
+const desktopRelease = /<!-- release-platforms: (?:windows(?:-extensions)?|desktop) -->/.test(notes);
+if (!desktopRelease) assert.equal(android.match(/versionName = "([^"]+)"/)?.[1], version);
 if (process.argv[2]) assert.equal(process.argv[2], `v${version}`, "Release tag mismatch");
-console.log(`Release version is consistent: ${version}${windowsRelease ? " (Windows release)" : ""}`);
+console.log(`Release version is consistent: ${version}${desktopRelease ? " (desktop release)" : ""}`);

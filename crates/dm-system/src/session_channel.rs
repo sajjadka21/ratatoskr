@@ -14,8 +14,13 @@
 //! - the client connects at identification level, so the server cannot act
 //!   as the user.
 //!
-//! Outside Windows the channel is unavailable and every call says so; the
-//! native host then leaves the download with the browser.
+//! On Linux the same guarantees come from a Unix socket in the user's own
+//! runtime folder (`$XDG_RUNTIME_DIR`, reachable by nobody else): the
+//! server accepts only peers of the same user, and the client asks the
+//! kernel which program is listening before it sends anything.
+//!
+//! Elsewhere the channel is unavailable and every call says so; the native
+//! host then leaves the download with the browser.
 
 use serde::{Deserialize, Serialize};
 use std::{fmt, io};
@@ -160,7 +165,10 @@ pub fn decode_payload<T: for<'de> Deserialize<'de>>(payload: &[u8]) -> io::Resul
 #[cfg(windows)]
 pub use platform::{deliver, deliver_to, pipe_name, serve, serve_on};
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub use unix::{deliver, deliver_to, pipe_name, serve, serve_on};
+
+#[cfg(not(any(windows, target_os = "linux")))]
 pub use unsupported::{deliver, deliver_to, pipe_name, serve, serve_on};
 
 #[cfg(windows)]
@@ -547,7 +555,237 @@ mod platform {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+mod unix {
+    use super::{
+        DeliveryError, HandoffReply, SessionHandoff, checked_frame_length, decode_payload,
+        encode_frame,
+    };
+    use std::{
+        fs,
+        io::{self, Read, Write},
+        os::unix::{
+            fs::{MetadataExt, PermissionsExt},
+            io::AsRawFd,
+            net::UnixStream as StdUnixStream,
+        },
+        path::{Path, PathBuf},
+        sync::Arc,
+        time::{Duration, Instant},
+    };
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::{UnixListener, UnixStream},
+    };
+
+    /// A client that connects but never finishes its message is dropped
+    /// after this long, so it cannot hold a connection open.
+    const READ_TIMEOUT: Duration = Duration::from_secs(5);
+
+    fn current_uid() -> u32 {
+        // SAFETY: getuid has no preconditions and cannot fail.
+        unsafe { libc::getuid() }
+    }
+
+    /// The socket in the user's runtime folder. Without one (no login
+    /// session) there is no folder only this user can reach, so the channel
+    /// is not offered rather than placed somewhere shared like /tmp.
+    pub fn pipe_name() -> io::Result<String> {
+        let runtime = std::env::var_os("XDG_RUNTIME_DIR")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, "no user runtime folder"))?;
+        let metadata = fs::metadata(&runtime)?;
+        if !metadata.is_dir()
+            || metadata.uid() != current_uid()
+            || metadata.permissions().mode() & 0o077 != 0
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "the runtime folder is not private to this user",
+            ));
+        }
+        Ok(runtime
+            .join(format!(
+                "{}.browser-session.sock",
+                dm_common::APP_IDENTIFIER
+            ))
+            .to_string_lossy()
+            .into_owned())
+    }
+
+    /// Receives sessions on the application's socket until the process ends.
+    pub async fn serve<F>(handler: F) -> io::Result<()>
+    where
+        F: Fn(SessionHandoff) -> HandoffReply + Send + Sync + 'static,
+    {
+        serve_on(&pipe_name()?, handler).await
+    }
+
+    /// Receives sessions on `name`. A socket another process still answers
+    /// on is never taken over; one left behind by a process that ended is
+    /// replaced.
+    pub async fn serve_on<F>(name: &str, handler: F) -> io::Result<()>
+    where
+        F: Fn(SessionHandoff) -> HandoffReply + Send + Sync + 'static,
+    {
+        let path = Path::new(name);
+        if fs::symlink_metadata(path).is_ok() {
+            if StdUnixStream::connect(path).is_ok() {
+                return Err(io::Error::new(
+                    io::ErrorKind::AddrInUse,
+                    "the session channel is already in use",
+                ));
+            }
+            fs::remove_file(path)?;
+        }
+        let listener = UnixListener::bind(path)?;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+        let handler = Arc::new(handler);
+        let uid = current_uid();
+
+        loop {
+            let (stream, _) = listener.accept().await?;
+            // Only this user's programs may hand over a session.
+            if !stream.peer_cred().is_ok_and(|peer| peer.uid() == uid) {
+                continue;
+            }
+            let handler = Arc::clone(&handler);
+            tokio::spawn(async move {
+                let _ = answer(stream, handler.as_ref()).await;
+            });
+        }
+    }
+
+    async fn answer<F>(mut stream: UnixStream, handler: &F) -> io::Result<()>
+    where
+        F: Fn(SessionHandoff) -> HandoffReply,
+    {
+        let reply = match tokio::time::timeout(READ_TIMEOUT, read_request(&mut stream)).await {
+            Ok(Ok(handoff)) if handoff.version == super::PROTOCOL_VERSION => handler(handoff),
+            Ok(Ok(_)) => HandoffReply::refused("unsupported session message version"),
+            Ok(Err(_)) => HandoffReply::refused("unreadable session message"),
+            Err(_) => return Ok(()),
+        };
+        stream.write_all(&encode_frame(&reply)?).await?;
+        stream.shutdown().await
+    }
+
+    async fn read_request(stream: &mut UnixStream) -> io::Result<SessionHandoff> {
+        let mut prefix = [0_u8; 4];
+        stream.read_exact(&mut prefix).await?;
+        let mut payload = vec![0_u8; checked_frame_length(prefix)?];
+        stream.read_exact(&mut payload).await?;
+        decode_payload(&payload)
+    }
+
+    /// Sends a session to the application's socket.
+    pub fn deliver(
+        handoff: &SessionHandoff,
+        expected_server: &Path,
+        timeout: Duration,
+    ) -> Result<(), DeliveryError> {
+        let name = pipe_name().map_err(|error| match error.kind() {
+            io::ErrorKind::Unsupported => DeliveryError::Unsupported,
+            _ => DeliveryError::Io(error),
+        })?;
+        deliver_to(&name, handoff, expected_server, timeout)
+    }
+
+    /// Sends a session to `name`, but only once the listening process has
+    /// been confirmed to be `expected_server`, run by this user. Until then
+    /// nothing is written.
+    pub fn deliver_to(
+        name: &str,
+        handoff: &SessionHandoff,
+        expected_server: &Path,
+        timeout: Duration,
+    ) -> Result<(), DeliveryError> {
+        let mut stream = connect(name, timeout)?;
+        stream.set_read_timeout(Some(timeout.max(READ_TIMEOUT)))?;
+
+        if !served_by(&stream, expected_server)? {
+            return Err(DeliveryError::UntrustedServer);
+        }
+
+        stream.write_all(&encode_frame(handoff)?)?;
+        stream.flush()?;
+
+        let mut prefix = [0_u8; 4];
+        stream.read_exact(&mut prefix)?;
+        let mut payload = vec![0_u8; checked_frame_length(prefix)?];
+        stream.read_exact(&mut payload)?;
+        let reply: HandoffReply = decode_payload(&payload)?;
+
+        if reply.accepted {
+            Ok(())
+        } else {
+            Err(DeliveryError::Refused(
+                reply.error.unwrap_or_else(|| "no reason given".to_owned()),
+            ))
+        }
+    }
+
+    /// Connects, waiting for an application that is still starting up.
+    fn connect(name: &str, timeout: Duration) -> Result<StdUnixStream, DeliveryError> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            match StdUnixStream::connect(name) {
+                Ok(stream) => return Ok(stream),
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+                    ) =>
+                {
+                    if Instant::now() >= deadline {
+                        return Err(DeliveryError::Unavailable);
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                Err(error) => return Err(DeliveryError::Io(error)),
+            }
+        }
+    }
+
+    /// True when the process listening on the other end is `expected`, run
+    /// by this user. The kernel reports the listener's identity
+    /// (`SO_PEERCRED`), so the other side cannot claim to be someone else.
+    fn served_by(stream: &StdUnixStream, expected: &Path) -> io::Result<bool> {
+        let mut credentials = libc::ucred {
+            pid: 0,
+            uid: 0,
+            gid: 0,
+        };
+        let mut length = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+        // SAFETY: the descriptor belongs to `stream`, which outlives the
+        // call, and `credentials` is a ucred of the size passed.
+        let status = unsafe {
+            libc::getsockopt(
+                stream.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_PEERCRED,
+                (&mut credentials as *mut libc::ucred).cast(),
+                &mut length,
+            )
+        };
+        if status != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if credentials.uid != current_uid() || credentials.pid <= 0 {
+            return Ok(false);
+        }
+        let actual = fs::read_link(format!("/proc/{}/exe", credentials.pid))?;
+        Ok(
+            match (fs::canonicalize(&actual), fs::canonicalize(expected)) {
+                (Ok(actual), Ok(expected)) => actual == expected,
+                _ => false,
+            },
+        )
+    }
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 mod unsupported {
     use super::{DeliveryError, HandoffReply, SessionHandoff};
     use std::{io, path::Path, time::Duration};
@@ -624,6 +862,174 @@ mod tests {
 
         assert!(!printed.contains("s3cr3t"), "{printed}");
         assert!(printed.contains("task-1"));
+    }
+
+    #[cfg(target_os = "linux")]
+    mod unix_socket {
+        use super::*;
+        use std::{
+            sync::{Arc, Mutex},
+            time::Duration,
+        };
+
+        fn socket_in(folder: &std::path::Path) -> String {
+            folder.join("session.sock").to_string_lossy().into_owned()
+        }
+
+        type Received = Arc<Mutex<Vec<SessionHandoff>>>;
+
+        fn start_server(name: &str, reply: HandoffReply) -> Received {
+            let received: Received = Arc::default();
+            let sink = Arc::clone(&received);
+            let name = name.to_owned();
+            tokio::spawn(async move {
+                let _ = serve_on(&name, move |handoff| {
+                    sink.lock().unwrap().push(handoff);
+                    reply.clone()
+                })
+                .await;
+            });
+            received
+        }
+
+        async fn deliver_blocking(
+            name: String,
+            handoff: SessionHandoff,
+            expected: std::path::PathBuf,
+            timeout: Duration,
+        ) -> Result<(), DeliveryError> {
+            tokio::task::spawn_blocking(move || deliver_to(&name, &handoff, &expected, timeout))
+                .await
+                .unwrap()
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn delivers_to_the_expected_program_over_a_private_socket() {
+            use std::os::unix::fs::PermissionsExt;
+            let folder = tempfile::tempdir().unwrap();
+            let name = socket_in(folder.path());
+            let received = start_server(&name, HandoffReply::accepted());
+
+            let result = deliver_blocking(
+                name.clone(),
+                SessionHandoff::new("task-1", COOKIE),
+                std::env::current_exe().unwrap(),
+                Duration::from_secs(5),
+            )
+            .await;
+
+            assert!(result.is_ok(), "{result:?}");
+            let received = received.lock().unwrap();
+            assert_eq!(received.len(), 1);
+            assert_eq!(received[0].task_id, "task-1");
+            assert_eq!(received[0].cookie, COOKIE);
+            let mode = std::fs::metadata(&name).unwrap().permissions().mode();
+            assert_eq!(mode & 0o077, 0, "only the user may reach the socket");
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn sends_nothing_to_a_program_that_is_not_the_application() {
+            let folder = tempfile::tempdir().unwrap();
+            let name = socket_in(folder.path());
+            let received = start_server(&name, HandoffReply::accepted());
+
+            let result = deliver_blocking(
+                name,
+                SessionHandoff::new("task-1", COOKIE),
+                std::path::PathBuf::from("/bin/sh"),
+                Duration::from_secs(5),
+            )
+            .await;
+
+            assert!(
+                matches!(result, Err(DeliveryError::UntrustedServer)),
+                "{result:?}"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            assert!(
+                received.lock().unwrap().is_empty(),
+                "an untrusted server must never receive the session"
+            );
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_refusal_comes_back_without_the_session() {
+            let folder = tempfile::tempdir().unwrap();
+            let name = socket_in(folder.path());
+            let _received = start_server(&name, HandoffReply::refused("task not found"));
+
+            let result = deliver_blocking(
+                name,
+                SessionHandoff::new("missing", COOKIE),
+                std::env::current_exe().unwrap(),
+                Duration::from_secs(5),
+            )
+            .await;
+
+            match result {
+                Err(DeliveryError::Refused(reason)) => {
+                    assert_eq!(reason, "task not found");
+                    assert!(!reason.contains("s3cr3t"));
+                }
+                other => panic!("expected a refusal, got {other:?}"),
+            }
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_second_server_cannot_take_a_socket_that_is_in_use() {
+            let folder = tempfile::tempdir().unwrap();
+            let name = socket_in(folder.path());
+            let _received = start_server(&name, HandoffReply::accepted());
+            tokio::time::sleep(Duration::from_millis(100)).await;
+
+            let second = tokio::time::timeout(
+                Duration::from_secs(2),
+                serve_on(&name, |_| HandoffReply::accepted()),
+            )
+            .await
+            .expect("a second server must fail at once, not wait");
+
+            assert!(
+                second.is_err(),
+                "the socket must stay with the first server"
+            );
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_socket_left_behind_by_an_ended_process_is_replaced() {
+            let folder = tempfile::tempdir().unwrap();
+            let name = socket_in(folder.path());
+            drop(std::os::unix::net::UnixListener::bind(&name).unwrap());
+            let received = start_server(&name, HandoffReply::accepted());
+
+            let result = deliver_blocking(
+                name,
+                SessionHandoff::new("task-2", COOKIE),
+                std::env::current_exe().unwrap(),
+                Duration::from_secs(5),
+            )
+            .await;
+
+            assert!(result.is_ok(), "{result:?}");
+            assert_eq!(received.lock().unwrap().len(), 1);
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn nothing_listening_is_reported_as_unavailable() {
+            let folder = tempfile::tempdir().unwrap();
+            let result = deliver_blocking(
+                socket_in(folder.path()),
+                SessionHandoff::new("task-1", COOKIE),
+                std::env::current_exe().unwrap(),
+                Duration::from_millis(300),
+            )
+            .await;
+
+            assert!(
+                matches!(result, Err(DeliveryError::Unavailable)),
+                "{result:?}"
+            );
+        }
     }
 
     #[cfg(windows)]

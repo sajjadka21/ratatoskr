@@ -96,6 +96,23 @@ Authenticode. The current Windows binaries do not have an Authenticode
 publisher certificate. Physical device installation/download tests remain
 separate from automated build checks.
 
+## Linux packages
+
+The `linux` job builds on Ubuntu 22.04 (glibc 2.35, so the binaries also run
+on newer distributions) for releases whose notes are marked
+`<!-- release-platforms: desktop -->` (Windows + Linux) or carry no marker
+(everything). It fetches the standalone yt-dlp and the pinned Deno with
+`scripts/fetch-linux-tools.sh`, builds and signs the `.deb`, `.rpm` and
+AppImage with `src-tauri/tauri.linux.release.json` (merged over
+`tauri.linux.conf.json`), and repackages the `.deb` contents as the
+distribution-independent `Ratatoskr-<version>-linux-x86_64.tar.gz` with
+`scripts/make-linux-archive.sh`. The archive's binary is marked as not
+installed by a package, so it never tries to replace itself.
+
+`scripts/prepare-release.mjs` verifies every Linux package signature and adds
+`linux-x86_64-deb`, `-rpm`, `-appimage` and `linux-x86_64` entries to
+`latest.json`, so installed packages update from inside the app.
+
 ## Android licence and native sources
 
 Android is GPL-3.0-only; desktop keeps PolyForm Noncommercial. Keep android/LICENSE and NOTICE inside the APK, and publish Ratatoskr-android-source.zip containing the same-version application/build sources and the SHA-256-pinned WebP source rebuilt for 16 KB compatibility. The release job recursively verifies final APK native payloads before upload. See LICENSES.md and android/NATIVE_COMPATIBILITY.md.

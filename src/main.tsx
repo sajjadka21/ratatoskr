@@ -5,6 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import App from "./App";
 import { MiniWindow } from "./mini/MiniWindow";
+import { ViewBoundary } from "./components/feedback/ViewBoundary";
 import { I18nProvider } from "./i18n/I18n";
 import type { UiPreferences } from "./types/download";
 import { resolveAppearance } from "./utils/appearance";
@@ -76,11 +77,13 @@ function Root() {
 
   return (
     <I18nProvider language={preferences.language}>
-      {IS_MINI ? (
-        <MiniWindow />
-      ) : (
-        <App preferences={preferences} onPreferencesChange={(next) => void change(next)} />
-      )}
+      <ViewBoundary>
+        {IS_MINI ? (
+          <MiniWindow />
+        ) : (
+          <App preferences={preferences} onPreferencesChange={(next) => void change(next)} />
+        )}
+      </ViewBoundary>
     </I18nProvider>
   );
 }

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { prepareRelease, verifyUpdater } from "./prepare-release.mjs";
+import { linuxPackages, prepareRelease, verifyUpdater } from "./prepare-release.mjs";
 
 const abiPackages = [
   "Ratatoskr-android-arm64-v8a.apk",
@@ -17,8 +17,8 @@ const browserPackages = [
   "Ratatoskr-extension-firefox.zip",
 ];
 
-function signed(data, algorithm = "ED", version = "1.0.1") {
-  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+function signed(data, algorithm = "ED", version = "1.0.1", pair = generateKeyPairSync("ed25519")) {
+  const { publicKey, privateKey } = pair;
   const id = Buffer.from("12345678");
   const key = Buffer.concat([Buffer.from("Ed"), id, publicKey.export({ type: "spki", format: "der" }).subarray(-32)]);
   const message = algorithm === "ED" ? createHash("blake2b512").update(data).digest() : data;
@@ -40,7 +40,8 @@ function fixture(t, signedVersion = "1.0.1") {
   mkdirSync(join(input, "portable"));
   mkdirSync(join(input, "release", "bundle", "msi"));
   const data = Buffer.from("an installer");
-  const keys = signed(data, "ED", signedVersion);
+  const pair = generateKeyPairSync("ed25519");
+  const keys = signed(data, "ED", signedVersion, pair);
   const name = "Ratatoskr_1.0.1_x64-setup.exe";
   writeFileSync(join(windows, name), data);
   writeFileSync(join(windows, `${name}.sig`), keys.signature);
@@ -57,15 +58,23 @@ function fixture(t, signedVersion = "1.0.1") {
   // Only the updater envelope above uses a real cryptographic signature.
   for (const name of abiPackages) writeFileSync(join(input, "android-abis", name), `Fixture APK: ${name}`);
   for (const name of browserPackages) writeFileSync(join(input, "browser-packages", name), `Fixture ZIP: ${name}`);
+  const linux = linuxPackages("1.0.1");
+  mkdirSync(join(input, "linux"));
+  for (const name of [linux.appimage, linux.deb, linux.rpm]) {
+    const payload = Buffer.from(`Fixture Linux package: ${name}`);
+    writeFileSync(join(input, "linux", name), payload);
+    writeFileSync(join(input, "linux", `${name}.sig`), signed(payload, "ED", signedVersion, pair).signature);
+  }
+  writeFileSync(join(input, "linux", linux.archive), "Fixture archive");
   return { input, output: join(root, "staged"), version: "1.0.1", repository: "owner/repo", publicKey: keys.publicKey };
 }
 
-test("all thirteen Windows, Android, source, updater and browser artifacts flatten and checksum every file once", (t) => {
+test("all twenty Windows, Linux, Android, source, updater and browser artifacts flatten and checksum every file once", (t) => {
   const options = fixture(t);
   const manifest = prepareRelease(options);
-  assert.equal(manifest.length, 13);
+  assert.equal(manifest.length, 20);
   const staged = manifest.map((line) => line.split("  ")[1]);
-  assert.equal(new Set(staged).size, 13);
+  assert.equal(new Set(staged).size, 20);
   for (const name of [...abiPackages, ...browserPackages, "Ratatoskr-android.apk", "Ratatoskr-android-source.zip", "latest.json"]) {
     assert.ok(staged.includes(name), `mandatory payload ${name}`);
   }
@@ -77,6 +86,7 @@ test("all thirteen Windows, Android, source, updater and browser artifacts flatt
 });
 test("a Windows-only patch release contains no Android or browser packages", (t) => {
   const options = fixture(t);
+  rmSync(join(options.input, "linux"), { recursive: true });
   rmSync(join(options.input, "Ratatoskr-android.apk"));
   rmSync(join(options.input, "Ratatoskr-android-source.zip"));
   rmSync(join(options.input, "android-abis"), { recursive: true });
@@ -92,6 +102,7 @@ test("a Windows-only patch release contains no Android or browser packages", (t)
 });
 test("a Windows and extensions release contains no Android packages", (t) => {
   const options = fixture(t);
+  rmSync(join(options.input, "linux"), { recursive: true });
   rmSync(join(options.input, "Ratatoskr-android.apk"));
   rmSync(join(options.input, "Ratatoskr-android-source.zip"));
   rmSync(join(options.input, "android-abis"), { recursive: true });
@@ -104,6 +115,43 @@ test("a Windows and extensions release contains no Android packages", (t) => {
     "Ratatoskr_1.0.1_x64-setup.exe.sig", "Ratatoskr_1.0.1_x64_en-US.msi", "latest.json",
     ...browserPackages,
   ].sort());
+});
+function desktopOnly(options) {
+  rmSync(join(options.input, "Ratatoskr-android.apk"));
+  rmSync(join(options.input, "Ratatoskr-android-source.zip"));
+  rmSync(join(options.input, "android-abis"), { recursive: true });
+  rmSync(join(options.input, "browser-packages"), { recursive: true });
+  options.scope = "desktop";
+  return options;
+}
+test("a desktop release carries Windows and Linux, and every Linux package updates from latest.json", (t) => {
+  const options = desktopOnly(fixture(t));
+  const manifest = prepareRelease(options);
+  const names = manifest.map((line) => line.split("  ")[1]);
+  const linux = linuxPackages("1.0.1");
+  assert.equal(manifest.length, 12);
+  for (const name of [linux.appimage, linux.deb, linux.rpm, linux.archive, `${linux.deb}.sig`]) {
+    assert.ok(names.includes(name), name);
+  }
+  const latest = JSON.parse(readFileSync(join(options.output, "latest.json"), "utf8"));
+  const base = "https://github.com/owner/repo/releases/download/v1.0.1/";
+  assert.equal(latest.platforms["linux-x86_64-deb"].url, base + linux.deb);
+  assert.equal(latest.platforms["linux-x86_64-rpm"].url, base + linux.rpm);
+  assert.equal(latest.platforms["linux-x86_64-appimage"].url, base + linux.appimage);
+  assert.deepEqual(latest.platforms["linux-x86_64"], latest.platforms["linux-x86_64-appimage"]);
+  assert.ok(latest.platforms["windows-x86_64"].url.endsWith("x64-setup.exe"));
+  const [digest] = manifest.find((line) => line.endsWith("  latest.json")).split("  ");
+  assert.equal(createHash("sha256").update(readFileSync(join(options.output, "latest.json"))).digest("hex"), digest);
+});
+test("a tampered Linux package cannot be published with its old signature", (t) => {
+  const options = desktopOnly(fixture(t));
+  writeFileSync(join(options.input, "linux", linuxPackages("1.0.1").rpm), "modified package");
+  assert.throws(() => prepareRelease(options), /does not verify/);
+});
+test("a desktop release without the Linux archive is incomplete", (t) => {
+  const options = desktopOnly(fixture(t));
+  rmSync(join(options.input, "linux", linuxPackages("1.0.1").archive));
+  assert.throws(() => prepareRelease(options), /Missing release artifact: Ratatoskr-1.0.1-linux-x86_64.tar.gz/);
 });
 test("colliding filenames cannot overwrite a release asset", (t) => {
   const options = fixture(t);

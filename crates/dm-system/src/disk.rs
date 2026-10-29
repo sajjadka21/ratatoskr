@@ -32,7 +32,28 @@ mod platform {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(unix)]
+mod platform {
+    use std::{ffi::CString, mem::MaybeUninit, os::unix::ffi::OsStrExt, path::Path};
+
+    pub fn free_space(path: &Path) -> Option<u64> {
+        let path = CString::new(path.as_os_str().as_bytes()).ok()?;
+        let mut stats = MaybeUninit::<libc::statvfs>::uninit();
+        // SAFETY: `path` is NUL-terminated and outlives the call; `stats`
+        // is written by statvfs and only read after it reports success.
+        let stats = unsafe {
+            if libc::statvfs(path.as_ptr(), stats.as_mut_ptr()) != 0 {
+                return None;
+            }
+            stats.assume_init()
+        };
+        // Blocks available to an unprivileged user, as `df` reports them.
+        #[allow(clippy::unnecessary_cast)]
+        Some(stats.f_bavail as u64 * stats.f_frsize as u64)
+    }
+}
+
+#[cfg(not(any(windows, unix)))]
 mod platform {
     use std::path::Path;
 
@@ -50,7 +71,7 @@ mod tests {
         let directory = std::env::temp_dir();
         let deep = directory.join("rud-not-here").join("still-not");
         assert_eq!(free_space(&deep), free_space(&directory));
-        if cfg!(windows) {
+        if cfg!(any(windows, unix)) {
             assert!(free_space(&directory).unwrap() > 0);
         }
     }

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "mainBinaryName": "ratatoskr",
+  "bundle": {
+    "resources": {
+      "extras/": null,
+      "extras-linux/": "extras/"
+    },
+    "shortDescription": "A reliable download manager",
+    "longDescription": "Ratatoskr downloads files with several connections, resumes after interruptions, verifies what it saves and works with the browser extension.",
+    "category": "Utility",
+    "linux": {
+      "deb": {
+        "section": "net",
+        "recommends": ["ffmpeg", "libcanberra-gtk3-module"]
+      },
+      "rpm": {
+        "recommends": ["ffmpeg"]
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
+  }
+}

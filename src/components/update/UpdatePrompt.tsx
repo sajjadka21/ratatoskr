@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { listen } from "@tauri-apps/api/event";
 import { Download } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { useI18n } from "../../i18n/I18n";
-import { shouldAsk, skipVersion, skippedVersion, type OfferedUpdate } from "./updateOffer";
+import { RELEASES_PAGE, shouldAsk, skipVersion, skippedVersion, type OfferedUpdate } from "./updateOffer";
 
 import "./UpdatePrompt.css";
 
@@ -39,6 +40,10 @@ export function UpdatePrompt() {
   if (!offer) return null;
 
   const install = () => {
+    if (offer.manual) {
+      void openUrl(RELEASES_PAGE).then(() => setOffer(null)).catch((reason) => setError(String(reason)));
+      return;
+    }
     setInstalling(true);
     setError(null);
     invoke("install_update").catch((reason) => {
@@ -63,14 +68,14 @@ export function UpdatePrompt() {
               : t("update.preparing")}
           </span>
         ) : (
-          <span>{t("update.consent")}</span>
+          <span>{t(offer.manual ? "update.manualHint" : "update.consent")}</span>
         )}
         {error ? <span className="update-prompt__error">{error}</span> : null}
       </div>
       {installing ? null : (
         <div className="update-prompt__actions">
           <button type="button" className="update-prompt__primary" onClick={install}>
-            {t("update.now")}
+            {t(offer.manual ? "update.openPage" : "update.now")}
           </button>
           <button type="button" onClick={() => setOffer(null)}>
             {t("update.later")}

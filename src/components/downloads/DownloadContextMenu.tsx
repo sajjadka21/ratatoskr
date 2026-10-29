@@ -38,6 +38,7 @@ import { useI18n } from "../../i18n/I18n";
 import type { MessageKey } from "../../i18n/messages";
 
 import "./DownloadContextMenu.css";
+import { IS_LINUX } from "../../utils/platform";
 
 type DownloadContextMenuProps = {
   item: DownloadListItem | null;
@@ -312,6 +313,8 @@ export function DownloadContextMenu({
         <span>{t("action.open")}</span>
       </button>
 
+      {/* The system "Open with" chooser is a Windows dialog. */}
+      {IS_LINUX ? null : (
       <button
         type="button"
         role="menuitem"
@@ -328,6 +331,7 @@ export function DownloadContextMenu({
         <AppWindow size={15} />
         <span>{t("action.openWith")}</span>
       </button>
+      )}
 
       <button
         type="button"

@@ -1,6 +1,7 @@
 import { engineEn, engineFa } from "./engineMessages";
 import { insightEn, insightFa } from "./insightMessages";
 import { pageEn, pageFa } from "./pageMessages";
+import { IS_LINUX } from "../utils/platform";
 
 /**
  * Every user-facing string, in English and Persian.
@@ -300,6 +301,11 @@ const en = {
   "tray.active": "Ratatoskr — {speed} · {count} downloading",
 
   "shortcuts.hint": "Ctrl+K commands · Ctrl+N add · Ctrl+F search · Space pause/resume · Del remove",
+
+  "crash.title": "This view stopped working",
+  "crash.body": "Your downloads are safe: they keep running in the background. Go back to the list, or reload the window if this happens again.",
+  "crash.back": "Back to downloads",
+  "crash.reload": "Reload window",
 } as const;
 
 type CoreKey = keyof typeof en;
@@ -595,11 +601,49 @@ const coreFa: Record<CoreKey, string> = {
   "tray.active": "راتاتوسک — {speed} · {count} در حال دریافت",
 
   "shortcuts.hint": "Ctrl+K فرمان‌ها · Ctrl+N افزودن · Ctrl+F جستجو · Space توقف/ادامه · Del حذف",
+
+  "crash.title": "این بخش از کار افتاد",
+  "crash.body": "دانلودهای شما سالم‌اند و در پس‌زمینه ادامه دارند. به فهرست دانلودها برگردید، یا اگر دوباره رخ داد پنجره را از نو بارگذاری کنید.",
+  "crash.back": "بازگشت به دانلودها",
+  "crash.reload": "بارگذاری دوباره‌ی پنجره",
 };
 
 const enAll = { ...en, ...pageEn, ...engineEn, ...insightEn };
 export type MessageKey = keyof typeof enAll;
 const faAll: Record<MessageKey, string> = { ...coreFa, ...pageFa, ...engineFa, ...insightFa };
 
-export const messages = { en: enAll, fa: faAll } as const;
+/** Wording that names Windows, said the Linux way on Linux. */
+export const linuxEn: Partial<Record<MessageKey, string>> = {
+  "network.pacUrlHint": "The PAC address your proxy program gives, for example v2rayN's PAC mode. It decides for each site whether to use the proxy. Windows only; on Linux use a proxy address.",
+  "welcome.routeSystem": "Follow the system proxy",
+  "welcome.routeSystemHint": "Uses the proxy set for the session (http_proxy / https_proxy), as most Linux programs do.",
+  "settings.finishSoundHint": "Uses the desktop's sound theme: one sound when it finishes, another when it fails.",
+  "settings.startWithWindows": "Start when you sign in",
+  "settings.startWithWindowsHint": "Opens quietly in the tray when you sign in, so queues and schedules can run. Your desktop's startup applications settings can turn it off too.",
+  "browser.registrationMissing": "No supported browser profile was found for the connector. Open Chrome, Chromium, Brave, Edge or Firefox once, then press Connect again.",
+  "browser.registeredFor": "Connector registered for: {browsers}. This confirms the connector only; the extension must still be loaded in the browser.",
+  "settings.themeSystem": "Match the system",
+  "settings.systemFolder": "Downloads folder",
+  "settings.useSystemFolder": "Use the Downloads folder",
+  "settings.keepAwakeHint": "Stops the computer from sleeping while a download is running.",
+};
+
+export const linuxFa: Partial<Record<MessageKey, string>> = {
+  "network.pacUrlHint": "نشانی PAC که برنامه‌ی پروکسی شما می‌دهد، مثلاً حالت PAC در v2rayN. این فایل برای هر سایت تعیین می‌کند از پروکسی استفاده شود یا نه. فقط در ویندوز؛ در لینوکس نشانی پروکسی را وارد کنید.",
+  "welcome.routeSystem": "پیروی از پروکسی سیستم",
+  "welcome.routeSystemHint": "پروکسی تنظیم‌شده برای نشست (http_proxy / https_proxy) را به کار می‌برد، مثل بیشتر برنامه‌های لینوکس.",
+  "settings.finishSoundHint": "از صداهای پوسته‌ی میزکار استفاده می‌کند: یکی برای پایان موفق و یکی برای خطا.",
+  "settings.startWithWindows": "اجرا هنگام ورود به سیستم",
+  "settings.startWithWindowsHint": "با ورود به سیستم، بی‌سروصدا در سینی سیستم باز می‌شود تا صف‌ها و زمان‌بندی‌ها اجرا شوند. از تنظیمات برنامه‌های آغازین میزکار هم می‌شود خاموشش کرد.",
+  "browser.registrationMissing": "پروفایل هیچ مرورگر پشتیبانی‌شده‌ای برای اتصال‌دهنده پیدا نشد. یک بار Chrome، Chromium، Brave، Edge یا Firefox را باز کن و دوباره «اتصال» را بزن.",
+  "browser.registeredFor": "اتصال‌دهنده برای {browsers} ثبت شد. این فقط اتصال‌دهنده را تأیید می‌کند؛ خود افزونه هم باید در مرورگر بارگذاری شود.",
+  "settings.themeSystem": "هماهنگ با سیستم",
+  "settings.keepAwakeHint": "تا وقتی دانلودی در حال انجام است، کامپیوتر به حالت خواب نمی‌رود.",
+  "settings.closeToTrayHint": "با زدن دکمه‌ی بستن، برنامه به سینی سیستم می‌رود و دانلودها ادامه پیدا می‌کنند. برای خروج کامل از آیکون سینی سیستم استفاده کنید.",
+};
+
+export const messages = {
+  en: IS_LINUX ? { ...enAll, ...linuxEn } : enAll,
+  fa: IS_LINUX ? { ...faAll, ...linuxFa } : faAll,
+} as const;
 export type Language = keyof typeof messages;

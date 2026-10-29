@@ -880,6 +880,23 @@ pub const fn program_name() -> &'static str {
     }
 }
 
+/// The release file to download for this system. On Linux `yt-dlp` itself
+/// is a Python zip application that needs a recent Python; the standalone
+/// builds run on any distribution.
+pub const fn release_asset() -> &'static str {
+    if cfg!(windows) {
+        "yt-dlp.exe"
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        "yt-dlp_linux"
+    } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        "yt-dlp_linux_aarch64"
+    } else if cfg!(target_os = "macos") {
+        "yt-dlp_macos"
+    } else {
+        "yt-dlp"
+    }
+}
+
 /// Where yt-dlp's official releases are published.
 pub const RELEASE_BASE: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download";
 /// yt-dlp is about 18 MB; anything much larger is not it.
@@ -914,11 +931,11 @@ pub async fn install_latest(
         )
         .await
         .map_err(failed)?;
-    let expected = listed_checksum(&String::from_utf8_lossy(&sums), program_name())
+    let expected = listed_checksum(&String::from_utf8_lossy(&sums), release_asset())
         .ok_or_else(|| YtDlpError::Failed("the release lists no checksum for yt-dlp".to_owned()))?;
     let program = downloader
         .fetch_bytes(
-            &format!("{RELEASE_BASE}/{}", program_name()),
+            &format!("{RELEASE_BASE}/{}", release_asset()),
             None,
             MAX_PROGRAM_BYTES,
             &control,
@@ -1343,6 +1360,12 @@ mod tests {
         );
         assert_eq!(listed_checksum(&sums, "yt-dlp.exe"), Some(hash));
         assert_eq!(listed_checksum(&sums, "yt-dlp_macos"), Some("c".repeat(64)));
+        if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+            assert_eq!(release_asset(), "yt-dlp_linux");
+        }
+        if cfg!(windows) {
+            assert_eq!(release_asset(), program_name());
+        }
         assert_eq!(listed_checksum(&sums, "yt-dlp_x86.exe"), None);
         assert_eq!(listed_checksum("short yt-dlp.exe", "yt-dlp.exe"), None);
     }

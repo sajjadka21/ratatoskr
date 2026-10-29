@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useI18n } from "../../i18n/I18n";
 import type { PostProcessSettings } from "../../types/download";
 import { Switch } from "./Switch";
+import { IS_LINUX } from "../../utils/platform";
 
 /** Checksum, virus scan, unpacking and a command for every finished file. */
 export function AfterDownloadSection({
@@ -65,6 +66,8 @@ export function AfterDownloadSection({
           </div>
         </div>
 
+        {/* Windows Defender exists only on Windows; Linux has no built-in scanner to call. */}
+        {IS_LINUX && !draft.scan ? null : (
         <div className="settings-page__row">
           <div className="settings-page__row-label">
             <strong>{t("post.scan")}</strong>
@@ -80,6 +83,7 @@ export function AfterDownloadSection({
             />
           </div>
         </div>
+        )}
 
         <div className="settings-page__row">
           <div className="settings-page__row-label">

@@ -52,23 +52,41 @@ function collect(folder, files = new Map()) {
   return files;
 }
 
+export const RELEASE_SCOPES = ["all", "windows", "windows-extensions", "desktop"];
+
+/** The Linux packages Tauri names for `version`, and the portable archive. */
+export function linuxPackages(version) {
+  return {
+    appimage: `Ratatoskr_${version}_amd64.AppImage`,
+    deb: `Ratatoskr_${version}_amd64.deb`,
+    rpm: `Ratatoskr-${version}-1.x86_64.rpm`,
+    archive: `Ratatoskr-${version}-linux-x86_64.tar.gz`,
+  };
+}
+
 export function prepareRelease({ input, output, version, repository, publicKey, scope = "all" }) {
   if (!/^\d+\.\d+\.\d+$/.test(version) || !/^[\w.-]+\/[\w.-]+$/.test(repository)) {
     throw new Error("Expected a stable semantic version and owner/repository");
   }
-  if (!["all", "windows", "windows-extensions"].includes(scope)) {
-    throw new Error("Release scope must be all, windows, or windows-extensions");
+  if (!RELEASE_SCOPES.includes(scope)) {
+    throw new Error(`Release scope must be one of: ${RELEASE_SCOPES.join(", ")}`);
   }
   const files = collect(input);
   const installer = `Ratatoskr_${version}_x64-setup.exe`;
   const windowsAssets = [installer, `${installer}.sig`, `Ratatoskr_${version}_x64_en-US.msi`,
     "Ratatoskr-portable.zip", "latest.json"];
-  const expected = scope === "windows" ? windowsAssets : scope === "windows-extensions" ? [
-    ...windowsAssets, "Ratatoskr-extension-chrome.zip", "Ratatoskr-extension-edge.zip", "Ratatoskr-extension-firefox.zip",
-  ] : [
-    ...windowsAssets, "Ratatoskr-android.apk", "Ratatoskr-android-source.zip",
-    "Ratatoskr-android-arm64-v8a.apk", "Ratatoskr-android-armeabi-v7a.apk", "Ratatoskr-android-x86_64.apk",
-    "Ratatoskr-extension-chrome.zip", "Ratatoskr-extension-edge.zip", "Ratatoskr-extension-firefox.zip"];
+  const linux = linuxPackages(version);
+  const withLinux = scope === "all" || scope === "desktop";
+  const linuxAssets = withLinux ? [linux.appimage, `${linux.appimage}.sig`, linux.deb, `${linux.deb}.sig`,
+    linux.rpm, `${linux.rpm}.sig`, linux.archive] : [];
+  const extensions = ["Ratatoskr-extension-chrome.zip", "Ratatoskr-extension-edge.zip", "Ratatoskr-extension-firefox.zip"];
+  const expected = scope === "windows" ? windowsAssets
+    : scope === "windows-extensions" ? [...windowsAssets, ...extensions]
+    : scope === "desktop" ? [...windowsAssets, ...linuxAssets]
+    : [
+      ...windowsAssets, ...linuxAssets, "Ratatoskr-android.apk", "Ratatoskr-android-source.zip",
+      "Ratatoskr-android-arm64-v8a.apk", "Ratatoskr-android-armeabi-v7a.apk", "Ratatoskr-android-x86_64.apk",
+      ...extensions];
   for (const name of expected) {
     if (!files.has(name)) throw new Error(`Missing release artifact: ${name}`);
   }
@@ -80,11 +98,26 @@ export function prepareRelease({ input, output, version, repository, publicKey, 
   if (latest.version !== version || platform?.url !== url || platform?.signature !== signature ||
       !Number.isFinite(Date.parse(latest.pub_date))) throw new Error("Updater metadata does not match this release");
   verifyUpdater(readFileSync(files.get(installer)), signature, publicKey, version);
+  if (withLinux) {
+    // Installed Linux copies update from the package that installed them;
+    // `linux-x86_64` (the AppImage) also tells archive copies a version exists.
+    for (const [kind, name] of [["appimage", linux.appimage], ["deb", linux.deb], ["rpm", linux.rpm]]) {
+      const packageSignature = readFileSync(files.get(`${name}.sig`), "utf8").trim();
+      verifyUpdater(readFileSync(files.get(name)), packageSignature, publicKey, version);
+      latest.platforms[`linux-x86_64-${kind}`] = {
+        signature: packageSignature,
+        url: `https://github.com/${repository}/releases/download/v${version}/${encodeURIComponent(name)}`,
+      };
+    }
+    latest.platforms["linux-x86_64"] = latest.platforms["linux-x86_64-appimage"];
+  }
   // Refuse to reuse a staging folder: stale files must never enter a release.
   mkdirSync(output);
   const manifest = [];
   for (const name of [...files.keys()].sort()) {
-    cpSync(files.get(name), join(output, name), { errorOnExist: true, force: false });
+    if (name === "latest.json") writeFileSync(join(output, name), `${JSON.stringify(latest, null, 2)}
+`, { flag: "wx" });
+    else cpSync(files.get(name), join(output, name), { errorOnExist: true, force: false });
     const digest = createHash("sha256").update(readFileSync(join(output, name))).digest("hex");
     manifest.push(`${digest}  ${basename(name)}`);
   }

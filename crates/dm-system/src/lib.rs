@@ -2,8 +2,8 @@
 //! keeping the computer awake while downloads run, and the power actions a
 //! queue can take when it finishes.
 //!
-//! Every function is safe to call on any platform; outside Windows the power
-//! actions report `Unsupported` and keep-awake does nothing.
+//! Every function is safe to call on any platform; outside Windows and Linux
+//! the power actions report `Unsupported` and keep-awake does nothing.
 
 pub mod autostart;
 pub mod browser_health;
@@ -161,7 +161,76 @@ mod platform {
     }
 }
 
-#[cfg(not(windows))]
+/// Linux: logind does the work for the signed-in user, as the desktop's own
+/// power menu does. `systemctl` talks to systemd-logind; `loginctl` also
+/// covers elogind on distributions without systemd.
+#[cfg(target_os = "linux")]
+mod platform {
+    use super::PowerAction;
+    use std::{
+        io,
+        process::{Child, Command, Stdio},
+        sync::Mutex,
+    };
+
+    pub fn perform(action: PowerAction) -> io::Result<()> {
+        let verb = match action {
+            PowerAction::Sleep => "suspend",
+            PowerAction::Hibernate => "hibernate",
+            PowerAction::Shutdown => "poweroff",
+        };
+        let mut last = io::Error::new(io::ErrorKind::NotFound, "neither systemctl nor loginctl");
+        for program in ["systemctl", "loginctl"] {
+            match Command::new(program)
+                .arg(verb)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+            {
+                Ok(status) if status.success() => return Ok(()),
+                Ok(_) => last = io::Error::other(format!("{verb} was refused")),
+                Err(error) => last = error,
+            }
+        }
+        Err(last)
+    }
+
+    /// The running `systemd-inhibit`, while the computer is held awake.
+    static INHIBITOR: Mutex<Option<Child>> = Mutex::new(None);
+
+    pub fn set_keep_awake(keep_awake: bool) {
+        let mut held = INHIBITOR
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(mut child) = held.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        if !keep_awake {
+            return;
+        }
+        // The lock lasts while `read` waits on our pipe, so it is released
+        // even if this process dies without cleaning up.
+        *held = Command::new("systemd-inhibit")
+            .args([
+                "--what=sleep:idle",
+                "--who=Ratatoskr",
+                "--why=Downloads are running",
+                "--mode=block",
+                "sh",
+                "-c",
+                "read _",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok();
+    }
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 mod platform {
     use super::PowerAction;
     use std::io;
@@ -169,7 +238,7 @@ mod platform {
     pub fn perform(action: PowerAction) -> io::Result<()> {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
-            format!("{action} is only supported on Windows"),
+            format!("{action} is not supported on this system"),
         ))
     }
 

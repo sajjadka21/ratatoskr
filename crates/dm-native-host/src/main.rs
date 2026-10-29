@@ -341,15 +341,35 @@ fn application_path() -> Option<PathBuf> {
         }
     }
     let current = env::current_exe().ok()?.parent()?.to_owned();
-    [
-        "Ratatosk.exe",
-        "download-manager.exe",
-        "Download Manager.exe",
-        "tauri-app.exe",
-    ]
-    .into_iter()
-    .map(|name| current.join(name))
-    .find(|path| path.is_file())
+    application_candidates(&current)
+        .into_iter()
+        .find(|path| path.is_file())
+}
+
+/// Where the application may be, given the folder this host runs from.
+/// Windows installs both side by side. On Linux the portable archive does
+/// too, while the .deb and .rpm packages put the host among the resources
+/// (`<prefix>/lib/Ratatoskr`) and the program in `<prefix>/bin`.
+fn application_candidates(folder: &Path) -> Vec<PathBuf> {
+    if cfg!(windows) {
+        return [
+            "Ratatosk.exe",
+            "download-manager.exe",
+            "Download Manager.exe",
+            "tauri-app.exe",
+        ]
+        .into_iter()
+        .map(|name| folder.join(name))
+        .collect();
+    }
+    let mut candidates: Vec<PathBuf> = ["ratatoskr", "tauri-app"]
+        .into_iter()
+        .map(|name| folder.join(name))
+        .collect();
+    if let Some(prefix) = folder.parent().and_then(Path::parent) {
+        candidates.push(prefix.join("bin").join("ratatoskr"));
+    }
+    candidates
 }
 
 fn read_message(reader: &mut impl Read) -> io::Result<Option<Vec<u8>>> {
@@ -393,6 +413,23 @@ mod tests {
         time::Duration,
     };
     use tempfile::tempdir;
+
+    #[cfg(not(windows))]
+    #[test]
+    fn a_packaged_linux_host_finds_the_program_in_bin() {
+        let candidates = super::application_candidates(Path::new("/usr/lib/Ratatoskr"));
+        assert_eq!(candidates[0], PathBuf::from("/usr/lib/Ratatoskr/ratatoskr"));
+        assert!(candidates.contains(&PathBuf::from("/usr/bin/ratatoskr")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_windows_host_looks_beside_itself() {
+        let candidates = super::application_candidates(Path::new(r"C:\Ratatoskr"));
+        assert!(candidates
+            .iter()
+            .all(|path| path.starts_with(r"C:\Ratatoskr")));
+    }
 
     const COOKIE: &str = "session=s3cr3t-browser-login";
 

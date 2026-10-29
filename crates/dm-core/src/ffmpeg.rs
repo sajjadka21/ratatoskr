@@ -220,7 +220,10 @@ pub async fn install_latest(
     tools_dir: &Path,
 ) -> Result<PathBuf, String> {
     if !cfg!(windows) {
-        return Err("FFmpeg is installed automatically only on Windows".to_owned());
+        return Err(
+            "FFmpeg is installed automatically only on Windows. Install it with the system's              package manager (apt install ffmpeg, dnf install ffmpeg, pacman -S ffmpeg,              zypper install ffmpeg) and Ratatoskr will find it."
+                .to_owned(),
+        );
     }
     let control = TaskControl::new();
     let sums = downloader

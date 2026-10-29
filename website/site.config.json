@@ -1,0 +1,104 @@
+{
+  "siteUrl": "https://ratatoskr.hivenest.ir",
+  "repository": "sajjadka21/ratatoskr",
+  "stage": "published-release",
+  "release": {
+    "version": "1.3.7",
+    "androidVersion": "1.3.0",
+    "publishedAt": "2026-10-29T18:09:21Z",
+    "notesUrl": "https://github.com/sajjadka21/ratatoskr/releases/tag/v1.3.7",
+    "checksumsUrl": "https://github.com/sajjadka21/ratatoskr/releases/download/v1.3.7/SHA256SUMS.txt",
+    "androidChecksumsUrl": "https://github.com/sajjadka21/ratatoskr/releases/download/v1.3.0/SHA256SUMS.txt",
+    "linuxVersion": "1.3.7",
+    "linuxChecksumsUrl": "https://github.com/sajjadka21/ratatoskr/releases/download/v1.3.7/SHA256SUMS.txt",
+    "downloads": [
+      {
+        "platform": "windows",
+        "version": "1.3.7",
+        "label": "Download for Windows",
+        "labelFa": "دریافت نصب‌کنندهٔ ویندوز",
+        "url": "https://github.com/sajjadka21/ratatoskr/releases/download/v1.3.7/Ratatoskr_1.3.7_x64-setup.exe",
+        "bytes": 62346504,
+        "sha256": "125e7d45cc7b2d53abbe2f0bf236d9291f30fc803eb14c3ca09aa5cbd7ef740c"
+      },
+      {
+        "platform": "windows",
+        "version": "1.3.7",
+        "label": "Portable version",
+        "labelFa": "نسخهٔ قابل‌حمل",
+        "url": "https://github.com/sajjadka21/ratatoskr/releases/download/v1.3.7/Ratatoskr-portable.zip",
+        "bytes": 76015178,
+        "sha256": "c71b5df86ac444cd77aa98a47225ba55a20861150cfbc445181958b670a54fa5"
+      },
+      {
+        "platform": "windows",
+        "version": "1.3.7",
+        "label": "MSI installer",
+        "labelFa": "نصب‌کنندهٔ MSI",
+        "url": "https://github.com/sajjadka21/ratatoskr/releases/download/v1.3.7/Ratatoskr_1.3.7_x64_en-US.msi",
+        "bytes": 76865536,
+        "sha256": "6f5439bd3e81dec3637e37ef88181fcd85c63c4b07ca5cf76c726fbbe670b287"
+      },
+      {
+        "platform": "linux",
+        "version": "1.3.7",
+        "label": "Debian / Ubuntu (.deb)",
+        "labelFa": "دبیان و اوبونتو (⁦.deb⁩)",
+        "url": "https://github.com/sajjadka21/ratatoskr/releases/download/v1.3.7/Ratatoskr_1.3.7_amd64.deb",
+        "bytes": 94875722,
+        "sha256": "6bc6704d06209cfa6315406a3fae4bc804228461cea027b4c4182b0c8b6ea908"
+      },
+      {
+        "platform": "linux",
+        "version": "1.3.7",
+        "label": "Fedora / openSUSE (.rpm)",
+        "labelFa": "فدورا و اوپن‌سوزه (⁦.rpm⁩)",
+        "url": "https://github.com/sajjadka21/ratatoskr/releases/download/v1.3.7/Ratatoskr-1.3.7-1.x86_64.rpm",
+        "bytes": 94879397,
+        "sha256": "475b1aa864f3200d2947209a3b7e75657917cd29beb45405b3566d31c9d78768"
+      },
+      {
+        "platform": "linux",
+        "version": "1.3.7",
+        "label": "AppImage, any distribution",
+        "labelFa": "AppImage، هر توزیع",
+        "url": "https://github.com/sajjadka21/ratatoskr/releases/download/v1.3.7/Ratatoskr_1.3.7_amd64.AppImage",
+        "bytes": 168724984,
+        "sha256": "0a9bbd2563967d27e7cfc563d0a535efc0fab039461ba71c3dd0b13d0aa3525d"
+      },
+      {
+        "platform": "linux",
+        "version": "1.3.7",
+        "label": "Archive (.tar.gz)",
+        "labelFa": "فایل فشرده (⁦.tar.gz⁩)",
+        "url": "https://github.com/sajjadka21/ratatoskr/releases/download/v1.3.7/Ratatoskr-1.3.7-linux-x86_64.tar.gz",
+        "bytes": 93576828,
+        "sha256": "39a09e2105203a342c05dcfd60066d7e1d552504a84a68cc33df47ef08a5804f"
+      },
+      {
+        "platform": "android",
+        "version": "1.3.0",
+        "label": "Download Android APK",
+        "labelFa": "دریافت نسخهٔ اندروید",
+        "url": "https://github.com/sajjadka21/ratatoskr/releases/download/v1.3.0/Ratatoskr-android.apk",
+        "bytes": 63810750,
+        "sha256": "c2ecf8f3a19bb067d81c44d380c5da13ac606c0b7d430b2d8c16aaa7b385080c"
+      }
+    ]
+  },
+  "preview": {
+    "version": "1.3.7",
+    "publishedAt": "2026-10-29T18:09:21Z",
+    "notesUrl": "https://github.com/sajjadka21/ratatoskr/releases/tag/v1.3.7",
+    "checksumsUrl": "https://github.com/sajjadka21/ratatoskr/releases/download/v1.3.7/SHA256SUMS.txt",
+    "windowsUrl": "https://github.com/sajjadka21/ratatoskr/releases/download/v1.3.7/Ratatoskr_1.3.7_x64-setup.exe",
+    "androidUrl": "https://github.com/sajjadka21/ratatoskr/releases/download/v1.3.0/Ratatoskr-android.apk",
+    "android32Url": "https://github.com/sajjadka21/ratatoskr/releases/download/v1.3.0/Ratatoskr-android-armeabi-v7a.apk",
+    "androidScreenshots": true,
+    "androidScreenshotVersion": "1.3.0",
+    "androidUpgradeRestored": true,
+    "stable": true,
+    "androidVersion": "1.3.0",
+    "androidChecksumsUrl": "https://github.com/sajjadka21/ratatoskr/releases/download/v1.3.0/SHA256SUMS.txt"
+  }
+}

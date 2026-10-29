@@ -1,0 +1,33 @@
+{
+  "source": "D:/project/download-manager/src/styles/brand-themes.css",
+  "themes": {
+    "midnight-arcane": {
+      "brand-background": "#090B14",
+      "bg-surface": "#141225",
+      "brand-primary": "#CAA0FD",
+      "brand-progress": "#9F63FF",
+      "text-primary": "#F2EBFE"
+    },
+    "ember-forge": {
+      "brand-background": "#110C0A",
+      "bg-surface": "#211610",
+      "brand-primary": "#FBA73D",
+      "brand-progress": "#F46803",
+      "text-primary": "#FFF1DB"
+    },
+    "forest-rune": {
+      "brand-background": "#0A100B",
+      "bg-surface": "#152016",
+      "brand-primary": "#BFCE8B",
+      "brand-progress": "#8CB34B",
+      "text-primary": "#F0F3E5"
+    },
+    "frost-byte": {
+      "brand-background": "#071019",
+      "bg-surface": "#0E1D2B",
+      "brand-primary": "#98D9FB",
+      "brand-progress": "#53B4F4",
+      "text-primary": "#DEF4FD"
+    }
+  }
+}

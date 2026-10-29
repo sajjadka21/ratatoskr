@@ -1,0 +1,15 @@
+{
+  "name": "ratatoskr-landing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "preview": "node scripts/serve.mjs",
+    "deploy": "npm run build && wrangler deploy",
+    "sync-release": "node scripts/sync-release.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "4.144.0"
+  }
+}
